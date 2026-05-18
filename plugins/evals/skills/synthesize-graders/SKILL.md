@@ -1,6 +1,6 @@
 ---
 name: synthesize-graders
-description: Synthesize an eval pipeline for an LLM-using product. Reads a target repo (and optional OTel traces), discovers LLM call sites, hypothesizes failure modes, clusters them into a 2-level taxonomy, fans out grader synthesis (one subagent per call site, delegated to a grader-author skill that conforms to the contract in `contract/AUTHORING_CONTRACT.md`), validates each emitted grader against the schema, and writes a sharded pipeline under `tessary-evals/pipeline/` + `tessary-evals/graders/*.yaml` + `tessary-evals/report.md` + `tessary-evals/index.html` (self-contained visual viewer). Use when the user says "synthesize evals", "bootstrap evals", "generate eval pipeline", or invokes /evals:synthesize-graders.
+description: Generate a calibrated eval suite for an LLM product. Point it at the user's repo (with optional production traces) and it produces graders, datasets, and a visual report under `tessary-evals/`. Use when the user says "synthesize evals", "generate evals", "bootstrap evals for this repo", "create graders", or invokes /evals:synthesize-graders.
 ---
 
 # synthesize-graders — synthesize an eval pipeline from a real codebase
