@@ -1,6 +1,9 @@
 {
   "name": "tessary",
-  "owner": { "name": "Tessary AI", "email": "nidhi@tessary.ai" },
+  "owner": {
+    "name": "Tessary AI",
+    "email": "nidhi@tessary.ai"
+  },
   "plugins": [
     {
       "name": "evals",
@@ -8,7 +11,7 @@
         "source": "git-subdir",
         "url": "https://github.com/tessaryai/plugins.git",
         "path": "plugins/evals",
-        "ref": "evals-v0.4.0"
+        "ref": "evals-v0.4.1"
       },
       "description": "Generate a calibrated eval suite for your LLM product — graders, datasets, and a visual report, straight from your repo."
     }

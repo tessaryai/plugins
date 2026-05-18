@@ -1,10 +1,17 @@
 {
   "name": "evals",
   "description": "Generate a calibrated eval suite for your LLM product — graders, datasets, and a visual report, straight from your repo.",
-  "version": "0.4.0",
-  "author": { "name": "Tessary AI" },
+  "version": "0.4.1",
+  "author": {
+    "name": "Tessary AI"
+  },
   "homepage": "https://evals.tessary.ai",
   "repository": "https://github.com/tessaryai/plugins",
   "license": "MIT",
-  "keywords": ["evals", "llm", "graders", "observability"]
+  "keywords": [
+    "evals",
+    "llm",
+    "graders",
+    "observability"
+  ]
 }
