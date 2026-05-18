@@ -34,3 +34,7 @@ Install:
 Then in a Claude Code session, run `/synthesize-graders` or ask Claude to "synthesize evals for this repo."
 
 See the [plugin README](./plugins/evals/README.md) for flags, pack details, and validator usage.
+
+## License
+
+MIT — see [LICENSE](./LICENSE).
