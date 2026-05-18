@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "author": { "name": "Tessary AI" },
   "homepage": "https://evals.tessary.ai",
-  "repository": "https://github.com/tessary-ai/plugins",
+  "repository": "https://github.com/tessaryai/plugins",
   "license": "MIT",
   "keywords": ["evals", "llm", "graders", "observability"]
 }

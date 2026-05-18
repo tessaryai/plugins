@@ -7,7 +7,7 @@ A Claude Code marketplace hosting Tessary AI's plugins.
 In any Claude Code session:
 
 ```
-/plugin marketplace add tessary-ai/plugins
+/plugin marketplace add tessaryai/plugins
 /plugin install <plugin-name>@tessary
 ```
 
@@ -35,4 +35,4 @@ In any Claude Code session:
    ```json
    { "name": "<name>", "source": "./plugins/<name>", "description": "..." }
    ```
-3. Commit and push. Users who have already run `/plugin marketplace add tessary-ai/plugins` can refresh with `/plugin marketplace update tessary` and then `/plugin install <name>@tessary`.
+3. Commit and push. Users who have already run `/plugin marketplace add tessaryai/plugins` can refresh with `/plugin marketplace update tessary` and then `/plugin install <name>@tessary`.
