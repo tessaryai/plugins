@@ -152,3 +152,54 @@ A typical 16-failure set:
 A bias toward `low` is a smell. So is "all `medium`" — that means you're not differentiating impact. Layer C should be dominated by `high` and `medium`; if more than one Layer C failure is `low`, you're padding.
 
 Draw on the shape, intent, constraints, surrounding code, and any production traces provided. The intent statement from step 3 — especially who the user is — is your most important input for Layer B; the `product_profile.data_sensitivity` and `regulatory_context` are your most important inputs for Layer C.
+
+## Subagent context — you also own shape + intent for this call site
+
+In v0.4 the orchestrator fans steps 2 (classify_shape), 3 (extract_intent), and 4
+(hypothesize_failures) out as a **single subagent per call site**. You — the
+subagent — own all three.
+
+**Inputs the orchestrator passes you:**
+- Absolute path to `evals/pipeline/call_sites/<id>.yaml` (read; step 1 already
+  wrote the static fields).
+- Absolute path to `evals/pipeline/product_profile.yaml` and `invariants.yaml`.
+- Absolute path to `evals/pipeline/packs.yaml`.
+- Absolute paths to each engaged pack's `failures.md` (the orchestrator lists them).
+
+**Run, in order:**
+1. Apply `prompts/classify_shape.md` to determine `shape` and `shape_confidence`.
+2. Apply `prompts/extract_intent.md` to produce `intent` and `constraints`.
+3. Patch the call_site shard at `evals/pipeline/call_sites/<id>.yaml` in place
+   (Read + Edit, **not** Write — never rewrite the static fields step 1 wrote).
+   Add the four fields: `shape`, `shape_confidence`, `intent`, `constraints`.
+4. Apply this prompt (Layer A/B/C hypothesis) plus each engaged pack's
+   `failures.md` to produce the baseline + pack-contributed failures for this
+   one call site. Resolve `pack_ids` and `compliance_tags` per the rules above.
+5. Write `evals/pipeline/failure_modes/<call_site_id_safe>.yaml` with top-level
+   key `failure_modes:` and the canonical-sorted list. **Do not perform dedup**
+   — leave overlapping pack contributions as separate entries with their own
+   `pack_ids`. Step 4.6 (the orchestrator's `dedup.py` script) reconciles
+   across packs deterministically.
+6. **Leave `taxonomy_node_id` empty for now.** Step 5 (taxonomy) will patch it
+   back onto each entry after dedup.
+
+**Return ONLY this manifest** (no prose, no YAML body):
+
+```yaml
+step: 4
+call_site_id: <id>
+shard_path: <abs path to failure_modes/<id>.yaml>
+shape: <enum>
+shape_confidence: <high | medium | low>
+intent_summary: <one sentence, <=120 chars>
+failure_count_by_layer:
+  A: <int>
+  B: <int>
+  C: <int>
+failure_names: [<name>, ...]
+pack_contributions:
+  <pack_id>: <int>
+```
+
+The orchestrator uses this manifest only for the audit gate (step 4.7) and the
+fan-out planning for step 6. It does not re-read your failure-mode bodies.

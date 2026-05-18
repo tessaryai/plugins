@@ -1,7 +1,7 @@
 {
   "name": "evals",
   "description": "Synthesize an eval pipeline for any LLM-using product — discovers call sites, hypothesizes failure modes, emits graders, validates, and renders a visual report.",
-  "version": "0.1.0",
+  "version": "0.4.0",
   "author": { "name": "Tessary AI" },
   "homepage": "https://evals.tessary.ai",
   "repository": "https://github.com/tessaryai/plugins",

@@ -101,6 +101,44 @@ invariant_coverage:
 
 The `likely_gap_in` set drives Layer B failure-mode synthesis with high signal.
 
-## Output format
+## Output format — write the shards directly, return a tiny manifest
 
-Print the three artifacts as a single YAML block under the heading `## Step 0 — product context`. The report renders this section for review. Be specific, cite evidence, don't invent. If there are zero implicit invariants you can defensibly ground in the repo, output an empty list — never fabricate to seem thorough.
+You are running as a subagent in step 0 of the synthesize-graders skill. Your job is
+to **write two YAML shards directly to disk** and return only a small manifest. The
+orchestrator never reads the full content of the shards — it relies on your manifest
+plus subsequent shard-reading scripts.
+
+Write these files (the orchestrator passes you the absolute evals/ path):
+
+- `<evals>/pipeline/product_profile.yaml` — top-level key `product_profile:` whose
+  value is the structured snapshot from section 1 above.
+- `<evals>/pipeline/invariants.yaml` — top-level keys `implicit_invariants:` (list
+  from section 2) and `invariant_coverage:` (list from section 3). The
+  coverage list will start empty because step 1 (call-site discovery) runs in
+  parallel with you; the orchestrator may revisit and fill `enforced_in` /
+  `likely_gap_in` after both step 0 and step 1 complete. **You may leave
+  `invariant_coverage: []` if step 1 results are not yet visible — say so in
+  your manifest.**
+
+Both files must parse as YAML mappings. Use `yaml.safe_dump(..., sort_keys=False)`
+semantics; on disk, two-space indentation, no trailing whitespace. Create parent
+directories if needed.
+
+When you are done, return ONLY this manifest (no prose, no quoted YAML):
+
+```yaml
+step: 0
+product_profile_path: <abs path written>
+invariants_path: <abs path written>
+domain: <copy of product_profile.domain>
+user_types_count: <int>
+invariants_count: <int>
+regulatory_regimes: [<regime>, ...]
+data_sensitivity_kinds: [<kind>, ...]
+brand_voice_signals_count: <int>
+coverage_deferred: <true | false>  # true means invariant_coverage: [] for step 1 to fill in later
+```
+
+Be specific, cite evidence, don't invent. If there are zero implicit invariants
+you can defensibly ground in the repo, output an empty list — never fabricate
+to seem thorough.

@@ -3,9 +3,9 @@
 viewer.py — build a self-contained HTML viewer for a synthesized eval pipeline.
 
 Reads:
-    <evals_dir>/pipeline.yaml
+    <evals_dir>/pipeline/**/*.yaml  (v0.4 sharded layout — assembled via pipeline_io)
     <evals_dir>/graders/*.yaml
-    <evals_dir>/report.md      (optional)
+    <evals_dir>/report.md           (optional)
 
 Writes:
     <evals_dir>/index.html     (or the path passed via --output)
@@ -45,6 +45,9 @@ try:
 except ImportError:
     print("viewer.py: requires PyYAML. Install: pip install pyyaml", file=sys.stderr)
     sys.exit(2)
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import pipeline_io  # noqa: E402
 
 
 SCRIPT_DIR: Final[Path] = Path(__file__).resolve().parent
@@ -101,11 +104,16 @@ def collect(evals_dir: Path) -> dict[str, Any]:
     rather than aborting the run, so a malformed file doesn't lose the
     rest of the bundle.
     """
-    pipeline_path = evals_dir / "pipeline.yaml"
-    if not pipeline_path.is_file():
-        print(f"viewer.py: missing {pipeline_path}", file=sys.stderr)
+    pipeline_root = evals_dir / "pipeline"
+    if not pipeline_root.is_dir():
+        print(f"viewer.py: missing {pipeline_root}/ (v0.4 sharded layout)",
+              file=sys.stderr)
         sys.exit(2)
-    pipeline = _load_yaml(pipeline_path)
+    try:
+        pipeline = pipeline_io.load_pipeline(evals_dir)
+    except RuntimeError as e:
+        print(f"viewer.py: {e}", file=sys.stderr)
+        sys.exit(2)
 
     graders: list[Mapping[str, Any]] = []
     graders_dir = evals_dir / "graders"

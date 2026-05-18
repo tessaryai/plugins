@@ -144,3 +144,32 @@ chain_failure_modes:
 ## When chain detection should fail open
 
 If the system has clearly independent call sites (a webhook handler that calls one summarizer and never composes outputs), produce **zero chains** rather than fabricating coupling. An empty `chains: []` is a valid and useful output.
+
+## Subagent context — write the shards directly, return a tiny manifest
+
+In v0.4 you run as a subagent in step 4.5. The orchestrator passes:
+
+- Absolute path to the evals/ directory.
+- The list of call_site IDs and absolute paths to their `evals/pipeline/call_sites/<id>.yaml` shards (read each as needed).
+
+Write these files:
+
+- `<evals>/pipeline/chains.yaml` — top-level key `chains:` (list as above; may
+  be empty).
+- `<evals>/pipeline/failure_modes/_chains.yaml` — top-level key
+  `failure_modes:` containing all the chain failures (scope: chain) you
+  hypothesized. **Leave `taxonomy_node_id` empty; step 5 patches it back in.**
+
+**Return ONLY this manifest:**
+
+```yaml
+step: 4.5
+chains_path: <abs path>
+chain_failures_path: <abs path>
+chain_count: <int>
+chain_ids: [<id>, ...]
+chain_failure_count: <int>
+detection_methods: [<method>, ...]
+```
+
+The orchestrator never re-reads the chain shard bodies.

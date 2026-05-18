@@ -1,33 +1,78 @@
 # Output format reference
 
-The skill writes a directory, not a single file. Stick to these schemas exactly so re-running on the same inputs produces stable diffs and the per-grader / bundle validators pass.
+The skill writes a directory of shards, not a single file. v0.4.0 broke the old
+single-`pipeline.yaml` layout into one shard per logical artifact so each shard
+is small enough to be written by a single subagent and the orchestrator never
+holds the full pipeline content in context.
+
+Stick to these schemas exactly so re-running on the same inputs produces stable
+diffs and the per-grader / bundle validators pass.
 
 ```
 evals/
-  pipeline.yaml              # everything except per-grader bodies
+  pipeline/
+    meta.yaml                          # version, product_hint, runtime
+    packs.yaml                         # engaged packs + interview answers
+    product_profile.yaml               # step-0 product profile
+    invariants.yaml                    # implicit_invariants + invariant_coverage
+    call_sites/<id>.yaml               # one per call site
+    chains.yaml                        # all detected chains
+    failure_modes/<call_site_id>.yaml  # single_call failures for that site
+    failure_modes/_chains.yaml         # chain failures (one file for all)
+    taxonomy.yaml                      # full taxonomy tree
   graders/
-    <grader_id_safe>.yaml    # one per grader; id with `::` → `__` for the filename
+    <grader_id_safe>.yaml              # one per grader; id with `::` -> `__`
   datasets/
-    <call_site_id>.jsonl     # captured inputs (optional, written by Path A trace ingestion)
+    <call_site_id>.jsonl               # captured inputs (Path A only)
   report.md
-  index.html                 # built by viewer.py
-  .synth-lock.yaml           # content hashes from the last run (re-run safety)
+  index.html                           # built by viewer.py
+  .synth-lock.yaml                     # content hashes from the last run
 ```
 
-`<grader_id_safe>` is the canonical grader ID with `::` replaced by `__`. Example: a grader with `id: persona::memory_citation::grader` is written to `evals/graders/persona__memory_citation__grader.yaml`. The canonical ID *inside* the file still uses `::`.
+`<grader_id_safe>` is the canonical grader ID with `::` replaced by `__`.
+Example: a grader with `id: persona::memory_citation::grader` is written to
+`evals/graders/persona__memory_citation__grader.yaml`. The canonical ID *inside*
+the file still uses `::`.
 
-## `evals/pipeline.yaml`
+The same filename transformation applies to call-site shards
+(`call_sites/<id_safe>.yaml`, no `::` expected in practice but the substitution
+is applied defensively) and failure-mode shards
+(`failure_modes/<call_site_id_safe>.yaml`).
 
-Top-level keys, in this order:
+## Loading the logical pipeline view
+
+Consumers that want the v0.3-style monolithic pipeline mapping can call
+`pipeline_io.load_pipeline(evals_dir)` (bundled with the plugin) to assemble
+every shard into one in-memory mapping with the same top-level keys
+v0.3 emitted (`version`, `product_hint`, `packs`, `product_profile`,
+`implicit_invariants`, `invariant_coverage`, `runtime`, `call_sites`, `chains`,
+`failure_modes`, `taxonomy`). The shard files on disk remain the source of truth;
+the assembled view is never written back to disk during synthesis.
+
+## `evals/pipeline/meta.yaml`
 
 ```yaml
-version: "0.3.0"
+version: "0.4.0"
 product_hint: <string | null>
 
-# Packs active for this synthesis. Empty list = baseline-only run.
-# Each pack entry records what was discovered at step 0, the interview answers
-# (post-pre-fill from product analysis), and a content digest so re-runs are
-# stable. See `packs/<pack_id>/pack.yaml` for the manifest schema.
+runtime:
+  judge_model: <string | null>           # e.g. "claude-sonnet-4-6"; null = runner default
+  judge_temperature: <float>              # default 0.0
+  max_concurrency: <int>                  # default 8
+  budget_usd_per_run: <float | null>      # soft cap; runner warns when exceeded
+  severity_policy:
+    high: <block | warn | report>         # default: block
+    medium: <block | warn | report>       # default: warn
+    low: <block | warn | report>          # default: report
+  redaction_state: <none | partial | redacted | unknown>
+```
+
+`version` is the synthesizer's on-disk schema version, not the plugin version.
+Bump only when the shard layout or shard schemas change.
+
+## `evals/pipeline/packs.yaml`
+
+```yaml
 packs:
   - id: <string>                     # pack id (see contract/pack.schema.json)
     name: <string>
@@ -37,16 +82,20 @@ packs:
                                      # auto      = applies_when matched at step 0
                                      # explicit  = user passed --pack <id>
                                      # tier_default = consumer-product policy
-    interview_answers:               # the resolved Q&A, with provenance
+    interview_answers:
       <question_id>:
         answer: <free-form>
         source: <product_profile | invariants | user | default>
-        evidence: <string | null>    # file path or "user reply at <timestamp>"
-    contributes_compliance_tags: [<string>, ...]   # final set, narrowed by interview answers
-    content_digest: <hex>            # SHA-256 of pack.yaml + interview.md + failures.md;
-                                     # lets re-runs notice when a pack itself has changed
+        evidence: <string | null>
+    contributes_compliance_tags: [<string>, ...]
+    content_digest: <hex>            # SHA-256 of pack.yaml + interview.md + failures.md
+    dependencies: [<pack_id>, ...]   # optional; carried from the pack manifest
+    conflicts:    [<pack_id>, ...]   # optional
+```
 
+## `evals/pipeline/product_profile.yaml`
 
+```yaml
 product_profile:
   domain: <string | null>
   user_types:
@@ -56,7 +105,7 @@ product_profile:
   business_model: <string | null>
   data_sensitivity:
     - kind: <string>
-      evidence: <string>      # "<file path>: <reason>"
+      evidence: <string>             # "<file path>: <reason>"
   regulatory_context:
     - regime: <string>
       evidence: <string>
@@ -64,131 +113,136 @@ product_profile:
     - signal: <string>
       evidence: <string>
   notable_dependencies: [<string>, ...]
+```
 
+## `evals/pipeline/invariants.yaml`
+
+```yaml
 implicit_invariants:
   - name: <snake_case>
     description: <string>
     confidence: <high | medium | low>
     evidence:
-      - <string>              # "<file path>: <reason>"
+      - <string>                     # "<file path>: <reason>"
     applies_to: <"all_call_sites" | [<call_site_id>, ...]>
 
 invariant_coverage:
   - invariant: <name>
     enforced_in: [<call_site_id>, ...]
     likely_gap_in: [<call_site_id>, ...]
+```
 
-# Runtime configuration consumed by downstream eval runners and CI integrations.
-# All fields optional; values shown are defaults the orchestrator writes when traces
-# are present (so cost/latency budgets are at least anchored to observed numbers).
-runtime:
-  judge_model: <string | null>           # e.g. "claude-sonnet-4-6"; null = runner default
-  judge_temperature: <float>              # default 0.0
-  max_concurrency: <int>                  # default 8
-  budget_usd_per_run: <float | null>      # soft cap; runner warns when exceeded
-  severity_policy:                        # how severities map to CI behavior
-    high: <block | warn | report>         # default: block
-    medium: <block | warn | report>       # default: warn
-    low: <block | warn | report>          # default: report
+## `evals/pipeline/call_sites/<id>.yaml`
+
+One file per call site. The orchestrator never reads these in bulk; per-step
+subagents read only the specific shard they're working on.
+
+```yaml
+id: <string>                       # snake_case label (Path B) or sha::<16hex> (Path A)
+use_case: <string | null>          # human-readable display hint
+provider: <string>                 # "anthropic" / "openai" / "litellm" / "other"
+model: <string | null>
+system_prompt: <string | null>
+shape: <enum>                      # see prompts/classify_shape.md
+shape_confidence: <high | medium | low>
+intent: <string>
+constraints:
+  - kind: <schema | length | format | refusal | citation | other>
+    description: <string>
+    enforcement: <deterministic | judge>
+sample_count: <int>
+
+# Path B (static repo)
+file_hint: <string | null>
+line_hint: <int | null>
+
+# Path A (traces)
+source_spans:
+  - trace_id: <hex>
+    span_id: <hex>
+    parent_span_id: <hex | null>
+    service_name: <string | null>
+    timestamp: <iso8601 | null>
+
+dataset_path: <string | null>      # e.g. "datasets/<id>.jsonl"
+
+observed:
+  first_seen: <iso8601 | null>
+  last_seen: <iso8601 | null>
+  error_rate: <float | null>
+  refusal_rate: <float | null>
+  p50_latency_ms: <int | null>
+  p95_latency_ms: <int | null>
+  p50_tokens_in: <int | null>
+  p95_tokens_in: <int | null>
+  p95_tokens_out: <int | null>
+  cost_estimate_usd: <float | null>
   redaction_state: <none | partial | redacted | unknown>
-                                          # set by Path A ingestion; "redacted" means
-                                          # one or more representative prompts were
-                                          # composed of placeholder tokens — calibrate
-                                          # accordingly.
 
-call_sites:
-  - id: <string>                     # source-code label (snake_cased) if discovered statically,
-                                     # else sha::<16-hex>. Synthetic hex = first 16 hex chars
-                                     # of SHA-256 over the normalized representative system
-                                     # prompt (strip outer whitespace, collapse internal
-                                     # whitespace runs to single space, lowercase). When no
-                                     # system prompt is available on the trace, hash the first
-                                     # 512 chars of the first user message instead. Stable
-                                     # across re-runs.
-    use_case: <string | null>        # human-readable display hint (e.g. OTel span name,
-                                     # gen_ai.operation.name, or static label). Not load-bearing
-                                     # for identity — id is the source of truth.
-    provider: <string>               # "anthropic" / "openai" / "litellm" / "other"
-    model: <string | null>
-    system_prompt: <string | null>
-    shape: <enum>                    # see prompts/classify_shape.md (extended in v0.2:
-                                     # adds embedding, rerank, guardrail, moderation,
-                                     # ensemble_vote)
-    shape_confidence: <enum>         # high / medium / low
-    intent: <string>
-    constraints:
-      - kind: <enum>                 # schema / length / format / refusal / citation / other
-        description: <string>
-        enforcement: <enum>          # deterministic / judge
-    sample_count: <int>
+discovered_at: <iso8601>           # written by step 1 subagent
+```
 
-    # Path B (static repo): file_hint + line_hint identify the source.
-    file_hint: <string | null>
-    line_hint: <int | null>
+After step 2+3+4 has run, the same shard carries `shape`, `shape_confidence`,
+`intent`, and `constraints` (initially absent — step-1 writes only the static /
+trace-derived fields).
 
-    # Path A (traces): source_spans link each call site back to the spans that produced it.
-    # Up to ~10 representative spans; if more existed, sample_count is the true total.
-    source_spans:
-      - trace_id: <hex string>
-        span_id: <hex string>
-        parent_span_id: <hex string | null>
-        service_name: <string | null>
-        timestamp: <iso8601 | null>
+## `evals/pipeline/chains.yaml`
 
-    # Path A: pointer to the captured-inputs dataset for this call site. Empty when no
-    # traces were provided.
-    dataset_path: <string | null>    # e.g. "datasets/checkout_extractor.jsonl"
-
-    # Path A: observed production stats over the trace window. Drives prioritization,
-    # cost/latency budgets, and the audit in step 4.7. All numbers optional individually.
-    observed:
-      first_seen: <iso8601 | null>
-      last_seen: <iso8601 | null>
-      error_rate: <float | null>            # fraction of spans with status=ERROR
-      refusal_rate: <float | null>          # fraction with finish_reasons containing refusal/content_filter
-      p50_latency_ms: <int | null>
-      p95_latency_ms: <int | null>
-      p50_tokens_in: <int | null>
-      p95_tokens_in: <int | null>
-      p95_tokens_out: <int | null>
-      cost_estimate_usd: <float | null>     # sum across observed spans, when input/output
-                                            # tokens and model price are known
-      redaction_state: <none | partial | redacted | unknown>
-                                            # per-site override of runtime.redaction_state
-
+```yaml
 chains:
   - id: <string>                     # chain::<short_snake_case_label>
     name: <string>
-    call_site_ids: [<string>, ...]   # ordered, A first
-    detection_method: <enum>         # trace_confirmed / state_mediated / sequential_composition / ensemble
-    confidence: <enum>               # high / medium / low
+    call_site_ids: [<string>, ...]
+    detection_method: <trace_confirmed | state_mediated | sequential_composition | ensemble>
+    confidence: <high | medium | low>
     rationale: <string>
-    # For ensembles: list of sibling span IDs so the runner can grade disagreement.
     ensemble_span_ids: [<hex>, ...]  # optional; only when detection_method == ensemble
+```
 
+## `evals/pipeline/failure_modes/<call_site_id>.yaml`
+
+One shard per call site, holding only that site's `scope: single_call` failures.
+
+```yaml
 failure_modes:
-  - id: <string>                     # <call_site_id>::<name> OR <chain_id>::<name>.
-                                     # Pack identity is NEVER part of the id — packs are
-                                     # tags (see pack_ids below). The only exception is
-                                     # the rare "conflict suffix" case at step 4.6, where
-                                     # two packs propose the same name with materially
-                                     # different rubrics; the second is renamed
-                                     # <name>__<pack_id>. Validator warns.
-    scope: <single_call | chain>
-    call_site_id: <string | null>
-    chain_id: <string | null>
+  - id: <string>                     # <call_site_id>::<name>
+    scope: single_call
+    call_site_id: <string>
+    chain_id: null
     name: <string>
     description: <string>
-    severity: <enum>                 # low / medium / high
-    layer: <A | B | C | null>        # C = adversarial / operational (added in v0.2)
-    pack_ids: [<string>, ...]        # set; empty/[] = baseline. Multiple packs can claim
-                                     # the same failure — step 4.6 merges them with union
-                                     # semantics. Every entry must resolve to pipeline.packs[].id.
-    compliance_tags: [<string>, ...] # set; union of contributing packs' tags, narrowed
-                                     # by interview answers. Free-form strings.
-    taxonomy_node_id: <string>
-    grader_id: <string>              # join key into evals/graders/<grader_id_safe>.yaml
+    severity: <low | medium | high>
+    layer: <A | B | C>
+    pack_ids: [<string>, ...]
+    compliance_tags: [<string>, ...]
+    taxonomy_node_id: <string>       # populated by step 5
+    grader_id: <string>              # <failure_mode_id>::grader
+```
 
+## `evals/pipeline/failure_modes/_chains.yaml`
+
+All chain failures live in one shard (small set, cross-chain visibility helps
+during dedup):
+
+```yaml
+failure_modes:
+  - id: <string>                     # <chain_id>::<name>
+    scope: chain
+    call_site_id: null
+    chain_id: <string>
+    name: <string>
+    description: <string>
+    severity: <low | medium | high>
+    layer: null                      # chain failures are not in the A/B/C layering
+    pack_ids: [<string>, ...]
+    compliance_tags: [<string>, ...]
+    taxonomy_node_id: <string>
+    grader_id: <string>
+```
+
+## `evals/pipeline/taxonomy.yaml`
+
+```yaml
 taxonomy:
   - id: <string>                     # tax::<slug> or tax::<parent>::<sub>
     name: <string>
@@ -198,11 +252,10 @@ taxonomy:
     example_chain_ids: [<string>, ...]
 ```
 
-Note: `graders[]` is NOT in `pipeline.yaml`. Graders live in their own files for isolation, per-grader validation, and clean diffs.
-
 ## `evals/graders/<grader_id_safe>.yaml`
 
-One file per grader. Required keys (see `contract/grader.schema.json` for the full schema):
+One file per grader. Required keys (see `contract/grader.schema.json` for the
+full schema):
 
 ```yaml
 id: <string>                         # canonical, with `::`
@@ -210,30 +263,28 @@ scope: <single_call | chain>
 failure_mode_id: <string>
 call_site_id: <string | null>        # required when scope == single_call
 chain_id: <string | null>            # required when scope == chain
-name: <string>                       # human-readable
+name: <string>
 
 kind: <llm_judge | deterministic | execution>
-applies_when: <string | null>        # natural-language precondition; null when always applicable
-applies_when_check: <string | null>  # code-evaluable mirror; required when kind=deterministic
-                                     # AND applies_when is non-empty
+applies_when: <string | null>
+applies_when_check: <string | null>  # required when kind=deterministic AND applies_when set
 
-# Required when kind == llm_judge:
+# kind == llm_judge:
 judge_prompt: <string>
 rubric: <string>
 
-# Required when kind == deterministic:
-deterministic_check: <string>        # description of the code-level check (actual code lives in-app)
+# kind == deterministic:
+deterministic_check: <string>
 
-# Required when kind == execution:
-execution_spec: <string>             # what runs against the live system
+# kind == execution:
+execution_spec: <string>
 
 self_tests:
-  # Single-call form (one synthetic output):
-  - sample_output: <string>
+  - sample_output: <string>          # single_call form
     expected_verdict: <pass | fail | not_applicable>
     category: <clear_pass | clear_fail | near_miss | adversarial | not_applicable>
     rationale: <string>
-  # OR chain form (N-tuple keyed by call_site_id):
+  # or chain form:
   - call_site_outputs:
       <call_site_id_a>: <synthetic output A>
       <call_site_id_b>: <synthetic output B>
@@ -242,69 +293,88 @@ self_tests:
     rationale: <string>
 
 self_test_pass_rate: <float | null>  # filled by step 6 calibration
-self_test_variance: <float | null>   # filled by step 6 calibration; flip rate across order-permuted reruns
+self_test_variance: <float | null>
 confidence: <high | medium | low>
-rationale: <string>                  # one line; user-impact framing
-taxonomy_node_id: <string>           # propagated from failure mode
+rationale: <string>
+taxonomy_node_id: <string>
 
-# Operational fields (all optional). Defaults pulled from runtime.severity_policy.
-owner: <string | null>               # e.g. "@oncall-ml"
-block_on_fail: <bool | null>         # null = inherit from severity_policy
+owner: <string | null>
+block_on_fail: <bool | null>
 cost_budget_tokens: <int | null>
 latency_budget_ms_p95: <int | null>
-pack_ids: [<string>, ...]            # set; propagated from failure_modes[].pack_ids
-compliance_tags: [<string>, ...]     # set; propagated from failure_modes[].compliance_tags
-dataset_refs:                        # pointers to real inputs (or null/[])
+pack_ids: [<string>, ...]
+compliance_tags: [<string>, ...]
+dataset_refs:
   - trace_id: <hex>
     span_id: <hex>
     label: <string | null>
   - file: <"path:line">
   - jsonl_path: <"datasets/<call_site_id>.jsonl">
 
-# Provenance + lock metadata for survivable re-runs.
 _meta:
-  author: <string>                   # "default" | "evals-prompt" | ...
+  author: <string>
   author_contract_version: 2
   synthesized_at: <iso8601>
-  synth_inputs_digest: <hex>         # SHA-256 over canonical author input
-  locked_fields: [<field>, ...]      # fields a re-run must preserve verbatim
-  human_edited: <bool>               # set by curators / tooling
+  synth_inputs_digest: <hex>
+  locked_fields: [<field>, ...]
+  human_edited: <bool>
 
-# Optional — present only when validate.py was unable to produce a clean grader after 3 retries.
-# Step 6 audit surfaces these.
+# Present only when validate.py was unable to produce a clean grader after 3 retries.
 _validation_error: <string | null>
 ```
 
 ### Validator invariants
 
-The full rule list is in `contract/AUTHORING_CONTRACT.md` § "Invariants the author must satisfy" (canonical for humans) and `contract/grader.schema.json` (canonical for machines). `validate.py` is the enforcer. This document only describes the **on-disk shape**; refer to the contract for the rules.
+The full rule list lives in `contract/AUTHORING_CONTRACT.md` (canonical for
+humans) and `contract/grader.schema.json` (canonical for machines).
+`validate.py` is the enforcer. This document only describes the **on-disk
+shape**; refer to the contract for the rules.
 
-Bundle-level invariants (FM↔grader bijection, chain DAG acyclicity, duplicate IDs, taxonomy reachability, layer-A/B coverage gates) are enforced by `validate.py --bundle evals/`.
+Bundle-level invariants (FM↔grader bijection, chain DAG acyclicity, duplicate
+IDs, taxonomy reachability, layer-A/B/C coverage gates) are enforced by
+`validate.py --bundle evals/`. The bundle validator assembles the logical
+pipeline view from the shards before running its checks.
 
 ## `evals/datasets/<call_site_id>.jsonl`
 
-Optional. Written by Path A ingestion (one row per representative span captured for that call site). Format:
+Optional. Written by Path A ingestion (one row per representative span captured
+for that call site).
 
 ```jsonl
 {"trace_id": "<hex>", "span_id": "<hex>", "parent_span_id": "<hex|null>", "timestamp": "<iso8601>", "input_messages": [{"role":"system|user|assistant|tool","content":"..."}], "observed_output": "<string>", "observed_finish_reason": "<string|null>", "observed_tokens_in": <int|null>, "observed_tokens_out": <int|null>, "redaction_state": "<none|partial|redacted>"}
 ```
 
-The runner can replay these against each grader without needing to re-fetch the original trace store. Spans with `redaction_state: redacted` should be filtered out unless the runner has a re-hydration pathway.
+Spans with `redaction_state: redacted` should be filtered out by the runner
+unless it has a re-hydration pathway.
 
 ## `evals/.synth-lock.yaml`
 
-Written at the end of every successful run. Format:
+Written at the end of every successful run.
 
 ```yaml
 version: 1
 synthesized_at: <iso8601>
 inputs_digest: <hex>                 # SHA-256 over the orchestrator inputs (repo digest + traces digest + product hint)
+shards:                              # SHA-256 of every pipeline/* shard file
+  pipeline/meta.yaml: <hex>
+  pipeline/packs.yaml: <hex>
+  pipeline/product_profile.yaml: <hex>
+  pipeline/invariants.yaml: <hex>
+  pipeline/chains.yaml: <hex>
+  pipeline/taxonomy.yaml: <hex>
+  pipeline/call_sites/<id>.yaml: <hex>
+  pipeline/failure_modes/<id>.yaml: <hex>
+  pipeline/failure_modes/_chains.yaml: <hex>
 graders:
-  <grader_id_safe>: <content sha256>
-  ...
+  <grader_id_safe>: <hex>
 ```
 
-On the next run, the orchestrator compares each grader file's current hash against this lock. A divergence on a file whose `_meta.locked_fields` is empty triggers a `WARN: <file> diverged from lock without locked_fields — pass --force to overwrite or set locked_fields to preserve`. With `--force`, files are overwritten regardless.
+On the next run, the orchestrator compares each grader file's current hash
+against the lock. A divergence on a file whose `_meta.locked_fields` is empty
+triggers a `WARN: <file> diverged from lock without locked_fields — pass
+--force to overwrite or set locked_fields to preserve`. Shard divergences are
+informational only — shards under `pipeline/` are orchestrator-owned, not
+human-curated, so they are always overwritten on re-run.
 
 ## `evals/report.md`
 
@@ -316,21 +386,11 @@ On the next run, the orchestrator compares each grader file's current hash again
 **Summary:** <N> call sites, <C> chains, <M> single-call failures + <X> chain failures, <K> graders (<single_K> single-call + <chain_K> chain, <F> failed validation, <L> low-confidence, <A> adversarial-flagged), <T> taxonomy nodes, <P> packs.
 
 ## Engaged packs
-Per-pack table: id | name | tier_hint | enabled_by | contributed failures | interview Q&A (pre-filled vs asked)
-
 ## Product profile
-...
 ## Implicit invariants
-...
 ## Failure taxonomy
-...
 ## Chains
-...
 ## Call sites
-...
 ## Observed production stats
-...
 ## Validation warnings (only when F > 0)
-
-- `<grader_id>` — `<file>` — `<_validation_error>`
 ```

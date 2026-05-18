@@ -4,15 +4,20 @@ validate.py — authoritative validator for synthesize-graders output.
 
 Two modes:
 
-    Per-file (legacy):
+    Per-file:
         python3 validate.py evals/graders/<file>.yaml
-        python3 validate.py evals/graders/<file>.yaml --pipeline evals/pipeline.yaml
+        python3 validate.py evals/graders/<file>.yaml --pipeline evals/
 
-    Bundle (v0.2 — recommended at step 7):
+    Bundle (v0.4 — recommended at step 7):
         python3 validate.py --bundle evals/
 
-    Bundle + pack filter (v0.3 — coverage matrix for one pack):
+    Bundle + pack filter:
         python3 validate.py --bundle evals/ --pack security
+
+In v0.4 the pipeline is sharded under evals/pipeline/*.yaml; the validator
+assembles a v0.3-compatible logical mapping via pipeline_io.load_pipeline()
+and runs every check unchanged against that mapping. Passing a directory to
+--pipeline (per-file mode) also routes through the shard loader.
 
 Per-file mode enforces the rules defined in `contract/AUTHORING_CONTRACT.md` and
 `contract/grader.schema.json`. Bundle mode runs every per-file check across the
@@ -50,6 +55,10 @@ try:
 except ImportError:
     print("validate.py: requires PyYAML. Install: pip install pyyaml", file=sys.stderr)
     sys.exit(2)
+
+# Local import — pipeline_io ships in the same plugin dir as this script.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import pipeline_io  # noqa: E402
 
 
 # ----------------------------------------------------------------------------
@@ -750,15 +759,24 @@ def _run_per_file(grader_path: Path, pipeline_path: Path | None) -> int:
 
     pipeline: Mapping[str, Any] | None = None
     if pipeline_path:
-        if not pipeline_path.is_file():
-            print(f"validate.py: --pipeline file not found: {pipeline_path}", file=sys.stderr)
+        # --pipeline accepts an evals/ directory (preferred) for the v0.4 sharded
+        # layout, or a legacy single pipeline.yaml file.
+        if pipeline_path.is_dir():
+            try:
+                pipeline = pipeline_io.load_pipeline(pipeline_path)
+            except RuntimeError as e:
+                print(f"validate.py: {e}", file=sys.stderr)
+                return 1
+        elif pipeline_path.is_file():
+            loaded = _load_yaml(pipeline_path, "pipeline")
+            if not isinstance(loaded, dict):
+                print(f"validate.py: {pipeline_path}: must be a YAML mapping at the top level",
+                      file=sys.stderr)
+                return 1
+            pipeline = loaded
+        else:
+            print(f"validate.py: --pipeline path not found: {pipeline_path}", file=sys.stderr)
             return 2
-        loaded = _load_yaml(pipeline_path, "pipeline")
-        if not isinstance(loaded, dict):
-            print(f"validate.py: {pipeline_path}: must be a YAML mapping at the top level",
-                  file=sys.stderr)
-            return 1
-        pipeline = loaded
 
     errors = validate_grader(grader, pipeline)
     if errors:
@@ -809,13 +827,19 @@ def _run_bundle(evals_dir: Path, calibration_csv: Path | None,
         print(f"validate.py: --bundle path is not a directory: {evals_dir}", file=sys.stderr)
         return 2
 
-    pipeline_path = evals_dir / "pipeline.yaml"
-    if not pipeline_path.is_file():
-        print(f"validate.py: {pipeline_path} missing", file=sys.stderr)
+    pipeline_root = evals_dir / "pipeline"
+    if not pipeline_root.is_dir():
+        print(f"validate.py: {pipeline_root}/ missing (v0.4 sharded layout)",
+              file=sys.stderr)
         return 2
-    pipeline = _load_yaml(pipeline_path, "pipeline")
+    try:
+        pipeline = pipeline_io.load_pipeline(evals_dir)
+    except RuntimeError as e:
+        print(f"validate.py: {e}", file=sys.stderr)
+        return 1
     if not isinstance(pipeline, dict):
-        print(f"validate.py: {pipeline_path}: must be a YAML mapping", file=sys.stderr)
+        print(f"validate.py: {pipeline_root}: assembled pipeline view is not a mapping",
+              file=sys.stderr)
         return 1
 
     graders_dir = evals_dir / "graders"
@@ -877,7 +901,8 @@ def _run_bundle(evals_dir: Path, calibration_csv: Path | None,
 def main() -> int:
     ap = argparse.ArgumentParser(description="Validate a grader YAML or a full evals/ bundle.")
     ap.add_argument("file", nargs="?", help="Path to a grader YAML file (per-file mode).")
-    ap.add_argument("--pipeline", help="Optional path to pipeline.yaml for per-file cross-checks.")
+    ap.add_argument("--pipeline", help="Optional path to evals/ (preferred) or a legacy "
+                                       "pipeline.yaml file for per-file cross-checks.")
     ap.add_argument("--bundle", help="Path to an evals/ directory for full-bundle validation.")
     ap.add_argument("--calibration-set", help="Optional CSV (grader_id,sample_output,verdict) for "
                                               "informational agreement reporting.")

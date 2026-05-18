@@ -4,7 +4,12 @@
   "plugins": [
     {
       "name": "evals",
-      "source": "./plugins/evals",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/tessaryai/plugins.git",
+        "path": "plugins/evals",
+        "ref": "evals-v0.4.0"
+      },
       "description": "Synthesize an eval pipeline for any LLM-using product."
     }
   ]

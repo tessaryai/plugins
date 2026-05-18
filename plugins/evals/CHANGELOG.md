@@ -1,8 +1,25 @@
 # synthesize-graders — changelog & migration notes
 
-This document summarizes every change to `synthesize-graders` since the initial commit (`92a4802`). It is written for **consumers of synthesize-graders output** — the teams whose runners, viewers, CI integrations, or curation tools read `evals/pipeline.yaml` and `evals/graders/*.yaml` — and tells you what your code needs to change to consume the current output cleanly.
+This document summarizes every change to `synthesize-graders` since the initial commit (`92a4802`). It is written for **consumers of synthesize-graders output** — the teams whose runners, viewers, CI integrations, or curation tools read `evals/pipeline/*.yaml` and `evals/graders/*.yaml` — and tells you what your code needs to change to consume the current output cleanly.
 
-> **TL;DR (v0.3, current)**
+> **TL;DR (v0.4, current — breaking layout change)**
+> - **Pipeline split into shards.** What was `evals/pipeline.yaml` is now `evals/pipeline/{meta,packs,product_profile,invariants,chains,taxonomy}.yaml` plus per-site files under `evals/pipeline/call_sites/` and `evals/pipeline/failure_modes/`. Consumers that read the monolithic file must migrate: use the bundled `pipeline_io.load_pipeline(evals_dir)` helper for a v0.3-compatible assembled mapping, or read shards directly.
+> - **Orchestrator architecture rewritten for large repos.** Steps 0 and 1 now run as parallel subagents; steps 2+3+4 are folded into a per-call-site subagent fan-out (batches of 30); steps 4.6, 4.7, 7 are deterministic Python scripts. The main agent holds only small return manifests — never call-site bodies, failure descriptions, taxonomy details, or grader bodies. Repos with 30–50+ call sites now synthesize cleanly without main-context exhaustion or token-budget overflow on the final write.
+> - **New bundled scripts** under the plugin root: `dedup.py` (step 4.6), `audit.py` (step 4.7), `finalize.py` (step 7 — writes meta.yaml, report.md, .synth-lock.yaml, runs the bundle validator), `pipeline_io.py` (shared shard reader/writer).
+> - **`validate.py --bundle`** now walks `evals/pipeline/**` shards (via `pipeline_io.load_pipeline`) instead of a single `pipeline.yaml`. Per-file mode's `--pipeline` flag now accepts an `evals/` directory in addition to a legacy `pipeline.yaml` file.
+> - **`viewer.py`** consumes the sharded layout via the same loader; the HTML template (`viewer_template/`) is unchanged.
+> - **`.synth-lock.yaml`** now records SHA-256 of every shard *and* every grader. Shard divergences are informational (shards under `pipeline/` are orchestrator-owned); grader divergences still trigger the v0.3 `human_edited` / `locked_fields` flow.
+> - **No grader-contract change.** `contract/AUTHORING_CONTRACT.md`, `contract/grader.schema.json`, `contract/pack.schema.json`, and the bundled packs are unchanged. Grader files on disk are unchanged.
+>
+> **Migration note for consumers:** if you read `evals/pipeline.yaml` today, switch to one of:
+> ```python
+> import sys; sys.path.insert(0, "<plugin>")
+> import pipeline_io
+> pipeline = pipeline_io.load_pipeline(Path("evals"))  # v0.3-compatible mapping
+> ```
+> or read shards directly per `output_format.md`.
+
+> **TL;DR (v0.3 — previous)**
 > - **Pipeline schema bumped from v0.2.0 → v0.3.0.** New top-level `packs[]` block; new `failure_modes[].pack_ids` and `failure_modes[].compliance_tags` (set-valued tags, not part of identity); grader files mirror these tags. New `pack.schema.json` defines manifests.
 > - **Four bundled packs ship by default**: `quality` (always-on, free), `security` (addon — covers all governance/regulatory/PII), `reliability` (included — anchored to observed.* stats), `brand` (addon).
 > - **New step 0.5 — pack discovery + pre-filled interview.** Interview questions are answered automatically from step-0 product analysis where possible; the user is only asked when no signal exists in the repo.
