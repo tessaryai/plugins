@@ -1,0 +1,29 @@
+id: reliability
+name: "Reliability"
+version: "1.0.0"
+description: "Operational fitness — cost, latency, non-determinism, error handling, and graceful degradation."
+contract_version: 1
+tier_hint: included
+
+interview_prompt: interview.md
+failure_prompt: failures.md
+
+# Recommended on automatically when traces are available — observed.* stats let
+# the pack anchor cost/latency budgets to real production numbers rather than
+# guessing.
+applies_when:
+  always: false
+  auto_signals:
+    - "any call_site has observed.p95_latency_ms set (traces were ingested)"
+    - "any call_site has observed.cost_estimate_usd set"
+
+default_layer_distribution:
+  A: 0
+  B: 0
+  C: 4
+
+contributes_compliance_tags:
+  - "NIST-AI-RMF.MS-2.5"     # AI system reliability and operational characteristics
+
+dependencies: []
+conflicts: []

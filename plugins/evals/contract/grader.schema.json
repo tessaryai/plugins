@@ -1,0 +1,309 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://evals.tessary.ai/schemas/grader.v2.json",
+  "title": "Grader (on-disk form)",
+  "description": "Schema for one grader YAML file under evals/graders/. The authoritative validator is validate.py (at the plugin root), which enforces these structural rules plus cross-field invariants and optional pipeline.yaml / bundle cross-references. This schema is the contract any grader author must satisfy; validate.py is the enforcer. v2 adds: self_tests[].category, applies_when_check (deterministic graders), per-grader runtime fields (owner, block_on_fail, cost/latency budgets, dataset_refs), and a _meta provenance block for survivable re-runs.",
+  "type": "object",
+  "required": [
+    "id",
+    "scope",
+    "failure_mode_id",
+    "name",
+    "kind",
+    "confidence",
+    "rationale",
+    "taxonomy_node_id",
+    "self_tests"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Stable grader ID. For single_call: `<failure_mode_id>::grader`. For chain: `<chain_id>::<failure_name>::grader`. Attached by orchestrator, not author."
+    },
+    "scope": {
+      "enum": ["single_call", "chain"]
+    },
+    "failure_mode_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "call_site_id": {
+      "type": ["string", "null"],
+      "description": "Required and non-empty when scope=single_call; must be null/absent when scope=chain."
+    },
+    "chain_id": {
+      "type": ["string", "null"],
+      "description": "Required and non-empty when scope=chain; must be null/absent when scope=single_call."
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "taxonomy_node_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Attached by orchestrator at step 5 (clustering), before grader synthesis fan-out, so step-6 subagents can splice it onto each grader at write time."
+    },
+
+    "kind": {
+      "enum": ["llm_judge", "deterministic", "execution"]
+    },
+    "applies_when": {
+      "type": ["string", "null"],
+      "description": "Natural-language predicate the judge evaluates before applying the rubric. Bidirectional invariant (enforced by validate.py): if set to a non-empty string, at least one self_test must have expected_verdict=not_applicable; if absent, null, or empty string, no self_test may use not_applicable."
+    },
+    "applies_when_check": {
+      "type": ["string", "null"],
+      "description": "Code-evaluable precondition mirroring applies_when. Required when kind=deterministic AND applies_when is non-empty (validate.py enforces). Phrased as a one-sentence predicate a developer can implement as a function returning bool — when true, run deterministic_check; when false, the grader skips the output."
+    },
+    "judge_prompt": {
+      "type": "string",
+      "description": "Required and non-empty when kind=llm_judge."
+    },
+    "rubric": {
+      "type": "string",
+      "description": "Required and non-empty when kind=llm_judge."
+    },
+    "deterministic_check": {
+      "type": "string",
+      "description": "Required and non-empty when kind=deterministic."
+    },
+    "execution_spec": {
+      "type": "string",
+      "description": "Required and non-empty when kind=execution."
+    },
+
+    "confidence": {
+      "enum": ["high", "medium", "low"],
+      "description": "Author-assigned initial confidence; may be overwritten by orchestrator at step 6 (self-test calibration)."
+    },
+    "self_test_pass_rate": {
+      "type": ["number", "null"],
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Populated by orchestrator at step 6."
+    },
+    "self_test_variance": {
+      "type": ["number", "null"],
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Populated by orchestrator at step 6 — fraction of self-tests whose verdict flipped between two independent rubric applications (order-permuted, same content). Higher = less trustworthy judge. validate.py does not enforce a threshold; the orchestrator demotes confidence when variance > 0.2."
+    },
+    "rationale": {
+      "type": "string",
+      "minLength": 1,
+      "description": "One sentence in user-impact terms for the curation report."
+    },
+
+    "self_tests": {
+      "type": "array",
+      "minItems": 3,
+      "items": { "$ref": "#/$defs/self_test" },
+      "description": "Author must include at least one pass and at least one fail. If applies_when is set, must also include at least one not_applicable. Author must also include at least one adversarial self-test (a sample_output that attempts to manipulate the judge — prompt-injection, role-confusion, fake prior-verdict) with expected_verdict=fail — validate.py enforces this when there are >= 4 entries."
+    },
+
+    "owner": {
+      "type": ["string", "null"],
+      "description": "Optional. Free-text owner or team handle responsible for this grader (e.g. '@oncall-ml', 'platform-team'). Surfaced in the viewer and report; not load-bearing."
+    },
+    "block_on_fail": {
+      "type": ["boolean", "null"],
+      "description": "Optional override for the global severity_policy (in pipeline.yaml runtime.severity_policy). When true, a failing grader blocks CI/release regardless of severity. When false, a failing grader is report-only. When absent, the severity_policy default applies."
+    },
+    "cost_budget_tokens": {
+      "type": ["integer", "null"],
+      "minimum": 0,
+      "description": "Optional. Soft budget (input + output tokens) for one judge invocation. Runtime warns when exceeded."
+    },
+    "latency_budget_ms_p95": {
+      "type": ["integer", "null"],
+      "minimum": 0,
+      "description": "Optional. Soft p95 latency budget for one judge invocation. Runtime warns when exceeded."
+    },
+    "dataset_refs": {
+      "type": ["array", "null"],
+      "items": { "$ref": "#/$defs/dataset_ref" },
+      "description": "Optional. Pointers to real inputs this grader should run against — captured trace span IDs or file:line source locations. Populated by orchestrator from Path A trace ingestion or Path B static discovery. Empty/absent means 'no captured dataset; rely on self_tests only'."
+    },
+
+    "pack_ids": {
+      "type": ["array", "null"],
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true,
+      "description": "Set of pack ids this grader's failure mode belongs to (propagated from failure_modes[].pack_ids). Empty / absent = baseline (not pack-contributed). Each entry must resolve to a pipeline.packs[].id; validate.py --bundle enforces."
+    },
+    "compliance_tags": {
+      "type": ["array", "null"],
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true,
+      "description": "Set of control IDs this grader maps to (e.g. 'EU-AI-Act.Art-13', 'HIPAA-164.514', 'NIST-AI-RMF.MS-2.6'). Free-form strings — no enum check — so consumers can adopt their own GRC framework IDs. Propagated from failure_modes[].compliance_tags."
+    },
+
+    "_meta": {
+      "$ref": "#/$defs/meta",
+      "description": "Provenance + lock metadata used to survive re-runs. Orchestrator writes this on first emission; carries forward across re-syntheses; respects locked_fields on overwrite."
+    },
+
+    "_validation_error": {
+      "type": "string",
+      "description": "Set by the step-6 subagent if validation kept failing after 3 retries. Presence of this key is an explicit accepted-broken signal — validate.py short-circuits all other rules and returns 0 when this key is present, so the file is not re-flagged by later --pipeline cross-check passes. The operator-facing report.md and the failed-validation count in the summary line surface these files."
+    }
+  },
+
+  "allOf": [
+    {
+      "if": { "properties": { "scope": { "const": "single_call" } } },
+      "then": {
+        "required": ["call_site_id"],
+        "properties": {
+          "call_site_id": { "type": "string", "minLength": 1 },
+          "chain_id": { "type": "null" }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "scope": { "const": "chain" } } },
+      "then": {
+        "required": ["chain_id"],
+        "properties": {
+          "chain_id": { "type": "string", "minLength": 1 },
+          "call_site_id": { "type": "null" }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "llm_judge" } } },
+      "then": { "required": ["judge_prompt", "rubric"] }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "deterministic" } } },
+      "then": { "required": ["deterministic_check"] }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "execution" } } },
+      "then": { "required": ["execution_spec"] }
+    },
+    {
+      "comment": "Bidirectional applies_when invariant. When applies_when is null/absent, no self_test may declare expected_verdict=not_applicable.",
+      "if": {
+        "anyOf": [
+          { "not": { "required": ["applies_when"] } },
+          { "properties": { "applies_when": { "type": "null" } } },
+          { "properties": { "applies_when": { "const": "" } } }
+        ]
+      },
+      "then": {
+        "properties": {
+          "self_tests": {
+            "items": {
+              "properties": {
+                "expected_verdict": { "enum": ["pass", "fail", "not_applicable"] }
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+
+  "$defs": {
+    "self_test": {
+      "type": "object",
+      "required": ["expected_verdict", "rationale"],
+      "properties": {
+        "expected_verdict": {
+          "enum": ["pass", "fail", "not_applicable"]
+        },
+        "category": {
+          "enum": ["clear_pass", "clear_fail", "near_miss", "adversarial", "not_applicable"],
+          "description": "Taxonomy of self-test purpose. clear_pass/clear_fail anchor calibration; near_miss probes rubric sharpness; adversarial probes the judge's resistance to prompt-injection / role-confusion / fake prior verdicts in sample_output; not_applicable matches applies_when. validate.py requires at least one adversarial entry when self_tests has >= 4 items; recommends one of each otherwise. When absent, validate.py treats the entry as 'uncategorized' (no enforcement)."
+        },
+        "rationale": {
+          "type": "string",
+          "minLength": 1,
+          "description": "One sentence explaining why this case carries the expected verdict."
+        },
+        "sample_output": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Required for scope=single_call; must be absent for scope=chain."
+        },
+        "call_site_outputs": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": { "type": "string", "minLength": 1 },
+          "description": "Required for scope=chain. Keys must equal the chain's call_site_ids set (cross-checked by validate.py against pipeline.yaml). Values are the per-call outputs."
+        }
+      }
+    },
+    "dataset_ref": {
+      "type": "object",
+      "description": "One pointer to a real input this grader can be run against.",
+      "anyOf": [
+        { "required": ["trace_id", "span_id"] },
+        { "required": ["file"] },
+        { "required": ["jsonl_path"] }
+      ],
+      "properties": {
+        "trace_id": {
+          "type": "string",
+          "description": "OTel trace_id (hex). Paired with span_id."
+        },
+        "span_id": {
+          "type": "string",
+          "description": "OTel span_id (hex)."
+        },
+        "file": {
+          "type": "string",
+          "description": "Source-code location, e.g. 'src/handlers/email.py:142'."
+        },
+        "jsonl_path": {
+          "type": "string",
+          "description": "Path (relative to evals/) of a JSONL dataset capturing inputs for this call site, e.g. 'datasets/<call_site_id>.jsonl'."
+        },
+        "label": {
+          "type": "string",
+          "description": "Optional human label."
+        }
+      }
+    },
+    "meta": {
+      "type": "object",
+      "description": "Provenance + lock metadata. Allows re-runs to carry hand-edits forward.",
+      "required": ["author", "synthesized_at", "synth_inputs_digest"],
+      "properties": {
+        "author": {
+          "type": "string",
+          "description": "Identifier of the grader author that produced this file (e.g. 'default', 'evals-prompt')."
+        },
+        "author_contract_version": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Contract version the author conformed to (currently 2)."
+        },
+        "synthesized_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO-8601 timestamp of when this file was synthesized."
+        },
+        "synth_inputs_digest": {
+          "type": "string",
+          "minLength": 8,
+          "description": "Hex digest (first 16+ chars of SHA-256) over the canonical author input: failure_mode + call_site/chain + product_profile snapshot. Re-runs that produce the same digest may safely overwrite locked_fields=[] graders without diff churn."
+        },
+        "locked_fields": {
+          "type": "array",
+          "items": {
+            "enum": ["judge_prompt", "rubric", "applies_when", "applies_when_check", "deterministic_check", "execution_spec", "self_tests", "owner", "block_on_fail", "cost_budget_tokens", "latency_budget_ms_p95"]
+          },
+          "description": "Fields the orchestrator must preserve verbatim on re-run. Set by humans during curation (or by --lock at the CLI). On overwrite, the orchestrator loads the existing file, retains values for every key in this list, and only refreshes other fields."
+        },
+        "human_edited": {
+          "type": "boolean",
+          "description": "Set to true by curators (or by tooling) to mark the file as touched. Re-runs warn before overwriting human_edited files unless --force."
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "name": "tessary",
+  "owner": { "name": "Tessary AI", "email": "nidhi@tessary.ai" },
+  "plugins": [
+    {
+      "name": "evals",
+      "source": "./plugins/evals",
+      "description": "Synthesize an eval pipeline for any LLM-using product."
+    }
+  ]
+}

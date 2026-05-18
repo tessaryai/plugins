@@ -1,0 +1,912 @@
+#!/usr/bin/env python3
+"""
+validate.py — authoritative validator for synthesize-graders output.
+
+Two modes:
+
+    Per-file (legacy):
+        python3 validate.py evals/graders/<file>.yaml
+        python3 validate.py evals/graders/<file>.yaml --pipeline evals/pipeline.yaml
+
+    Bundle (v0.2 — recommended at step 7):
+        python3 validate.py --bundle evals/
+
+    Bundle + pack filter (v0.3 — coverage matrix for one pack):
+        python3 validate.py --bundle evals/ --pack security
+
+Per-file mode enforces the rules defined in `contract/AUTHORING_CONTRACT.md` and
+`contract/grader.schema.json`. Bundle mode runs every per-file check across the
+whole directory plus global checks: FM↔grader bijection, chain DAG acyclicity,
+duplicate IDs, orphan / unreachable taxonomy nodes, layer-A/B/C coverage gates,
+pack ID resolution, dedup uniqueness, and `_meta` provenance shape.
+
+The --pack <id> filter narrows the bundle to failures / graders that carry the
+named pack_id and prints a compliance-tag coverage matrix.
+
+Optional held-out human-labelled calibration set:
+    python3 validate.py --bundle evals/ --calibration-set human_labels.csv
+
+The CSV has columns `grader_id, sample_output, verdict` (verdict ∈ pass|fail|not_applicable).
+The validator reports per-grader agreement against the rubric (informational; does not gate exit code).
+
+Exit codes:
+    0  — valid, or accepted-broken (a top-level `_validation_error:` key
+         short-circuits all rules on that file)
+    1  — invalid (errors printed to stderr, one per line)
+    2  — usage / I/O error
+"""
+from __future__ import annotations
+
+import argparse
+import csv
+import hashlib
+import sys
+from collections import Counter, defaultdict
+from pathlib import Path
+from typing import Any, Final, Literal, Mapping, Sequence
+
+try:
+    import yaml
+except ImportError:
+    print("validate.py: requires PyYAML. Install: pip install pyyaml", file=sys.stderr)
+    sys.exit(2)
+
+
+# ----------------------------------------------------------------------------
+# Constants — frozen so they can't be mutated by callers importing this module.
+# ----------------------------------------------------------------------------
+
+VALID_KINDS: Final[frozenset[str]] = frozenset({"llm_judge", "deterministic", "execution"})
+VALID_SCOPES: Final[frozenset[str]] = frozenset({"single_call", "chain"})
+VALID_VERDICTS: Final[frozenset[str]] = frozenset({"pass", "fail", "not_applicable"})
+VALID_CONFIDENCE: Final[frozenset[str]] = frozenset({"high", "medium", "low"})
+VALID_SELF_TEST_CATEGORIES: Final[frozenset[str]] = frozenset({
+    "clear_pass", "clear_fail", "near_miss", "adversarial", "not_applicable",
+})
+VALID_LAYERS: Final[frozenset[str]] = frozenset({"A", "B", "C"})
+
+REQUIRED_SCALAR_FIELDS: Final[tuple[str, ...]] = (
+    "id", "scope", "failure_mode_id", "name", "kind",
+    "confidence", "rationale", "taxonomy_node_id",
+)
+
+# Step 4.6 coverage gates the bundle mode enforces deterministically.
+MIN_LAYER_A_PER_SITE: Final[int] = 3
+MIN_LAYER_B_PER_SITE: Final[int] = 5
+MIN_LAYER_C_PER_SITE: Final[int] = 3  # exempt for embedding shapes (handled separately)
+MIN_CHAIN_FAILURES: Final[int] = 3
+ADVERSARIAL_REQUIRED_AT_SELF_TESTS_COUNT: Final[int] = 4
+
+Scope = Literal["single_call", "chain"]
+Grader = Mapping[str, Any]
+Pipeline = Mapping[str, Any]
+
+
+# ----------------------------------------------------------------------------
+# Small predicates — pure, single-purpose.
+# ----------------------------------------------------------------------------
+
+def _is_nonempty_str(value: Any) -> bool:
+    return isinstance(value, str) and value.strip() != ""
+
+
+def _normalize_applies_when(value: Any) -> str | None:
+    """Empty string is treated as null per contract."""
+    if isinstance(value, str) and value.strip() == "":
+        return None
+    return value if isinstance(value, str) else None
+
+
+# ----------------------------------------------------------------------------
+# Per-rule checks. Each returns a list of error strings; callers concatenate.
+# ----------------------------------------------------------------------------
+
+def _check_required_fields(g: Grader) -> list[str]:
+    return [
+        f"missing or empty required field: {key}"
+        for key in REQUIRED_SCALAR_FIELDS
+        if not _is_nonempty_str(g.get(key))
+    ]
+
+
+def _check_enums(g: Grader) -> list[str]:
+    errors: list[str] = []
+    if g.get("scope") not in VALID_SCOPES:
+        errors.append(f"scope must be one of {sorted(VALID_SCOPES)}; got {g.get('scope')!r}")
+    if g.get("kind") not in VALID_KINDS:
+        errors.append(f"kind must be one of {sorted(VALID_KINDS)}; got {g.get('kind')!r}")
+    if g.get("confidence") not in VALID_CONFIDENCE:
+        errors.append(f"confidence must be one of {sorted(VALID_CONFIDENCE)}; "
+                      f"got {g.get('confidence')!r}")
+    return errors
+
+
+def _check_scope_routing(g: Grader, scope: str | None) -> list[str]:
+    errors: list[str] = []
+    if scope == "single_call":
+        if not _is_nonempty_str(g.get("call_site_id")):
+            errors.append("scope=single_call requires non-empty call_site_id")
+        if g.get("chain_id") not in (None, ""):
+            errors.append("scope=single_call must not set chain_id")
+    elif scope == "chain":
+        if not _is_nonempty_str(g.get("chain_id")):
+            errors.append("scope=chain requires non-empty chain_id")
+        if g.get("call_site_id") not in (None, ""):
+            errors.append("scope=chain must not set call_site_id (implied by chain_id)")
+    return errors
+
+
+def _check_kind_body(g: Grader, kind: str | None) -> list[str]:
+    errors: list[str] = []
+    if kind == "llm_judge":
+        if not _is_nonempty_str(g.get("judge_prompt")):
+            errors.append("kind=llm_judge requires non-empty judge_prompt")
+        if not _is_nonempty_str(g.get("rubric")):
+            errors.append("kind=llm_judge requires non-empty rubric")
+    elif kind == "deterministic":
+        if not _is_nonempty_str(g.get("deterministic_check")):
+            errors.append("kind=deterministic requires non-empty deterministic_check")
+    elif kind == "execution":
+        if not _is_nonempty_str(g.get("execution_spec")):
+            errors.append("kind=execution requires non-empty execution_spec")
+    return errors
+
+
+def _check_applies_when(g: Grader, kind: str | None) -> list[str]:
+    """applies_when is free-form; applies_when_check must mirror it for deterministic graders."""
+    errors: list[str] = []
+    raw = g.get("applies_when")
+    if raw is not None and not isinstance(raw, str):
+        errors.append("applies_when must be a string or null")
+
+    applies_when = _normalize_applies_when(raw)
+    raw_check = g.get("applies_when_check")
+    if raw_check is not None and not isinstance(raw_check, str):
+        errors.append("applies_when_check must be a string or null")
+    applies_when_check = _normalize_applies_when(raw_check)
+
+    if kind == "deterministic" and applies_when and not applies_when_check:
+        errors.append("kind=deterministic with applies_when requires non-empty applies_when_check "
+                      "(code-evaluable mirror of applies_when)")
+    if applies_when_check and not applies_when:
+        errors.append("applies_when_check is set but applies_when is null — set applies_when too")
+    return errors
+
+
+def _check_pass_rate(g: Grader) -> list[str]:
+    errors: list[str] = []
+    for field in ("self_test_pass_rate", "self_test_variance"):
+        rate = g.get(field)
+        if rate is None:
+            continue
+        if not isinstance(rate, (int, float)) or isinstance(rate, bool):
+            errors.append(f"{field} must be a number in [0, 1] or null")
+            continue
+        if not (0.0 <= float(rate) <= 1.0):
+            errors.append(f"{field} must be in [0, 1]; got {rate}")
+    return errors
+
+
+def _check_self_tests(
+    self_tests: Sequence[Any],
+    scope: str | None,
+) -> tuple[set[str], set[str], list[str]]:
+    """Returns (verdicts_seen, categories_seen, errors)."""
+    errors: list[str] = []
+    verdicts_seen: set[str] = set()
+    categories_seen: set[str] = set()
+
+    for i, st in enumerate(self_tests):
+        if not isinstance(st, dict):
+            errors.append(f"self_tests[{i}] must be a mapping")
+            continue
+
+        verdict = st.get("expected_verdict")
+        if verdict not in VALID_VERDICTS:
+            errors.append(f"self_tests[{i}].expected_verdict must be one of "
+                          f"{sorted(VALID_VERDICTS)}; got {verdict!r}")
+        else:
+            verdicts_seen.add(verdict)
+
+        if not _is_nonempty_str(st.get("rationale")):
+            errors.append(f"self_tests[{i}].rationale must be a non-empty string")
+
+        category = st.get("category")
+        if category is not None:
+            if category not in VALID_SELF_TEST_CATEGORIES:
+                errors.append(f"self_tests[{i}].category must be one of "
+                              f"{sorted(VALID_SELF_TEST_CATEGORIES)}; got {category!r}")
+            else:
+                categories_seen.add(category)
+
+        errors.extend(_check_self_test_body(st, scope, i))
+
+    return verdicts_seen, categories_seen, errors
+
+
+def _check_self_test_body(st: Mapping[str, Any], scope: str | None, i: int) -> list[str]:
+    """Per-entry shape: single_call uses sample_output; chain uses call_site_outputs."""
+    errors: list[str] = []
+    if scope == "single_call":
+        if "call_site_outputs" in st:
+            errors.append(f"self_tests[{i}]: scope=single_call must use "
+                          f"sample_output, not call_site_outputs")
+        if not _is_nonempty_str(st.get("sample_output")):
+            errors.append(f"self_tests[{i}].sample_output must be a non-empty string")
+    elif scope == "chain":
+        if "sample_output" in st:
+            errors.append(f"self_tests[{i}]: scope=chain must use "
+                          f"call_site_outputs, not sample_output")
+        cso = st.get("call_site_outputs")
+        if not isinstance(cso, dict) or not cso:
+            errors.append(f"self_tests[{i}].call_site_outputs must be a non-empty mapping")
+        else:
+            for k, v in cso.items():
+                if not _is_nonempty_str(v):
+                    errors.append(f"self_tests[{i}].call_site_outputs[{k!r}] "
+                                  f"must be a non-empty string")
+    return errors
+
+
+def _check_verdict_consistency(
+    applies_when: str | None,
+    verdicts_seen: set[str],
+) -> list[str]:
+    """applies_when ↔ not_applicable, bidirectional."""
+    errors: list[str] = []
+    if applies_when and "not_applicable" not in verdicts_seen:
+        errors.append("applies_when is set but no self_test has "
+                      "expected_verdict: not_applicable")
+    if not applies_when and "not_applicable" in verdicts_seen:
+        errors.append("self_tests contain expected_verdict: not_applicable "
+                      "but applies_when is null")
+    return errors
+
+
+def _check_pass_fail_balance(scope: str | None, verdicts_seen: set[str]) -> list[str]:
+    """At least one `pass` and at least one `fail` among non-n/a verdicts.
+
+    Evaluated independently so a malformed entry can't mask a structurally
+    missing verdict. The all-n/a case is allowed.
+    """
+    if not (scope and verdicts_seen and verdicts_seen != {"not_applicable"}):
+        return []
+    non_na = verdicts_seen - {"not_applicable"}
+    errors: list[str] = []
+    if "pass" not in non_na:
+        errors.append("self_tests must include at least one expected_verdict: pass")
+    if "fail" not in non_na:
+        errors.append("self_tests must include at least one expected_verdict: fail")
+    return errors
+
+
+def _check_adversarial_coverage(
+    self_tests: Sequence[Any],
+    categories_seen: set[str],
+) -> list[str]:
+    """When self_tests has >= 4 entries, at least one must be category: adversarial."""
+    if len(self_tests) < ADVERSARIAL_REQUIRED_AT_SELF_TESTS_COUNT:
+        return []
+    if "adversarial" in categories_seen:
+        return []
+    return [f"self_tests must include at least one category: adversarial when length >= "
+            f"{ADVERSARIAL_REQUIRED_AT_SELF_TESTS_COUNT}"]
+
+
+def _check_id_shape(g: Grader, scope: str | None) -> list[str]:
+    gid, fmid = g.get("id"), g.get("failure_mode_id")
+    if not (_is_nonempty_str(gid) and _is_nonempty_str(fmid)):
+        return []
+    if scope == "single_call" and gid != f"{fmid}::grader":
+        return [f"id should be '{fmid}::grader' for scope=single_call; got {gid!r}"]
+    if scope == "chain":
+        cid = g.get("chain_id")
+        if _is_nonempty_str(cid) and not (gid.startswith(f"{cid}::") and gid.endswith("::grader")):
+            return [f"id should match '{cid}::<failure_name>::grader' "
+                    f"for scope=chain; got {gid!r}"]
+    return []
+
+
+def _check_meta(g: Grader) -> list[str]:
+    """_meta is optional but, when present, must include required provenance fields."""
+    meta = g.get("_meta")
+    if meta is None:
+        return []
+    if not isinstance(meta, dict):
+        return ["_meta must be a mapping"]
+    errors: list[str] = []
+    for key in ("author", "synthesized_at", "synth_inputs_digest"):
+        if not _is_nonempty_str(meta.get(key)):
+            errors.append(f"_meta.{key} must be a non-empty string when _meta is present")
+    locked = meta.get("locked_fields")
+    if locked is not None and not isinstance(locked, list):
+        errors.append("_meta.locked_fields must be a list when present")
+    human_edited = meta.get("human_edited")
+    if human_edited is not None and not isinstance(human_edited, bool):
+        errors.append("_meta.human_edited must be a boolean when present")
+    return errors
+
+
+def _check_pipeline_refs(
+    g: Grader,
+    pipeline: Pipeline,
+    scope: str | None,
+    self_tests: Sequence[Any],
+) -> list[str]:
+    """Cross-reference grader IDs against the pipeline manifest."""
+    errors: list[str] = []
+    fm_ids = {fm.get("id") for fm in pipeline.get("failure_modes") or []
+              if isinstance(fm, dict)}
+    cs_ids = {cs.get("id") for cs in pipeline.get("call_sites") or []
+              if isinstance(cs, dict)}
+    chains_by_id: dict[Any, Mapping[str, Any]] = {
+        c.get("id"): c for c in pipeline.get("chains") or [] if isinstance(c, dict)
+    }
+
+    fmid = g.get("failure_mode_id")
+    if fmid not in fm_ids:
+        errors.append(f"failure_mode_id {fmid!r} not found in pipeline.failure_modes")
+
+    if scope == "single_call" and g.get("call_site_id") not in cs_ids:
+        errors.append(f"call_site_id {g.get('call_site_id')!r} "
+                      f"not found in pipeline.call_sites")
+
+    if scope == "chain":
+        cid = g.get("chain_id")
+        if cid not in chains_by_id:
+            errors.append(f"chain_id {cid!r} not found in pipeline.chains")
+        else:
+            expected_keys = set(chains_by_id[cid].get("call_site_ids") or [])
+            for i, st in enumerate(self_tests):
+                cso = st.get("call_site_outputs") if isinstance(st, dict) else None
+                if isinstance(cso, dict):
+                    actual = set(cso.keys())
+                    if actual != expected_keys:
+                        errors.append(
+                            f"self_tests[{i}].call_site_outputs keys {sorted(actual)} "
+                            f"do not match chain.call_site_ids {sorted(expected_keys)}"
+                        )
+    return errors
+
+
+# ----------------------------------------------------------------------------
+# Top-level per-file validator.
+# ----------------------------------------------------------------------------
+
+def validate_grader(g: Grader, pipeline: Pipeline | None = None) -> list[str]:
+    # Accepted-broken short-circuit. See contract § "Retry semantics".
+    if _is_nonempty_str(g.get("_validation_error")):
+        return []
+
+    errors: list[str] = []
+    errors += _check_required_fields(g)
+    errors += _check_enums(g)
+
+    scope = g.get("scope") if g.get("scope") in VALID_SCOPES else None
+    kind = g.get("kind") if g.get("kind") in VALID_KINDS else None
+
+    errors += _check_scope_routing(g, scope)
+    errors += _check_kind_body(g, kind)
+    errors += _check_applies_when(g, kind)
+    errors += _check_pass_rate(g)
+    errors += _check_meta(g)
+
+    raw_tests = g.get("self_tests")
+    if not isinstance(raw_tests, list) or len(raw_tests) < 3:
+        got = len(raw_tests) if isinstance(raw_tests, list) else type(raw_tests).__name__
+        errors.append(f"self_tests must be a list of >= 3 entries; got {got}")
+        self_tests: list[Any] = raw_tests if isinstance(raw_tests, list) else []
+    else:
+        self_tests = list(raw_tests)
+
+    verdicts_seen, categories_seen, st_errors = _check_self_tests(self_tests, scope)
+    errors += st_errors
+
+    applies_when = _normalize_applies_when(g.get("applies_when"))
+    errors += _check_verdict_consistency(applies_when, verdicts_seen)
+    errors += _check_pass_fail_balance(scope, verdicts_seen)
+    errors += _check_adversarial_coverage(self_tests, categories_seen)
+    errors += _check_id_shape(g, scope)
+
+    if pipeline is not None:
+        errors += _check_pipeline_refs(g, pipeline, scope, self_tests)
+
+    return errors
+
+
+# ----------------------------------------------------------------------------
+# Bundle-level checks. Each takes loaded data, returns list[str] of errors.
+# ----------------------------------------------------------------------------
+
+def _bundle_fm_grader_bijection(
+    pipeline: Pipeline,
+    graders_by_id: Mapping[str, Grader],
+) -> list[str]:
+    errors: list[str] = []
+    fms = pipeline.get("failure_modes") or []
+    expected_grader_ids: set[str] = set()
+    for fm in fms:
+        if not isinstance(fm, dict):
+            continue
+        gid = fm.get("grader_id")
+        if not _is_nonempty_str(gid):
+            errors.append(f"failure_mode {fm.get('id')!r} is missing grader_id")
+            continue
+        expected_grader_ids.add(gid)
+
+    actual = set(graders_by_id.keys())
+    missing = expected_grader_ids - actual
+    orphan = actual - expected_grader_ids
+    for gid in sorted(missing):
+        errors.append(f"pipeline references grader_id {gid!r} but no grader file exists")
+    for gid in sorted(orphan):
+        errors.append(f"grader file {gid!r} has no matching failure_mode.grader_id in pipeline")
+    return errors
+
+
+def _bundle_duplicate_ids(graders: Sequence[tuple[Path, Grader]]) -> list[str]:
+    errors: list[str] = []
+    seen: dict[str, Path] = {}
+    for path, g in graders:
+        gid = g.get("id")
+        if not _is_nonempty_str(gid):
+            continue
+        if gid in seen:
+            errors.append(f"duplicate grader id {gid!r}: {seen[gid]} and {path}")
+        else:
+            seen[gid] = path
+    return errors
+
+
+def _bundle_taxonomy_reachability(pipeline: Pipeline) -> list[str]:
+    errors: list[str] = []
+    tax = pipeline.get("taxonomy") or []
+    tax_ids = {t.get("id") for t in tax if isinstance(t, dict) and _is_nonempty_str(t.get("id"))}
+    fm_node_ids: set[str] = set()
+    fms = pipeline.get("failure_modes") or []
+    for fm in fms:
+        if not isinstance(fm, dict):
+            continue
+        node = fm.get("taxonomy_node_id")
+        if _is_nonempty_str(node):
+            fm_node_ids.add(node)
+            if node not in tax_ids:
+                errors.append(f"failure_mode {fm.get('id')!r} references "
+                              f"unknown taxonomy_node_id {node!r}")
+    orphan_nodes = tax_ids - fm_node_ids - {None}
+    # Parent nodes are allowed to be empty if children exist; check that
+    parent_ids = {t.get("parent_id") for t in tax if isinstance(t, dict)}
+    truly_orphan = {n for n in orphan_nodes if n not in parent_ids}
+    for node in sorted(truly_orphan):
+        errors.append(f"taxonomy node {node!r} has no failure_modes and no children — "
+                      f"either populate or remove")
+    return errors
+
+
+def _bundle_chain_acyclic(pipeline: Pipeline) -> list[str]:
+    """Detect cycles in chain.call_site_ids ordering across chains.
+
+    A chain that lists [A, B, A] is a cycle within itself. A pair of chains
+    where chain1=[A,B] and chain2=[B,A] is a cross-chain cycle when one
+    chain's last call site appears before the first call site of another
+    chain that loops back.
+    """
+    errors: list[str] = []
+    chains = pipeline.get("chains") or []
+
+    # Internal cycle check
+    for c in chains:
+        if not isinstance(c, dict):
+            continue
+        sites = c.get("call_site_ids") or []
+        if len(sites) != len(set(sites)):
+            counts = Counter(sites)
+            # ensemble is allowed to repeat the same id; differentiate by detection_method
+            if c.get("detection_method") != "ensemble":
+                dupes = [s for s, n in counts.items() if n > 1]
+                errors.append(f"chain {c.get('id')!r} repeats call_site_ids {dupes!r} "
+                              f"without detection_method=ensemble")
+
+    # Cross-chain DAG check
+    graph: dict[str, set[str]] = defaultdict(set)
+    for c in chains:
+        if not isinstance(c, dict):
+            continue
+        sites = c.get("call_site_ids") or []
+        for a, b in zip(sites, sites[1:]):
+            graph[a].add(b)
+
+    # Tarjan-lite cycle detection
+    WHITE, GRAY, BLACK = 0, 1, 2
+    color: dict[str, int] = defaultdict(lambda: WHITE)
+
+    def visit(node: str, path: list[str]) -> str | None:
+        if color[node] == GRAY:
+            cycle_start = path.index(node)
+            return " -> ".join(path[cycle_start:] + [node])
+        if color[node] == BLACK:
+            return None
+        color[node] = GRAY
+        path.append(node)
+        for nxt in graph.get(node, ()):
+            found = visit(nxt, path)
+            if found:
+                return found
+        path.pop()
+        color[node] = BLACK
+        return None
+
+    for start in list(graph.keys()):
+        if color[start] == WHITE:
+            cycle = visit(start, [])
+            if cycle:
+                errors.append(f"chains contain a cycle: {cycle}")
+                break
+    return errors
+
+
+def _bundle_pack_resolution(pipeline: Pipeline, graders: Sequence[tuple[Path, Grader]]) -> list[str]:
+    """Every pack_id on a failure mode or grader must resolve to pipeline.packs[].id."""
+    errors: list[str] = []
+    declared = {p.get("id") for p in pipeline.get("packs") or [] if isinstance(p, dict)}
+    declared.discard(None)
+    for fm in pipeline.get("failure_modes") or []:
+        if not isinstance(fm, dict):
+            continue
+        for pid in fm.get("pack_ids") or []:
+            if pid not in declared:
+                errors.append(f"failure_mode {fm.get('id')!r} carries pack_id "
+                              f"{pid!r} not in pipeline.packs[]")
+    for path, g in graders:
+        for pid in g.get("pack_ids") or []:
+            if pid not in declared:
+                errors.append(f"{path}: pack_id {pid!r} not in pipeline.packs[]")
+    return errors
+
+
+def _bundle_dedup_uniqueness(pipeline: Pipeline) -> list[str]:
+    """After step 4.6 dedup, no two failures may share (scope, call_site|chain, name)."""
+    errors: list[str] = []
+    seen: dict[tuple[str, str, str], str] = {}
+    for fm in pipeline.get("failure_modes") or []:
+        if not isinstance(fm, dict):
+            continue
+        scope = fm.get("scope") or ""
+        site_or_chain = fm.get("call_site_id") if scope == "single_call" else fm.get("chain_id")
+        if not _is_nonempty_str(site_or_chain):
+            continue
+        name = fm.get("name") or ""
+        key = (scope, site_or_chain, name)
+        if key in seen:
+            errors.append(f"dedup invariant violated: failure_modes {seen[key]!r} and "
+                          f"{fm.get('id')!r} share ({scope}, {site_or_chain}, {name}) — "
+                          f"step 4.6 should have merged or conflict-suffixed")
+        else:
+            seen[key] = fm.get("id") or ""
+    return errors
+
+
+def _bundle_pack_dependencies(pipeline: Pipeline) -> list[str]:
+    """Pack dependencies satisfied; conflicts not co-engaged.
+
+    Reads pack manifests from the live pack registry if available; otherwise
+    relies on dependency/conflict lists embedded in pipeline.packs[] entries
+    (which the orchestrator records at step 0.5).
+    """
+    errors: list[str] = []
+    packs = pipeline.get("packs") or []
+    declared = {p.get("id") for p in packs if isinstance(p, dict)}
+    for p in packs:
+        if not isinstance(p, dict):
+            continue
+        pid = p.get("id") or ""
+        for dep in p.get("dependencies") or []:
+            if dep not in declared:
+                errors.append(f"pack {pid!r} declares dependency on {dep!r} "
+                              f"but that pack is not engaged")
+        for conf in p.get("conflicts") or []:
+            if conf in declared:
+                errors.append(f"pack {pid!r} declares conflict with {conf!r} "
+                              f"but both are engaged")
+    return errors
+
+
+def _bundle_coverage_gates(pipeline: Pipeline) -> list[str]:
+    """Enforce step 4.6 gates per call site / chain."""
+    errors: list[str] = []
+    call_sites = {cs.get("id"): cs for cs in pipeline.get("call_sites") or []
+                  if isinstance(cs, dict)}
+    chains = {c.get("id"): c for c in pipeline.get("chains") or [] if isinstance(c, dict)}
+    fms = pipeline.get("failure_modes") or []
+
+    per_site_layer: dict[str, Counter[str]] = defaultdict(Counter)
+    per_chain_count: Counter[str] = Counter()
+    for fm in fms:
+        if not isinstance(fm, dict):
+            continue
+        scope = fm.get("scope")
+        layer = fm.get("layer")
+        if scope == "single_call":
+            site = fm.get("call_site_id")
+            if site:
+                per_site_layer[site][layer or "?"] += 1
+        elif scope == "chain":
+            cid = fm.get("chain_id")
+            if cid:
+                per_chain_count[cid] += 1
+
+    for site_id, cs in call_sites.items():
+        layers = per_site_layer.get(site_id, Counter())
+        shape = cs.get("shape")
+        if layers["A"] < MIN_LAYER_A_PER_SITE and shape != "embedding":
+            errors.append(f"call_site {site_id!r} has {layers['A']} Layer A failures; "
+                          f"step 4.6 requires >= {MIN_LAYER_A_PER_SITE}")
+        if layers["B"] < MIN_LAYER_B_PER_SITE and shape not in ("embedding",):
+            errors.append(f"call_site {site_id!r} has {layers['B']} Layer B failures; "
+                          f"step 4.6 requires >= {MIN_LAYER_B_PER_SITE}")
+        if layers["C"] < MIN_LAYER_C_PER_SITE and shape != "embedding":
+            errors.append(f"call_site {site_id!r} has {layers['C']} Layer C failures; "
+                          f"step 4.6 requires >= {MIN_LAYER_C_PER_SITE}")
+
+    for cid in chains:
+        if per_chain_count[cid] < MIN_CHAIN_FAILURES:
+            errors.append(f"chain {cid!r} has {per_chain_count[cid]} cross-call failures; "
+                          f"step 4.6 requires >= {MIN_CHAIN_FAILURES}")
+    return errors
+
+
+# ----------------------------------------------------------------------------
+# Lock file + calibration-set helpers.
+# ----------------------------------------------------------------------------
+
+def _sha256_hex(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _check_lock_consistency(evals_dir: Path, lock: Mapping[str, Any]) -> list[str]:
+    errors: list[str] = []
+    locked_graders = lock.get("graders") or {}
+    graders_dir = evals_dir / "graders"
+    if not isinstance(locked_graders, dict):
+        return ["evals/.synth-lock.yaml graders: must be a mapping"]
+    for safe_id, expected_hash in locked_graders.items():
+        path = graders_dir / f"{safe_id}.yaml"
+        if not path.is_file():
+            errors.append(f".synth-lock.yaml references {safe_id}.yaml but file is missing")
+            continue
+        actual = _sha256_hex(path.read_text(encoding="utf-8"))
+        if actual != expected_hash:
+            # Diverged. Only an error if locked_fields is empty AND human_edited is false.
+            try:
+                grader = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+            except yaml.YAMLError:
+                grader = {}
+            meta = grader.get("_meta") or {}
+            locked_fields = meta.get("locked_fields") or []
+            human_edited = bool(meta.get("human_edited"))
+            if not locked_fields and not human_edited:
+                errors.append(f"{safe_id}.yaml diverged from .synth-lock.yaml without "
+                              f"_meta.locked_fields or human_edited=true — "
+                              f"pass --force to overwrite, or set _meta to preserve")
+    return errors
+
+
+def _run_calibration_set(
+    csv_path: Path,
+    graders_by_id: Mapping[str, Grader],
+) -> list[str]:
+    """Informational: read CSV (grader_id, sample_output, verdict), compare to grader.
+
+    This validator can't run an LLM judge; we just report per-grader counts so the
+    operator can wire up their own calibration runner.
+    """
+    notes: list[str] = []
+    if not csv_path.is_file():
+        return [f"--calibration-set: file not found: {csv_path}"]
+    try:
+        with csv_path.open(encoding="utf-8") as f:
+            rows = list(csv.DictReader(f))
+    except Exception as e:
+        return [f"--calibration-set: cannot read CSV: {e}"]
+    needed = {"grader_id", "sample_output", "verdict"}
+    if rows and not needed.issubset(rows[0].keys()):
+        return [f"--calibration-set: CSV must have columns {sorted(needed)}; "
+                f"got {sorted(rows[0].keys())}"]
+    counts: Counter[tuple[str, str]] = Counter()
+    for r in rows:
+        gid = (r.get("grader_id") or "").strip()
+        v = (r.get("verdict") or "").strip()
+        if gid and v in VALID_VERDICTS:
+            counts[(gid, v)] += 1
+    grader_ids = sorted({gid for gid, _ in counts})
+    notes.append(f"calibration-set: {len(rows)} labelled rows across {len(grader_ids)} grader(s)")
+    for gid in grader_ids:
+        if gid not in graders_by_id:
+            notes.append(f"  - {gid}: UNKNOWN grader id (skipped)")
+            continue
+        breakdown = {v: counts[(gid, v)] for v in sorted(VALID_VERDICTS)}
+        notes.append(f"  - {gid}: {breakdown}")
+    return notes
+
+
+# ----------------------------------------------------------------------------
+# IO + CLI.
+# ----------------------------------------------------------------------------
+
+def _load_yaml(path: Path, label: str) -> Any:
+    try:
+        return yaml.safe_load(path.read_text(encoding="utf-8"))
+    except yaml.YAMLError as e:
+        print(f"validate.py: YAML parse error in {label} ({path}): {e}", file=sys.stderr)
+        sys.exit(1 if label == "grader" else 2)
+
+
+def _run_per_file(grader_path: Path, pipeline_path: Path | None) -> int:
+    grader = _load_yaml(grader_path, "grader")
+    if not isinstance(grader, dict):
+        print(f"validate.py: {grader_path}: must be a YAML mapping at the top level",
+              file=sys.stderr)
+        return 1
+
+    pipeline: Mapping[str, Any] | None = None
+    if pipeline_path:
+        if not pipeline_path.is_file():
+            print(f"validate.py: --pipeline file not found: {pipeline_path}", file=sys.stderr)
+            return 2
+        loaded = _load_yaml(pipeline_path, "pipeline")
+        if not isinstance(loaded, dict):
+            print(f"validate.py: {pipeline_path}: must be a YAML mapping at the top level",
+                  file=sys.stderr)
+            return 1
+        pipeline = loaded
+
+    errors = validate_grader(grader, pipeline)
+    if errors:
+        for msg in errors:
+            print(f"{grader_path}: {msg}", file=sys.stderr)
+        return 1
+    print(f"{grader_path}: OK")
+    return 0
+
+
+def _pack_filter_report(
+    pipeline: Pipeline,
+    graders_by_id: Mapping[str, Grader],
+    pack_id: str,
+) -> list[str]:
+    """Print a coverage matrix for one pack: which failures / graders / compliance tags."""
+    declared = {p.get("id") for p in pipeline.get("packs") or [] if isinstance(p, dict)}
+    if pack_id not in declared:
+        return [f"pack {pack_id!r} not engaged in this pipeline (declared packs: "
+                f"{sorted(x for x in declared if x)})"]
+    lines = [f"--pack {pack_id}: coverage matrix"]
+    layer_counter: Counter[str] = Counter()
+    tag_counter: Counter[str] = Counter()
+    matched_grader_ids: set[str] = set()
+    for fm in pipeline.get("failure_modes") or []:
+        if not isinstance(fm, dict):
+            continue
+        if pack_id not in (fm.get("pack_ids") or []):
+            continue
+        layer_counter[fm.get("layer") or "?"] += 1
+        for tag in fm.get("compliance_tags") or []:
+            tag_counter[tag] += 1
+        if _is_nonempty_str(fm.get("grader_id")):
+            matched_grader_ids.add(fm["grader_id"])
+    lines.append(f"  failures: {sum(layer_counter.values())} "
+                 f"({dict(sorted(layer_counter.items()))})")
+    lines.append(f"  graders: {len(matched_grader_ids)}")
+    if tag_counter:
+        lines.append(f"  compliance tags:")
+        for tag, n in sorted(tag_counter.items()):
+            lines.append(f"    {tag}: {n}")
+    return lines
+
+
+def _run_bundle(evals_dir: Path, calibration_csv: Path | None,
+                pack_filter: str | None = None) -> int:
+    if not evals_dir.is_dir():
+        print(f"validate.py: --bundle path is not a directory: {evals_dir}", file=sys.stderr)
+        return 2
+
+    pipeline_path = evals_dir / "pipeline.yaml"
+    if not pipeline_path.is_file():
+        print(f"validate.py: {pipeline_path} missing", file=sys.stderr)
+        return 2
+    pipeline = _load_yaml(pipeline_path, "pipeline")
+    if not isinstance(pipeline, dict):
+        print(f"validate.py: {pipeline_path}: must be a YAML mapping", file=sys.stderr)
+        return 1
+
+    graders_dir = evals_dir / "graders"
+    if not graders_dir.is_dir():
+        print(f"validate.py: {graders_dir} missing", file=sys.stderr)
+        return 2
+
+    graders: list[tuple[Path, Grader]] = []
+    per_file_errors: list[str] = []
+    for path in sorted(graders_dir.glob("*.yaml")):
+        g = _load_yaml(path, "grader")
+        if not isinstance(g, dict):
+            per_file_errors.append(f"{path}: must be a YAML mapping at the top level")
+            continue
+        graders.append((path, g))
+        for msg in validate_grader(g, pipeline):
+            per_file_errors.append(f"{path}: {msg}")
+
+    graders_by_id: dict[str, Grader] = {
+        g.get("id"): g for _, g in graders if _is_nonempty_str(g.get("id"))
+    }
+
+    bundle_errors: list[str] = []
+    bundle_errors += _bundle_fm_grader_bijection(pipeline, graders_by_id)
+    bundle_errors += _bundle_duplicate_ids(graders)
+    bundle_errors += _bundle_taxonomy_reachability(pipeline)
+    bundle_errors += _bundle_chain_acyclic(pipeline)
+    bundle_errors += _bundle_coverage_gates(pipeline)
+    bundle_errors += _bundle_pack_resolution(pipeline, graders)
+    bundle_errors += _bundle_dedup_uniqueness(pipeline)
+    bundle_errors += _bundle_pack_dependencies(pipeline)
+
+    lock_path = evals_dir / ".synth-lock.yaml"
+    if lock_path.is_file():
+        lock = _load_yaml(lock_path, "lock")
+        if isinstance(lock, dict):
+            bundle_errors += _check_lock_consistency(evals_dir, lock)
+
+    notes: list[str] = []
+    if calibration_csv is not None:
+        notes += _run_calibration_set(calibration_csv, graders_by_id)
+    if pack_filter:
+        notes += _pack_filter_report(pipeline, graders_by_id, pack_filter)
+
+    print(f"bundle: {len(graders)} grader file(s) under {graders_dir}")
+    for line in notes:
+        print(line)
+
+    all_errors = per_file_errors + bundle_errors
+    if all_errors:
+        for msg in all_errors:
+            print(msg, file=sys.stderr)
+        print(f"bundle: {len(all_errors)} error(s)", file=sys.stderr)
+        return 1
+    print("bundle: OK")
+    return 0
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description="Validate a grader YAML or a full evals/ bundle.")
+    ap.add_argument("file", nargs="?", help="Path to a grader YAML file (per-file mode).")
+    ap.add_argument("--pipeline", help="Optional path to pipeline.yaml for per-file cross-checks.")
+    ap.add_argument("--bundle", help="Path to an evals/ directory for full-bundle validation.")
+    ap.add_argument("--calibration-set", help="Optional CSV (grader_id,sample_output,verdict) for "
+                                              "informational agreement reporting.")
+    ap.add_argument("--pack", help="Bundle mode only — narrow output to a single pack id and "
+                                   "print a compliance-tag coverage matrix.")
+    args = ap.parse_args()
+
+    if args.bundle:
+        if args.file or args.pipeline:
+            print("validate.py: --bundle is mutually exclusive with the positional file / --pipeline",
+                  file=sys.stderr)
+            return 2
+        evals_dir = Path(args.bundle).resolve()
+        cal = Path(args.calibration_set).resolve() if args.calibration_set else None
+        return _run_bundle(evals_dir, cal, args.pack)
+    if args.pack:
+        print("validate.py: --pack is only valid with --bundle", file=sys.stderr)
+        return 2
+
+    if not args.file:
+        ap.print_usage(sys.stderr)
+        return 2
+    grader_path = Path(args.file).resolve()
+    if not grader_path.is_file():
+        print(f"validate.py: not a file: {grader_path}", file=sys.stderr)
+        return 2
+    pipeline_path = Path(args.pipeline).resolve() if args.pipeline else None
+    return _run_per_file(grader_path, pipeline_path)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,27 @@
+id: brand
+name: "Brand & voice"
+version: "1.0.0"
+description: "Voice, tone, persona consistency, on-brand language, banned terms, and competitor handling."
+contract_version: 1
+tier_hint: addon
+
+interview_prompt: interview.md
+failure_prompt: failures.md
+
+applies_when:
+  always: false
+  auto_signals:
+    - "product_profile.brand_voice_signals is non-empty"
+    - "any call_site has shape in [draft, conversational_turn, summarize] producing user-facing text"
+
+default_layer_distribution:
+  A: 2       # banned-term regex, length-of-greeting, etc.
+  B: 3       # tone, persona consistency, audience-fit
+  C: 1       # disclosure / AI-generated labeling (where required)
+
+contributes_compliance_tags:
+  - "EU-AI-Act.Art-13"       # AI-generated disclosure (overlap with security)
+  - "CA-AB-2013"             # California AI training data transparency
+
+dependencies: []
+conflicts: []

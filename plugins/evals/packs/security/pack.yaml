@@ -1,0 +1,50 @@
+id: security
+name: "Security & compliance"
+version: "1.0.0"
+description: "Safety, regulatory compliance, adversarial robustness, PII / secret handling, and fairness."
+contract_version: 1
+tier_hint: addon
+
+interview_prompt: interview.md
+failure_prompt: failures.md
+
+applies_when:
+  always: false
+  auto_signals:
+    - "product_profile.data_sensitivity is non-empty"
+    - "product_profile.regulatory_context is non-empty"
+    - "any call_site has shape in [tool_call, agent_step, route] with user-supplied content flowing into the prompt"
+    - "any implicit_invariant has 'pii', 'redact', 'consent', 'disclaimer', or 'compliance' in its name"
+
+default_layer_distribution:
+  A: 1
+  B: 2
+  C: 4
+
+contributes_compliance_tags:
+  # The full menu — the interview narrows this set based on which regulations apply.
+  - "EU-AI-Act.Art-13"      # transparency to users
+  - "EU-AI-Act.Art-15"      # accuracy, robustness, cybersecurity
+  - "EU-AI-Act.Art-10"      # data and data governance
+  - "HIPAA-164.502"         # uses and disclosures of PHI
+  - "HIPAA-164.514"         # de-identification of PHI
+  - "GDPR.Art-5"            # data minimization, purpose limitation
+  - "GDPR.Art-25"           # data protection by design
+  - "GDPR.Art-32"           # security of processing
+  - "PCI-DSS.3.4"           # render PAN unreadable
+  - "PCI-DSS.4.1"           # strong cryptography in transit
+  - "NIST-AI-RMF.MS-2.6"    # AI system content meets requirements
+  - "NIST-AI-RMF.MS-3.4"    # AI risks identified and managed
+  - "NIST-AI-RMF.MP-4.1"    # representational harms
+  - "FedRAMP.AC-21"         # information sharing
+  - "FedRAMP.SI-10"         # information input validation
+  - "FedRAMP.AU-2"          # audit events
+  - "SOC2.CC-6.1"           # logical access controls
+  - "SOC2.CC-7.2"           # system monitoring
+  - "CA-AB-2013"            # California AI training data transparency
+  - "CO-AI-Act"             # Colorado AI consumer protection
+  - "FERPA.99.31"           # student records disclosure
+  - "CCPA.1798.105"         # right to delete
+
+dependencies: []
+conflicts: []

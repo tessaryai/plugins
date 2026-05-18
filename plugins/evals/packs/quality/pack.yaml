@@ -1,0 +1,27 @@
+id: quality
+name: "Quality"
+version: "1.0.0"
+description: "Output correctness for the user — faithfulness, helpfulness, calibration, audience fit, and domain accuracy."
+contract_version: 1
+tier_hint: free
+
+interview_prompt: interview.md
+failure_prompt: failures.md
+
+applies_when:
+  always: true
+  auto_signals: []
+
+default_layer_distribution:
+  A: 2
+  B: 6
+  C: 0
+
+contributes_compliance_tags:
+  # Quality maps lightly to AI RMF accuracy and validity controls.
+  - "NIST-AI-RMF.MS-2.6"
+  - "NIST-AI-RMF.MS-4.2"     # AI system performance evaluated periodically
+  - "EU-AI-Act.Art-15"       # accuracy (overlap with security)
+
+dependencies: []
+conflicts: []
