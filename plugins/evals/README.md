@@ -23,15 +23,15 @@ Have OpenTelemetry GenAI traces from production? Pass them in for graders calibr
 
 ## What you get
 
-Everything lands in `evals/` in your repo:
+Everything lands in `tessary-evals/` in your repo:
 
 | Path | What it is |
 | --- | --- |
-| `evals/index.html` | Self-contained visual report. Open it in a browser — no server needed. |
-| `evals/report.md` | Human-readable walkthrough of every grader and what it catches. |
-| `evals/graders/*.yaml` | One grader per failure mode: judge prompt, rubric, self-tests. Run these against your call sites in CI. |
-| `evals/datasets/*.jsonl` | Replayable input rows captured from your traces (when provided). |
-| `evals/pipeline/` | The pipeline definition: call sites, failure modes, taxonomy. Read this if you're wiring graders into your own runner. |
+| `tessary-evals/index.html` | Self-contained visual report. Open it in a browser — no server needed. |
+| `tessary-evals/report.md` | Human-readable walkthrough of every grader and what it catches. |
+| `tessary-evals/graders/*.yaml` | One grader per failure mode: judge prompt, rubric, self-tests. Run these against your call sites in CI. |
+| `tessary-evals/datasets/*.jsonl` | Replayable input rows captured from your traces (when provided). |
+| `tessary-evals/pipeline/` | The pipeline definition: call sites, failure modes, taxonomy. Read this if you're wiring graders into your own runner. |
 
 ## Packs
 
@@ -50,7 +50,7 @@ Packs auto-engage based on what `evals` sees in your repo. To override:
 /evals:synthesize-graders --pack security --no-pack brand
 ```
 
-Drop your own pack at `.evals-packs/<id>/` in your repo to extend or override the bundled ones.
+Drop your own pack at `.tessary-evals-packs/<id>/` in your repo to extend or override the bundled ones.
 
 ## Targeted re-runs
 
@@ -65,7 +65,7 @@ Your edits to grader files are preserved across re-runs. Pass `--force` only aft
 ## Validating
 
 ```bash
-python3 validate.py --bundle evals/
+python3 validate.py --bundle tessary-evals/
 ```
 
 Runs every check on the generated bundle: failure-mode coverage, schema conformance, dedup uniqueness, lock consistency. Add `--pack <id>` to filter the coverage matrix to one pack.
@@ -73,12 +73,12 @@ Runs every check on the generated bundle: failure-mode coverage, schema conforma
 For per-grader checks during curation:
 
 ```bash
-python3 validate.py evals/graders/<file>.yaml --pipeline evals/
+python3 validate.py tessary-evals/graders/<file>.yaml --pipeline tessary-evals/
 ```
 
 ## Viewer
 
-`evals/index.html` is regenerated every run. 
+`tessary-evals/index.html` is regenerated every run. 
 
 ## License
 

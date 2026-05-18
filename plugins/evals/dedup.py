@@ -8,10 +8,10 @@ byte-identical output across re-runs — a contract requirement for the
 synthesizer.
 
 Usage:
-    python3 dedup.py evals/
+    python3 dedup.py tessary-evals/
 
 Reads:
-    evals/pipeline/failure_modes/*.yaml
+    tessary-evals/pipeline/failure_modes/*.yaml
 
 Writes (in place):
     Each shard rewritten with merged entries.
@@ -242,7 +242,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(
         description="Deterministic dedup over failure_modes/ shards (step 4.6).",
     )
-    ap.add_argument("evals_dir", help="Path to the evals/ directory.")
+    ap.add_argument("evals_dir", help="Path to the tessary-evals/ directory.")
     args = ap.parse_args()
 
     evals_dir = Path(args.evals_dir).resolve()

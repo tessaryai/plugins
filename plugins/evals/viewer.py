@@ -170,10 +170,10 @@ def build_html(
 
 def main() -> int:
     ap = argparse.ArgumentParser(
-        description="Build a self-contained HTML viewer for an evals/ directory.",
+        description="Build a self-contained HTML viewer for a tessary-evals/ directory.",
     )
-    ap.add_argument("evals_dir", nargs="?", default="evals",
-                    help="Path to the evals/ directory (default: ./evals)")
+    ap.add_argument("evals_dir", nargs="?", default="tessary-evals",
+                    help="Path to the tessary-evals/ directory (default: ./tessary-evals)")
     ap.add_argument("-o", "--output",
                     help="Output HTML path (default: <evals_dir>/index.html)")
     ap.add_argument("--template-dir", default=str(DEFAULT_TEMPLATE_DIR),

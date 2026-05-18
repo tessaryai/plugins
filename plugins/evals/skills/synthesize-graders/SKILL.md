@@ -1,6 +1,6 @@
 ---
 name: synthesize-graders
-description: Synthesize an eval pipeline for an LLM-using product. Reads a target repo (and optional OTel traces), discovers LLM call sites, hypothesizes failure modes, clusters them into a 2-level taxonomy, fans out grader synthesis (one subagent per call site, delegated to a grader-author skill that conforms to the contract in `contract/AUTHORING_CONTRACT.md`), validates each emitted grader against the schema, and writes a sharded pipeline under `evals/pipeline/` + `evals/graders/*.yaml` + `evals/report.md` + `evals/index.html` (self-contained visual viewer). Use when the user says "synthesize evals", "bootstrap evals", "generate eval pipeline", or invokes /evals:synthesize-graders.
+description: Synthesize an eval pipeline for an LLM-using product. Reads a target repo (and optional OTel traces), discovers LLM call sites, hypothesizes failure modes, clusters them into a 2-level taxonomy, fans out grader synthesis (one subagent per call site, delegated to a grader-author skill that conforms to the contract in `contract/AUTHORING_CONTRACT.md`), validates each emitted grader against the schema, and writes a sharded pipeline under `tessary-evals/pipeline/` + `tessary-evals/graders/*.yaml` + `tessary-evals/report.md` + `tessary-evals/index.html` (self-contained visual viewer). Use when the user says "synthesize evals", "bootstrap evals", "generate eval pipeline", or invokes /evals:synthesize-graders.
 ---
 
 # synthesize-graders — synthesize an eval pipeline from a real codebase
@@ -18,7 +18,7 @@ Steps 2, 3, and 4 are folded into a single per-call-site subagent.
 Output goes to a directory in the **target repo's** working directory:
 
 ```
-evals/
+tessary-evals/
   pipeline/
     meta.yaml                         # version, product_hint, runtime
     packs.yaml                        # engaged packs + interview answers
@@ -78,7 +78,7 @@ The pipeline produces graders in two distinct scopes that must remain cleanly se
 
 ## Re-run safety
 
-If `evals/` already exists in the target repo, load `evals/.synth-lock.yaml`
+If `tessary-evals/` already exists in the target repo, load `tessary-evals/.synth-lock.yaml`
 (if present) before doing anything else. The lock now records hashes for
 *every shard* under `pipeline/` *and* every grader. Triage:
 
@@ -92,7 +92,7 @@ If `evals/` already exists in the target repo, load `evals/.synth-lock.yaml`
      ask the user:
      1. **Respect locks (default)** — re-synthesize, preserve listed fields,
         skip `human_edited: true` files entirely.
-     2. **Diff** — write to `evals.new/` instead. Treat that as the output
+     2. **Diff** — write to `tessary-evals.new/` instead. Treat that as the output
         directory throughout the run.
      3. **Force overwrite** — `--force`. Destructive; warn explicitly.
      4. **Cancel**.
@@ -152,10 +152,10 @@ Execute the steps **in order**. The DAG:
 
 Send **one message with two Agent tool calls**:
 
-1. **Step 0 subagent** (`subagent_type: Explore`) — pass it `$PLUGIN/prompts/analyze_product.md`, the target repo path, and the absolute path to `<repo>/evals/` (it must create `evals/pipeline/`). It writes `evals/pipeline/product_profile.yaml` and `evals/pipeline/invariants.yaml` and returns a manifest with domain, regulatory regimes, data sensitivity kinds, invariant counts, and `coverage_deferred: true` (because step 1 may still be running).
+1. **Step 0 subagent** (`subagent_type: Explore`) — pass it `$PLUGIN/prompts/analyze_product.md`, the target repo path, and the absolute path to `<repo>/evals/` (it must create `tessary-evals/pipeline/`). It writes `tessary-evals/pipeline/product_profile.yaml` and `tessary-evals/pipeline/invariants.yaml` and returns a manifest with domain, regulatory regimes, data sensitivity kinds, invariant counts, and `coverage_deferred: true` (because step 1 may still be running).
 
 2. **Step 1 subagent** — choose:
-   - **Path A — traces provided**: `subagent_type: general-purpose`. Parse the JSONL (handle OTLP/JSON or flat Python SDK exporter shape), normalize spans, group by normalized system-prompt hash, write one `evals/pipeline/call_sites/<id>.yaml` per group and `evals/datasets/<id>.jsonl` per group. The full span taxonomy (chat / tool / embedding / streaming / errored / retry-collapse / non-GenAI) and observability stats (`observed.*` p50/p95/error_rate/refusal_rate/cost) are required as described in v0.3 — those rules are unchanged; only the *output destination* moved to per-site shards. Stratified sampling at up to 10 representative spans per site stays.
+   - **Path A — traces provided**: `subagent_type: general-purpose`. Parse the JSONL (handle OTLP/JSON or flat Python SDK exporter shape), normalize spans, group by normalized system-prompt hash, write one `tessary-evals/pipeline/call_sites/<id>.yaml` per group and `tessary-evals/datasets/<id>.jsonl` per group. The full span taxonomy (chat / tool / embedding / streaming / errored / retry-collapse / non-GenAI) and observability stats (`observed.*` p50/p95/error_rate/refusal_rate/cost) are required as described in v0.3 — those rules are unchanged; only the *output destination* moved to per-site shards. Stratified sampling at up to 10 representative spans per site stays.
    - **Path B — static repo**: `subagent_type: Explore`. Grep for LLM-call patterns; write one shard per discovered call site.
 
    The subagent returns a manifest: a list of `{id, use_case, provider, sample_count, has_system_prompt, redaction_state, file_hint?}` and the overall `runtime.redaction_state` (worst case across sites).
@@ -177,7 +177,7 @@ Stays in main context. Bundle paths:
 
 ```bash
 for f in "$PLUGIN/packs"/*/pack.yaml; do ... ; done
-for f in "$REPO/.evals-packs"/*/pack.yaml 2>/dev/null; do ... ; done
+for f in "$REPO/.tessary-evals-packs"/*/pack.yaml 2>/dev/null; do ... ; done
 ```
 
 Evaluate `applies_when.always` / `applies_when.auto_signals` against `product_profile.yaml`'s summary fields (`domain`, `regulatory_context`, `brand_voice_signals`, `data_sensitivity`) and the step-1 manifest — read only what you need.
@@ -188,12 +188,12 @@ For each engaged pack, read its `interview.md`, apply pre-fill rules against the
 
 Compute `content_digest` (sha256 of `pack.yaml + interview.md + failures.md`, first 16 hex chars). Verify pack manifests against `$PLUGIN/contract/pack.schema.json`. Check `dependencies` / `conflicts`.
 
-Write `evals/pipeline/packs.yaml` via Python (the file is small enough for one Write, but using the helper is cleaner):
+Write `tessary-evals/pipeline/packs.yaml` via Python (the file is small enough for one Write, but using the helper is cleaner):
 
 ```bash
 python3 - <<'PY'
 import sys; sys.path.insert(0, "$PLUGIN"); import pipeline_io, json
-pipeline_io.write_packs("evals", json.loads('''<packs json>'''))
+pipeline_io.write_packs("tessary-evals", json.loads('''<packs json>'''))
 PY
 ```
 
@@ -210,10 +210,10 @@ and produce two outputs as documented below.
 CONTEXT
 - Plugin root:                 <abs $PLUGIN>
 - Repo root:                   <abs repo>
-- Call-site shard:             <abs path to evals/pipeline/call_sites/<id>.yaml>
-- Product profile:             <abs path to evals/pipeline/product_profile.yaml>
-- Invariants:                  <abs path to evals/pipeline/invariants.yaml>
-- Packs:                       <abs path to evals/pipeline/packs.yaml>
+- Call-site shard:             <abs path to tessary-evals/pipeline/call_sites/<id>.yaml>
+- Product profile:             <abs path to tessary-evals/pipeline/product_profile.yaml>
+- Invariants:                  <abs path to tessary-evals/pipeline/invariants.yaml>
+- Packs:                       <abs path to tessary-evals/pipeline/packs.yaml>
 - Per-pack failures.md prompts: <list of abs paths>
 
 PROMPTS TO APPLY (in order)
@@ -226,7 +226,7 @@ OUTPUTS
 A. Patch the call-site shard in place (Read + Edit) to add `shape`,
    `shape_confidence`, `intent`, `constraints`. Do not rewrite the file from
    scratch -- preserve the static fields step 1 wrote.
-B. Write evals/pipeline/failure_modes/<call_site_id_safe>.yaml with top-level
+B. Write tessary-evals/pipeline/failure_modes/<call_site_id_safe>.yaml with top-level
    key `failure_modes:` (canonical-sorted list, taxonomy_node_id left empty).
 
 Return ONLY the manifest specified in hypothesize_failures.md (no prose).
@@ -242,7 +242,7 @@ Step 2+3+4 batch <i>/<n>: <count> sites done; shapes=[<distribution>]; mean fail
 
 One subagent (`subagent_type: general-purpose`). Pass:
 
-- Plugin root, repo root, evals/ root.
+- Plugin root, repo root, tessary-evals/ root.
 - The list of call_site IDs and shard paths (the manifests from step 4 already
   give you names + paths; the subagent reads each shard).
 - Absolute path to `$PLUGIN/prompts/analyze_chains.md` — the "Subagent context"
@@ -260,10 +260,10 @@ If the system has clearly independent call sites, an empty `chains: []` is a val
 ### Step 4.6 — Dedup (deterministic)
 
 ```bash
-python3 "$PLUGIN/dedup.py" evals/
+python3 "$PLUGIN/dedup.py" tessary-evals/
 ```
 
-`dedup.py` reads every `evals/pipeline/failure_modes/*.yaml` shard, runs the
+`dedup.py` reads every `tessary-evals/pipeline/failure_modes/*.yaml` shard, runs the
 three-pass dedup (exact → semantic via SequenceMatcher ≥ 0.85 → conflict
 suffix) deterministically, and rewrites each shard in place. Print line
 matches v0.3 wording.
@@ -271,7 +271,7 @@ matches v0.3 wording.
 ### Step 4.7 — Audit (deterministic + targeted fix subagents)
 
 ```bash
-python3 "$PLUGIN/audit.py" evals/
+python3 "$PLUGIN/audit.py" tessary-evals/
 ```
 
 The script emits a JSON punch list. For each item, choose:
@@ -297,12 +297,12 @@ print a WARN and continue — the bundle validator at step 7 is the final gate.
 
 One subagent (`subagent_type: general-purpose`). Pass:
 
-- Plugin root, evals/ root.
+- Plugin root, tessary-evals/ root.
 - The list of failure-modes shard paths.
 
 The subagent reads every shard, clusters all failure modes (single_call +
 chain) into a 2-level taxonomy with 6–15 top-level nodes (subcategories
-encouraged). Writes `evals/pipeline/taxonomy.yaml`. Patches `taxonomy_node_id`
+encouraged). Writes `tessary-evals/pipeline/taxonomy.yaml`. Patches `taxonomy_node_id`
 back onto each failure-mode entry **shard-by-shard** via Read+Edit. Returns:
 
 ```yaml
@@ -335,11 +335,11 @@ of a synthesize-graders run.
 CONTEXT
 - Plugin root: <abs $PLUGIN>
 - Repo: <abs repo>
-- [v0.4] Call-site shard path: <abs evals/pipeline/call_sites/<id>.yaml>     (single_call)
-- [v0.4] Failure-modes shard path: <abs evals/pipeline/failure_modes/<id>.yaml> (single_call)
-- [v0.4] Chains shard path: <abs evals/pipeline/chains.yaml>                  (chain)
-- [v0.4] Chain-failures shard: <abs evals/pipeline/failure_modes/_chains.yaml> (chain)
-- [v0.4] Product profile path: <abs evals/pipeline/product_profile.yaml>
+- [v0.4] Call-site shard path: <abs tessary-evals/pipeline/call_sites/<id>.yaml>     (single_call)
+- [v0.4] Failure-modes shard path: <abs tessary-evals/pipeline/failure_modes/<id>.yaml> (single_call)
+- [v0.4] Chains shard path: <abs tessary-evals/pipeline/chains.yaml>                  (chain)
+- [v0.4] Chain-failures shard: <abs tessary-evals/pipeline/failure_modes/_chains.yaml> (chain)
+- [v0.4] Product profile path: <abs tessary-evals/pipeline/product_profile.yaml>
 - Existing grader files for this call site, if any (re-run): <list of paths and locks>
 - Grader author: <AUTHOR>
 - Author invocation: <skill | bundled-markdown>
@@ -353,8 +353,8 @@ FOR EACH FAILURE MODE in the relevant shard (filter by call_site_id or chain_id)
    call_site_id|chain_id, name, taxonomy_node_id; owner=null; block_on_fail=null;
    cost/latency budgets from observed.*; dataset_refs; _meta provenance with
    author_contract_version=2).
-4. Write to evals/graders/<grader_id_safe>.yaml.
-5. Validate: python3 "$PLUGIN/validate.py" evals/graders/<file>.yaml --pipeline evals/
+4. Write to tessary-evals/graders/<grader_id_safe>.yaml.
+5. Validate: python3 "$PLUGIN/validate.py" tessary-evals/graders/<file>.yaml --pipeline tessary-evals/
    On failure, retry author up to 3x with validator_feedback; after 3 failures,
    write _validation_error and move on.
 6. Calibrate self-tests in place (first pass + order-reversed pass for position
@@ -376,19 +376,19 @@ is authoritative on the author I/O shape; do not duplicate those rules here.
 ### Step 7 — Finalize (deterministic)
 
 ```bash
-python3 "$PLUGIN/finalize.py" evals/ \
+python3 "$PLUGIN/finalize.py" tessary-evals/ \
   --version 0.4.0 \
   --product-hint "<hint or empty>"
 ```
 
 `finalize.py`:
 
-1. Writes `evals/pipeline/meta.yaml` (version + product_hint + runtime).
-2. Generates `evals/report.md` from the shards (no Write tool call in the
+1. Writes `tessary-evals/pipeline/meta.yaml` (version + product_hint + runtime).
+2. Generates `tessary-evals/report.md` from the shards (no Write tool call in the
    main agent; this happens in the script).
-3. Writes `evals/.synth-lock.yaml` with SHA-256 of every shard + every
+3. Writes `tessary-evals/.synth-lock.yaml` with SHA-256 of every shard + every
    grader file.
-4. Runs `python3 $PLUGIN/validate.py --bundle evals/` and propagates the
+4. Runs `python3 $PLUGIN/validate.py --bundle tessary-evals/` and propagates the
    exit code.
 
 If `validate.py --bundle` reports errors, surface them, but the shards stay
@@ -397,22 +397,22 @@ on disk — the user can fix and re-run with `--only` for affected ids.
 ### Step 8 — Build the HTML viewer
 
 ```bash
-python3 "$PLUGIN/viewer.py" evals
+python3 "$PLUGIN/viewer.py" tessary-evals
 ```
 
 Accepts `--cta-url` / `--cta-label`. Then, detect platform via `uname -s` and
 print the matching open command:
 
-- macOS (`Darwin`): `Browse the synthesized pipeline visually: open evals/index.html`
-- Linux: `Browse the synthesized pipeline visually: xdg-open evals/index.html`
-- Windows / unknown: `Browse the synthesized pipeline visually: start evals/index.html`
+- macOS (`Darwin`): `Browse the synthesized pipeline visually: open tessary-evals/index.html`
+- Linux: `Browse the synthesized pipeline visually: xdg-open tessary-evals/index.html`
+- Windows / unknown: `Browse the synthesized pipeline visually: start tessary-evals/index.html`
 
 Then on the next line, print verbatim:
 ```
-The viewer reads only the local files under `evals/` — nothing leaves your machine until you click through the CTA button.
+The viewer reads only the local files under `tessary-evals/` — nothing leaves your machine until you click through the CTA button.
 ```
 
-`viewer.py` reads the shards under `evals/pipeline/`, every `evals/graders/*.yaml`, and `evals/report.md` if present, assembles them into the in-memory pipeline view, and emits a single self-contained HTML file — no server, no network, no build step. The template files under `viewer_template/` (`template.html`, `styles.css`, `app.js`) are still the editable surface.
+`viewer.py` reads the shards under `tessary-evals/pipeline/`, every `tessary-evals/graders/*.yaml`, and `tessary-evals/report.md` if present, assembles them into the in-memory pipeline view, and emits a single self-contained HTML file — no server, no network, no build step. The template files under `viewer_template/` (`template.html`, `styles.css`, `app.js`) are still the editable surface.
 
 ## Stable IDs
 
@@ -454,10 +454,10 @@ Step 4.6: dedup -- 93 raw failures -> 76 canonical (12 exact-merged, 5 semantic-
 Step 4.7: audit passed -- no items.
 Step 5: 19 taxonomy nodes (13 top-level + 6 sub)
 Step 6: using grader author evals-prompt; fanned out 5 subagents (4 sites + 1 chain) -- 76 graders (0 failed validation; 51 high, 19 medium, 6 low)
-evals/ written: 4 call sites | 1 chain | 76 failures | 76 graders (0 failed validation, 6 low-confidence) | 19 taxonomy nodes | 4 packs
-Step 8: wrote evals/index.html
-Browse the synthesized pipeline visually: open evals/index.html
-The viewer reads only the local files under `evals/` — nothing leaves your machine until you click through the CTA button.
+tessary-evals/ written: 4 call sites | 1 chain | 76 failures | 76 graders (0 failed validation, 6 low-confidence) | 19 taxonomy nodes | 4 packs
+Step 8: wrote tessary-evals/index.html
+Browse the synthesized pipeline visually: open tessary-evals/index.html
+The viewer reads only the local files under `tessary-evals/` — nothing leaves your machine until you click through the CTA button.
 ```
 
 For a 12-call-site repo with traces, expect ~140–200 single-call graders + ~10–30 chain graders. The main agent context now holds only manifests; the failure mode is no longer context exhaustion but subagent-token spend across batches. If the user reports a slow run, the cost is in step 2+3+4 and step 6 fan-outs — both batched at 30 per message; you can lower the batch size as a polite-throttle if needed (do not raise it).

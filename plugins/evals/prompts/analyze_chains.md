@@ -149,8 +149,8 @@ If the system has clearly independent call sites (a webhook handler that calls o
 
 In v0.4 you run as a subagent in step 4.5. The orchestrator passes:
 
-- Absolute path to the evals/ directory.
-- The list of call_site IDs and absolute paths to their `evals/pipeline/call_sites/<id>.yaml` shards (read each as needed).
+- Absolute path to the tessary-evals/ directory.
+- The list of call_site IDs and absolute paths to their `tessary-evals/pipeline/call_sites/<id>.yaml` shards (read each as needed).
 
 Write these files:
 

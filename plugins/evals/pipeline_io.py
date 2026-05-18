@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
-pipeline_io.py — read/write shards under `evals/pipeline/`.
+pipeline_io.py — read/write shards under `tessary-evals/pipeline/`.
 
-The v0.4 layout splits what was a single `evals/pipeline.yaml` into one shard
+The v0.4 layout splits what was a single `tessary-evals/pipeline.yaml` into one shard
 per logical artifact. This module is the single place that knows the on-disk
 layout. Consumers (`validate.py`, `viewer.py`, `dedup.py`, `audit.py`,
 `finalize.py`) read shards through `load_pipeline()`, which returns the
 v0.3-compatible top-level mapping so existing logic stays unchanged.
 
-Shard paths under `evals/pipeline/`:
+Shard paths under `tessary-evals/pipeline/`:
     meta.yaml                       -> version, product_hint, runtime
     packs.yaml                      -> packs[]
     product_profile.yaml            -> product_profile
@@ -67,7 +67,7 @@ def _expect_list(value: Any, key: str, path: Path) -> list[Any]:
 
 
 def load_pipeline(evals_dir: Path) -> dict[str, Any]:
-    """Assemble the v0.3-compatible pipeline mapping from shards under evals/pipeline/.
+    """Assemble the v0.3-compatible pipeline mapping from shards under tessary-evals/pipeline/.
 
     Missing shards are tolerated (treated as empty). Malformed YAML or wrong
     top-level shape raises RuntimeError so the caller can surface a clean error.
@@ -222,7 +222,7 @@ def write_chain_failure_modes(evals_dir: Path,
 # ---------------------------------------------------------------------------
 
 def iter_shard_paths(evals_dir: Path) -> list[Path]:
-    """All shard files under evals/pipeline/, in stable sorted order."""
+    """All shard files under tessary-evals/pipeline/, in stable sorted order."""
     p = pipeline_dir(evals_dir)
     if not p.is_dir():
         return []

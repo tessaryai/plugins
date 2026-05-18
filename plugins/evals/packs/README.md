@@ -53,15 +53,15 @@ Failure mode IDs remain `<call_site_id>::<failure_name>` regardless of which pac
 
 ## User-supplied packs
 
-Drop a `pack.yaml` + `interview.md` + `failures.md` under `<repo>/.evals-packs/<pack_id>/` and the orchestrator discovers it at step 0.5. User packs with the same `id` as a bundled pack **override** the bundled version. Each pack is content-hashed (SHA-256 of pack.yaml + interview.md + failures.md, first 16 hex chars) and recorded in `pipeline.packs[].content_digest` so re-runs detect when a pack itself has changed.
+Drop a `pack.yaml` + `interview.md` + `failures.md` under `<repo>/.tessary-evals-packs/<pack_id>/` and the orchestrator discovers it at step 0.5. User packs with the same `id` as a bundled pack **override** the bundled version. Each pack is content-hashed (SHA-256 of pack.yaml + interview.md + failures.md, first 16 hex chars) and recorded in `pipeline.packs[].content_digest` so re-runs detect when a pack itself has changed.
 
 ## Validating packs
 
 The validator checks pack manifests against `contract/pack.schema.json`, then enforces global pack invariants:
 
 ```bash
-python3 validate.py --bundle evals/             # includes pack-resolution + dependency checks
-python3 validate.py --bundle evals/ --pack security   # filter + compliance-tag matrix
+python3 validate.py --bundle tessary-evals/             # includes pack-resolution + dependency checks
+python3 validate.py --bundle tessary-evals/ --pack security   # filter + compliance-tag matrix
 ```
 
 `--pack <id>` is the lightweight compliance-review surface: see exactly which failures and graders carry the pack and which control IDs they collectively cover.

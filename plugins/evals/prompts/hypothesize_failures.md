@@ -160,22 +160,22 @@ In v0.4 the orchestrator fans steps 2 (classify_shape), 3 (extract_intent), and 
 subagent — own all three.
 
 **Inputs the orchestrator passes you:**
-- Absolute path to `evals/pipeline/call_sites/<id>.yaml` (read; step 1 already
+- Absolute path to `tessary-evals/pipeline/call_sites/<id>.yaml` (read; step 1 already
   wrote the static fields).
-- Absolute path to `evals/pipeline/product_profile.yaml` and `invariants.yaml`.
-- Absolute path to `evals/pipeline/packs.yaml`.
+- Absolute path to `tessary-evals/pipeline/product_profile.yaml` and `invariants.yaml`.
+- Absolute path to `tessary-evals/pipeline/packs.yaml`.
 - Absolute paths to each engaged pack's `failures.md` (the orchestrator lists them).
 
 **Run, in order:**
 1. Apply `prompts/classify_shape.md` to determine `shape` and `shape_confidence`.
 2. Apply `prompts/extract_intent.md` to produce `intent` and `constraints`.
-3. Patch the call_site shard at `evals/pipeline/call_sites/<id>.yaml` in place
+3. Patch the call_site shard at `tessary-evals/pipeline/call_sites/<id>.yaml` in place
    (Read + Edit, **not** Write — never rewrite the static fields step 1 wrote).
    Add the four fields: `shape`, `shape_confidence`, `intent`, `constraints`.
 4. Apply this prompt (Layer A/B/C hypothesis) plus each engaged pack's
    `failures.md` to produce the baseline + pack-contributed failures for this
    one call site. Resolve `pack_ids` and `compliance_tags` per the rules above.
-5. Write `evals/pipeline/failure_modes/<call_site_id_safe>.yaml` with top-level
+5. Write `tessary-evals/pipeline/failure_modes/<call_site_id_safe>.yaml` with top-level
    key `failure_modes:` and the canonical-sorted list. **Do not perform dedup**
    — leave overlapping pack contributions as separate entries with their own
    `pack_ids`. Step 4.6 (the orchestrator's `dedup.py` script) reconciles

@@ -8,8 +8,8 @@ JSON punch list to stdout — the orchestrator parses this to decide which
 call_sites / packs / chains need a targeted-fix subagent.
 
 Usage:
-    python3 audit.py evals/
-    python3 audit.py evals/ --json   # JSON output (default is human + JSON)
+    python3 audit.py tessary-evals/
+    python3 audit.py tessary-evals/ --json   # JSON output (default is human + JSON)
 
 Exit codes:
     0 -- audit passed (no items)
@@ -168,7 +168,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(
         description="Mechanical audit of the post-dedup failure-mode set (step 4.7).",
     )
-    ap.add_argument("evals_dir", help="Path to the evals/ directory.")
+    ap.add_argument("evals_dir", help="Path to the tessary-evals/ directory.")
     ap.add_argument("--json", action="store_true",
                     help="Emit only JSON (default also prints a human summary).")
     args = ap.parse_args()

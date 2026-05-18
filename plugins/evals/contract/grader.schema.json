@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://evals.tessary.ai/schemas/grader.v2.json",
   "title": "Grader (on-disk form)",
-  "description": "Schema for one grader YAML file under evals/graders/. The authoritative validator is validate.py (at the plugin root), which enforces these structural rules plus cross-field invariants and optional pipeline.yaml / bundle cross-references. This schema is the contract any grader author must satisfy; validate.py is the enforcer. v2 adds: self_tests[].category, applies_when_check (deterministic graders), per-grader runtime fields (owner, block_on_fail, cost/latency budgets, dataset_refs), and a _meta provenance block for survivable re-runs.",
+  "description": "Schema for one grader YAML file under tessary-evals/graders/. The authoritative validator is validate.py (at the plugin root), which enforces these structural rules plus cross-field invariants and optional pipeline.yaml / bundle cross-references. This schema is the contract any grader author must satisfy; validate.py is the enforcer. v2 adds: self_tests[].category, applies_when_check (deterministic graders), per-grader runtime fields (owner, block_on_fail, cost/latency budgets, dataset_refs), and a _meta provenance block for survivable re-runs.",
   "type": "object",
   "required": [
     "id",
@@ -260,7 +260,7 @@
         },
         "jsonl_path": {
           "type": "string",
-          "description": "Path (relative to evals/) of a JSONL dataset capturing inputs for this call site, e.g. 'datasets/<call_site_id>.jsonl'."
+          "description": "Path (relative to tessary-evals/) of a JSONL dataset capturing inputs for this call site, e.g. 'datasets/<call_site_id>.jsonl'."
         },
         "label": {
           "type": "string",

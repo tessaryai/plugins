@@ -5,16 +5,16 @@ validate.py — authoritative validator for synthesize-graders output.
 Two modes:
 
     Per-file:
-        python3 validate.py evals/graders/<file>.yaml
-        python3 validate.py evals/graders/<file>.yaml --pipeline evals/
+        python3 validate.py tessary-evals/graders/<file>.yaml
+        python3 validate.py tessary-evals/graders/<file>.yaml --pipeline tessary-evals/
 
     Bundle (v0.4 — recommended at step 7):
-        python3 validate.py --bundle evals/
+        python3 validate.py --bundle tessary-evals/
 
     Bundle + pack filter:
-        python3 validate.py --bundle evals/ --pack security
+        python3 validate.py --bundle tessary-evals/ --pack security
 
-In v0.4 the pipeline is sharded under evals/pipeline/*.yaml; the validator
+In v0.4 the pipeline is sharded under tessary-evals/pipeline/*.yaml; the validator
 assembles a v0.3-compatible logical mapping via pipeline_io.load_pipeline()
 and runs every check unchanged against that mapping. Passing a directory to
 --pipeline (per-file mode) also routes through the shard loader.
@@ -29,7 +29,7 @@ The --pack <id> filter narrows the bundle to failures / graders that carry the
 named pack_id and prints a compliance-tag coverage matrix.
 
 Optional held-out human-labelled calibration set:
-    python3 validate.py --bundle evals/ --calibration-set human_labels.csv
+    python3 validate.py --bundle tessary-evals/ --calibration-set human_labels.csv
 
 The CSV has columns `grader_id, sample_output, verdict` (verdict ∈ pass|fail|not_applicable).
 The validator reports per-grader agreement against the rubric (informational; does not gate exit code).
@@ -677,7 +677,7 @@ def _check_lock_consistency(evals_dir: Path, lock: Mapping[str, Any]) -> list[st
     locked_graders = lock.get("graders") or {}
     graders_dir = evals_dir / "graders"
     if not isinstance(locked_graders, dict):
-        return ["evals/.synth-lock.yaml graders: must be a mapping"]
+        return ["tessary-evals/.synth-lock.yaml graders: must be a mapping"]
     for safe_id, expected_hash in locked_graders.items():
         path = graders_dir / f"{safe_id}.yaml"
         if not path.is_file():
@@ -759,7 +759,7 @@ def _run_per_file(grader_path: Path, pipeline_path: Path | None) -> int:
 
     pipeline: Mapping[str, Any] | None = None
     if pipeline_path:
-        # --pipeline accepts an evals/ directory (preferred) for the v0.4 sharded
+        # --pipeline accepts a tessary-evals/ directory (preferred) for the v0.4 sharded
         # layout, or a legacy single pipeline.yaml file.
         if pipeline_path.is_dir():
             try:
@@ -899,11 +899,11 @@ def _run_bundle(evals_dir: Path, calibration_csv: Path | None,
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Validate a grader YAML or a full evals/ bundle.")
+    ap = argparse.ArgumentParser(description="Validate a grader YAML or a full tessary-evals/ bundle.")
     ap.add_argument("file", nargs="?", help="Path to a grader YAML file (per-file mode).")
-    ap.add_argument("--pipeline", help="Optional path to evals/ (preferred) or a legacy "
+    ap.add_argument("--pipeline", help="Optional path to tessary-evals/ (preferred) or a legacy "
                                        "pipeline.yaml file for per-file cross-checks.")
-    ap.add_argument("--bundle", help="Path to an evals/ directory for full-bundle validation.")
+    ap.add_argument("--bundle", help="Path to a tessary-evals/ directory for full-bundle validation.")
     ap.add_argument("--calibration-set", help="Optional CSV (grader_id,sample_output,verdict) for "
                                               "informational agreement reporting.")
     ap.add_argument("--pack", help="Bundle mode only — narrow output to a single pack id and "

@@ -1,21 +1,28 @@
 # synthesize-graders — changelog & migration notes
 
-This document summarizes every change to `synthesize-graders` since the initial commit (`92a4802`). It is written for **consumers of synthesize-graders output** — the teams whose runners, viewers, CI integrations, or curation tools read `evals/pipeline/*.yaml` and `evals/graders/*.yaml` — and tells you what your code needs to change to consume the current output cleanly.
+This document summarizes every change to `synthesize-graders` since the initial commit (`92a4802`). It is written for **consumers of synthesize-graders output** — the teams whose runners, viewers, CI integrations, or curation tools read `tessary-evals/pipeline/*.yaml` and `tessary-evals/graders/*.yaml` — and tells you what your code needs to change to consume the current output cleanly.
 
-> **TL;DR (v0.4, current — breaking layout change)**
-> - **Pipeline split into shards.** What was `evals/pipeline.yaml` is now `evals/pipeline/{meta,packs,product_profile,invariants,chains,taxonomy}.yaml` plus per-site files under `evals/pipeline/call_sites/` and `evals/pipeline/failure_modes/`. Consumers that read the monolithic file must migrate: use the bundled `pipeline_io.load_pipeline(evals_dir)` helper for a v0.3-compatible assembled mapping, or read shards directly.
+> **TL;DR (v0.5, current — breaking output-directory rename)**
+> - **Output directory renamed from `evals/` to `tessary-evals/`.** Avoids collision with directories named `evals/` already present in many repos. Consumers must update any path that reads from `evals/pipeline/`, `evals/graders/`, `evals/datasets/`, `evals/index.html`, `evals/report.md`, or `evals/.synth-lock.yaml` — replace the leading `evals/` segment with `tessary-evals/`. Validator and viewer flags shift accordingly: `validate.py --bundle tessary-evals/`, `viewer.py tessary-evals`.
+> - **User pack override directory renamed from `.evals-packs/` to `.tessary-evals-packs/`.** Same rationale.
+> - **No schema, contract, or grader-file shape changes.** Pure rename — re-run synthesis once to migrate, or `mv evals tessary-evals && mv .evals-packs .tessary-evals-packs` if you'd rather not regenerate.
+>
+> **Migration:** in CI, replace any path beginning `evals/` with `tessary-evals/`. In repos with custom packs, rename the override directory. That's it.
+
+> **TL;DR (v0.4 — previous, breaking layout change)**
+> - **Pipeline split into shards.** What was `tessary-evals/pipeline.yaml` is now `tessary-evals/pipeline/{meta,packs,product_profile,invariants,chains,taxonomy}.yaml` plus per-site files under `tessary-evals/pipeline/call_sites/` and `tessary-evals/pipeline/failure_modes/`. Consumers that read the monolithic file must migrate: use the bundled `pipeline_io.load_pipeline(evals_dir)` helper for a v0.3-compatible assembled mapping, or read shards directly.
 > - **Orchestrator architecture rewritten for large repos.** Steps 0 and 1 now run as parallel subagents; steps 2+3+4 are folded into a per-call-site subagent fan-out (batches of 30); steps 4.6, 4.7, 7 are deterministic Python scripts. The main agent holds only small return manifests — never call-site bodies, failure descriptions, taxonomy details, or grader bodies. Repos with 30–50+ call sites now synthesize cleanly without main-context exhaustion or token-budget overflow on the final write.
 > - **New bundled scripts** under the plugin root: `dedup.py` (step 4.6), `audit.py` (step 4.7), `finalize.py` (step 7 — writes meta.yaml, report.md, .synth-lock.yaml, runs the bundle validator), `pipeline_io.py` (shared shard reader/writer).
-> - **`validate.py --bundle`** now walks `evals/pipeline/**` shards (via `pipeline_io.load_pipeline`) instead of a single `pipeline.yaml`. Per-file mode's `--pipeline` flag now accepts an `evals/` directory in addition to a legacy `pipeline.yaml` file.
+> - **`validate.py --bundle`** now walks `tessary-evals/pipeline/**` shards (via `pipeline_io.load_pipeline`) instead of a single `pipeline.yaml`. Per-file mode's `--pipeline` flag now accepts a `tessary-evals/` directory in addition to a legacy `pipeline.yaml` file.
 > - **`viewer.py`** consumes the sharded layout via the same loader; the HTML template (`viewer_template/`) is unchanged.
 > - **`.synth-lock.yaml`** now records SHA-256 of every shard *and* every grader. Shard divergences are informational (shards under `pipeline/` are orchestrator-owned); grader divergences still trigger the v0.3 `human_edited` / `locked_fields` flow.
 > - **No grader-contract change.** `contract/AUTHORING_CONTRACT.md`, `contract/grader.schema.json`, `contract/pack.schema.json`, and the bundled packs are unchanged. Grader files on disk are unchanged.
 >
-> **Migration note for consumers:** if you read `evals/pipeline.yaml` today, switch to one of:
+> **Migration note for consumers:** if you read `tessary-evals/pipeline.yaml` today, switch to one of:
 > ```python
 > import sys; sys.path.insert(0, "<plugin>")
 > import pipeline_io
-> pipeline = pipeline_io.load_pipeline(Path("evals"))  # v0.3-compatible mapping
+> pipeline = pipeline_io.load_pipeline(Path("tessary-evals"))  # v0.3-compatible mapping
 > ```
 > or read shards directly per `output_format.md`.
 
@@ -31,7 +38,7 @@ This document summarizes every change to `synthesize-graders` since the initial 
 > - **Grader contract bumped from v1 → v2.** New author-owned fields: `self_tests[].category`, `applies_when_check`. New orchestrator-owned fields: `self_test_variance`, `_meta` (provenance + locks), operational fields (`owner`, `block_on_fail`, `cost_budget_tokens`, `latency_budget_ms_p95`, `dataset_refs`).
 > - **OTel ingestion** uses standard `gen_ai.*` semconv only — no Langfuse-specific attributes.
 > - **`validate.py`** gains `--bundle <dir>` mode for global checks (FM↔grader bijection, chain DAG acyclicity, taxonomy reachability, layer-A/B/C coverage gates, lock-file consistency).
-> - **New files on disk:** `evals/datasets/<call_site_id>.jsonl` (captured inputs) and `evals/.synth-lock.yaml` (re-run safety).
+> - **New files on disk:** `tessary-evals/datasets/<call_site_id>.jsonl` (captured inputs) and `tessary-evals/.synth-lock.yaml` (re-run safety).
 > - **Targeted regeneration** via `/evals:synthesize-graders --only <id>` for fixing one grader after curator review.
 
 ---
@@ -81,7 +88,7 @@ Pack identity lives in the **set-valued** `failure_modes[].pack_ids: [string, ..
 
 A new step runs between product analysis (step 0) and call-site discovery (step 1). It does three things:
 
-1. **Discovery**. Loads bundled packs from `$PLUGIN/packs/` and user packs from `$REPO/.evals-packs/`. Each pack's `applies_when.auto_signals` is matched against step-0 artifacts and (after step 1) the call sites. Packs are categorized as *always-on / auto-recommended / opt-in / explicit*.
+1. **Discovery**. Loads bundled packs from `$PLUGIN/packs/` and user packs from `$REPO/.tessary-evals-packs/`. Each pack's `applies_when.auto_signals` is matched against step-0 artifacts and (after step 1) the call sites. Packs are categorized as *always-on / auto-recommended / opt-in / explicit*.
 
 2. **Pre-filled interview**. Each pack's `interview.md` declares per-question pre-fill rules pointing at step-0 artifacts (e.g. *Q1.regulations pre-fills from `product_profile.regulatory_context`*). The orchestrator:
    - Resolves answers from `product_profile`, `implicit_invariants`, `invariant_coverage`, dependency lists, and observed trace stats whenever possible.
@@ -307,7 +314,7 @@ _meta:
   human_edited: <bool>
 ```
 
-The orchestrator also writes `evals/.synth-lock.yaml` (one SHA-256 per grader file) at the end of every run. On re-run, before doing anything, the orchestrator:
+The orchestrator also writes `tessary-evals/.synth-lock.yaml` (one SHA-256 per grader file) at the end of every run. On re-run, before doing anything, the orchestrator:
 
 1. Loads the lock file and compares each grader's current hash against it.
 2. Reads `_meta.locked_fields` and `_meta.human_edited` on every existing grader.
@@ -323,8 +330,8 @@ The orchestrator also writes `evals/.synth-lock.yaml` (one SHA-256 per grader fi
 ### 12. New `validate.py --bundle` mode
 
 ```bash
-python3 validate.py --bundle evals/
-python3 validate.py --bundle evals/ --calibration-set human_labels.csv
+python3 validate.py --bundle tessary-evals/
+python3 validate.py --bundle tessary-evals/ --calibration-set human_labels.csv
 ```
 
 In addition to running every per-file check, bundle mode enforces:
@@ -339,11 +346,11 @@ In addition to running every per-file check, bundle mode enforces:
 
 Per-file mode (`python3 validate.py <file>.yaml [--pipeline …]`) is unchanged and still works.
 
-**What you need to do.** CI: replace `for f in evals/graders/*.yaml; do validate.py $f --pipeline ...; done` with a single `validate.py --bundle evals/`. The output is the same shape (exit non-zero on any error, errors on stderr) but catches an entire class of cross-file bugs that per-file mode can't see.
+**What you need to do.** CI: replace `for f in tessary-evals/graders/*.yaml; do validate.py $f --pipeline ...; done` with a single `validate.py --bundle tessary-evals/`. The output is the same shape (exit non-zero on any error, errors on stderr) but catches an entire class of cross-file bugs that per-file mode can't see.
 
 ### 13. Captured-input datasets
 
-**What changed.** Path A ingestion writes `evals/datasets/<call_site_id>.jsonl` containing up to 10 stratified representative spans per call site:
+**What changed.** Path A ingestion writes `tessary-evals/datasets/<call_site_id>.jsonl` containing up to 10 stratified representative spans per call site:
 
 ```jsonl
 {"trace_id": "...", "span_id": "...", "parent_span_id": "...", "timestamp": "...", "input_messages": [...], "observed_output": "...", "observed_finish_reason": "...", "observed_tokens_in": N, "observed_tokens_out": M, "redaction_state": "none"}
@@ -392,8 +399,8 @@ For a consumer of synthesize-graders output upgrading from v0.0.1 → v0.2:
 - [ ] **`chains[].detection_method`**: accept new value `ensemble`. Render `ensemble_span_ids` in the chain viewer.
 - [ ] **`runtime` block**: read `severity_policy` for CI gating. Honor `block_on_fail` per-grader override.
 - [ ] **Graders**: read `self_tests[].category` (added in v2); display `adversarial` tests distinctly. Honor `_meta.locked_fields` and `_meta.human_edited` on overwrite.
-- [ ] **Datasets**: optionally replay `evals/datasets/<call_site_id>.jsonl` rows through each grader.
-- [ ] **Validator**: switch CI from per-file loop to `python3 validate.py --bundle evals/`.
+- [ ] **Datasets**: optionally replay `tessary-evals/datasets/<call_site_id>.jsonl` rows through each grader.
+- [ ] **Validator**: switch CI from per-file loop to `python3 validate.py --bundle tessary-evals/`.
 - [ ] **Author skills (if any)**: declare `contract_version: 2` and emit `self_tests[].category` + `applies_when_check`.
 - [ ] **Judge runtimes (if any)**: parse the nonce-fenced output delimiters in the default judge prompt.
 

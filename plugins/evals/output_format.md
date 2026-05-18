@@ -9,7 +9,7 @@ Stick to these schemas exactly so re-running on the same inputs produces stable
 diffs and the per-grader / bundle validators pass.
 
 ```
-evals/
+tessary-evals/
   pipeline/
     meta.yaml                          # version, product_hint, runtime
     packs.yaml                         # engaged packs + interview answers
@@ -31,7 +31,7 @@ evals/
 
 `<grader_id_safe>` is the canonical grader ID with `::` replaced by `__`.
 Example: a grader with `id: persona::memory_citation::grader` is written to
-`evals/graders/persona__memory_citation__grader.yaml`. The canonical ID *inside*
+`tessary-evals/graders/persona__memory_citation__grader.yaml`. The canonical ID *inside*
 the file still uses `::`.
 
 The same filename transformation applies to call-site shards
@@ -49,7 +49,7 @@ v0.3 emitted (`version`, `product_hint`, `packs`, `product_profile`,
 `failure_modes`, `taxonomy`). The shard files on disk remain the source of truth;
 the assembled view is never written back to disk during synthesis.
 
-## `evals/pipeline/meta.yaml`
+## `tessary-evals/pipeline/meta.yaml`
 
 ```yaml
 version: "0.4.0"
@@ -70,7 +70,7 @@ runtime:
 `version` is the synthesizer's on-disk schema version, not the plugin version.
 Bump only when the shard layout or shard schemas change.
 
-## `evals/pipeline/packs.yaml`
+## `tessary-evals/pipeline/packs.yaml`
 
 ```yaml
 packs:
@@ -93,7 +93,7 @@ packs:
     conflicts:    [<pack_id>, ...]   # optional
 ```
 
-## `evals/pipeline/product_profile.yaml`
+## `tessary-evals/pipeline/product_profile.yaml`
 
 ```yaml
 product_profile:
@@ -115,7 +115,7 @@ product_profile:
   notable_dependencies: [<string>, ...]
 ```
 
-## `evals/pipeline/invariants.yaml`
+## `tessary-evals/pipeline/invariants.yaml`
 
 ```yaml
 implicit_invariants:
@@ -132,7 +132,7 @@ invariant_coverage:
     likely_gap_in: [<call_site_id>, ...]
 ```
 
-## `evals/pipeline/call_sites/<id>.yaml`
+## `tessary-evals/pipeline/call_sites/<id>.yaml`
 
 One file per call site. The orchestrator never reads these in bulk; per-step
 subagents read only the specific shard they're working on.
@@ -186,7 +186,7 @@ After step 2+3+4 has run, the same shard carries `shape`, `shape_confidence`,
 `intent`, and `constraints` (initially absent — step-1 writes only the static /
 trace-derived fields).
 
-## `evals/pipeline/chains.yaml`
+## `tessary-evals/pipeline/chains.yaml`
 
 ```yaml
 chains:
@@ -199,7 +199,7 @@ chains:
     ensemble_span_ids: [<hex>, ...]  # optional; only when detection_method == ensemble
 ```
 
-## `evals/pipeline/failure_modes/<call_site_id>.yaml`
+## `tessary-evals/pipeline/failure_modes/<call_site_id>.yaml`
 
 One shard per call site, holding only that site's `scope: single_call` failures.
 
@@ -219,7 +219,7 @@ failure_modes:
     grader_id: <string>              # <failure_mode_id>::grader
 ```
 
-## `evals/pipeline/failure_modes/_chains.yaml`
+## `tessary-evals/pipeline/failure_modes/_chains.yaml`
 
 All chain failures live in one shard (small set, cross-chain visibility helps
 during dedup):
@@ -240,7 +240,7 @@ failure_modes:
     grader_id: <string>
 ```
 
-## `evals/pipeline/taxonomy.yaml`
+## `tessary-evals/pipeline/taxonomy.yaml`
 
 ```yaml
 taxonomy:
@@ -252,7 +252,7 @@ taxonomy:
     example_chain_ids: [<string>, ...]
 ```
 
-## `evals/graders/<grader_id_safe>.yaml`
+## `tessary-evals/graders/<grader_id_safe>.yaml`
 
 One file per grader. Required keys (see `contract/grader.schema.json` for the
 full schema):
@@ -332,10 +332,10 @@ shape**; refer to the contract for the rules.
 
 Bundle-level invariants (FM↔grader bijection, chain DAG acyclicity, duplicate
 IDs, taxonomy reachability, layer-A/B/C coverage gates) are enforced by
-`validate.py --bundle evals/`. The bundle validator assembles the logical
+`validate.py --bundle tessary-evals/`. The bundle validator assembles the logical
 pipeline view from the shards before running its checks.
 
-## `evals/datasets/<call_site_id>.jsonl`
+## `tessary-evals/datasets/<call_site_id>.jsonl`
 
 Optional. Written by Path A ingestion (one row per representative span captured
 for that call site).
@@ -347,7 +347,7 @@ for that call site).
 Spans with `redaction_state: redacted` should be filtered out by the runner
 unless it has a re-hydration pathway.
 
-## `evals/.synth-lock.yaml`
+## `tessary-evals/.synth-lock.yaml`
 
 Written at the end of every successful run.
 
@@ -376,7 +376,7 @@ triggers a `WARN: <file> diverged from lock without locked_fields — pass
 informational only — shards under `pipeline/` are orchestrator-owned, not
 human-curated, so they are always overwritten on re-run.
 
-## `evals/report.md`
+## `tessary-evals/report.md`
 
 ```markdown
 # Synthesized eval pipeline
