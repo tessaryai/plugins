@@ -19,21 +19,19 @@ To update later:
 
 ## Plugins
 
-- [evals](#evals) — synthesize a production-grade eval pipeline for any LLM-using product.
+- [evals](#evals) — generate a calibrated eval suite for your LLM product.
 
 ### evals
 
-Point `evals` at a repo and it builds you a calibrated eval pipeline end-to-end. It discovers LLM call sites in the codebase, ingests OpenTelemetry GenAI traces if you have them, runs concern-bundle "packs" (quality, security, reliability, brand) to hypothesize failure modes, clusters those into a taxonomy, and emits one grader per failure mode — each with a judge prompt, rubric, and adversarial self-tests. The output lands in `evals/` alongside a self-contained `index.html` viewer you can open directly.
-
-Install:
+Point `evals` at your repo and it generates a complete eval suite for your LLM features: one grader per failure mode (judge prompt, rubric, self-tests), plus a visual report you can open in your browser. Have production traces? Hand them in and graders get calibrated against real data.
 
 ```
 /plugin install evals@tessary
 ```
 
-Then in a Claude Code session, run `/synthesize-graders` or ask Claude to "synthesize evals for this repo."
+Then run `/evals:synthesize-graders` in a Claude Code session, or just ask Claude to "synthesize evals for this repo."
 
-See the [plugin README](./plugins/evals/README.md) for flags, pack details, and validator usage.
+See the [plugin README](./plugins/evals/README.md) for flags, packs, and validator usage.
 
 ## License
 

@@ -1,94 +1,85 @@
 # evals
 
-A Claude Code plugin that synthesizes a production-grade eval pipeline for an LLM-using product. Point it at a repo (with optional OpenTelemetry GenAI traces) and it discovers LLM call sites, runs concern-bundle "packs" (security / quality / reliability / brand), hypothesizes failure modes across three layers (mechanical, judgmental, adversarial / operational), clusters them into a taxonomy, generates calibrated graders (judge prompts + rubrics + adversarial self-tests), and emits a curatable bundle.
+A Claude Code plugin that generates a calibrated eval suite for your LLM product. Point it at your repo and you get graders, datasets, and a visual report — ready to wire into CI.
 
-## Output
+## Install
 
-The skill writes to `evals/` in the target repo:
+In any Claude Code session:
 
 ```
-evals/
-  pipeline.yaml             product profile, packs, runtime config, call sites,
-                            chains, failure modes (with pack_ids + compliance_tags),
-                            taxonomy
-  graders/*.yaml            one file per grader — judge prompt, rubric, self-tests
-                            (with adversarial coverage), _meta provenance + locks
-  datasets/*.jsonl          captured-input rows from OTel traces (when provided),
-                            one file per call site for replay
-  .synth-lock.yaml          content hashes for survivable re-runs
-  report.md                 human-readable walkthrough
-  index.html                self-contained visual viewer
+/plugin marketplace add tessaryai/plugins
+/plugin install evals@tessary
 ```
 
-`evals/index.html` is fully self-contained — open it directly, no server needed.
+## Run
 
-## Usage
+Type `/evals:synthesize-graders` in a Claude Code session, or ask Claude to "synthesize evals for this repo."
 
-In a Claude Code session, type `/evals:synthesize-graders` or ask Claude to "synthesize evals for this repo." The orchestrator walks through a multi-step pipeline (0 → 0.5 → 1 → 2 → 3 → 4 → 4.5 → 4.6 → 4.7 → 5 → 6 → 7 → 8) — see `skills/synthesize-graders/SKILL.md` for what each step does.
+Have OpenTelemetry GenAI traces from production? Pass them in for graders calibrated to real data:
 
-Optional flags:
+```
+/evals:synthesize-graders --traces path/to/traces.jsonl
+```
 
-| Flag | Effect |
+## What you get
+
+Everything lands in `evals/` in your repo:
+
+| Path | What it is |
 | --- | --- |
-| `--traces <path>` | JSONL of OpenTelemetry GenAI spans (see `examples/sample_traces.jsonl`). Enables Path A ingestion with observed.* stats, source-span backlinks, dataset capture. |
-| `--pack <id>` | Force a pack engaged (repeatable). Default packs auto-engage from product signals. |
-| `--no-pack <id>` | Force a pack off. |
-| `--only <id>` | Targeted regeneration — re-synthesize one grader / call site / chain without re-running steps 0–5. |
-| `--force` | Override `_meta.locked_fields` and `human_edited` flags on re-run. Destructive — use only after a deliberate review. |
-
-The viewer's header CTA defaults to `https://evals.tessary.ai`. To point it elsewhere, run `viewer.py` standalone with `--cta-url <url> --cta-label <text>`.
+| `evals/index.html` | Self-contained visual report. Open it in a browser — no server needed. |
+| `evals/report.md` | Human-readable walkthrough of every grader and what it catches. |
+| `evals/graders/*.yaml` | One grader per failure mode: judge prompt, rubric, self-tests. Run these against your call sites in CI. |
+| `evals/datasets/*.jsonl` | Replayable input rows captured from your traces (when provided). |
+| `evals/pipeline/` | The pipeline definition: call sites, failure modes, taxonomy. Read this if you're wiring graders into your own runner. |
 
 ## Packs
 
-Four bundled concern-bundle packs ship by default:
+Failure modes are organized into four bundled packs, each covering one concern area:
 
-| Pack | Tier hint | Engages by default when |
+| Pack | Covers | Engages when |
 | --- | --- | --- |
-| `quality` | free | Always |
-| `security` | addon | `regulatory_context` non-empty, `data_sensitivity` non-empty, or user-supplied content reaches the prompt |
-| `reliability` | included | Traces are provided (`observed.*` stats anchor cost / latency budgets) |
-| `brand` | addon | `brand_voice_signals` non-empty or user-facing call sites exist |
+| `quality` | Correctness, formatting, instruction-following | Always |
+| `security` | Prompt injection, PII, regulatory compliance | Your product handles sensitive data or untrusted user input |
+| `reliability` | Cost, latency, retries, fallbacks | You provide production traces |
+| `brand` | Voice, tone, on-message responses | Your product has user-facing copy |
 
-Each pack is a thin manifest + an interview prompt + a failure-synthesis prompt under `packs/<id>/`. The interview pre-fills answers from the step-0 product analysis (regulations from `regulatory_context`, data sensitivity from migration files, voice from frontend copy, etc.) — Claude only asks the user the questions no signal answered. `tier_hint` is informational for downstream products to gate commercial enablement.
+Packs auto-engage based on what `evals` sees in your repo. To override:
 
-User packs at `<repo>/.evals-packs/<id>/` override bundled packs of the same id.
-
-## Validating output
-
-```bash
-python3 validate.py --bundle evals/             # full bundle check
-python3 validate.py --bundle evals/ --pack security   # filter + compliance matrix
-python3 validate.py evals/graders/<file>.yaml --pipeline evals/pipeline.yaml   # per-file
+```
+/evals:synthesize-graders --pack security --no-pack brand
 ```
 
-`--bundle` runs every per-file check plus global checks: FM↔grader bijection, chain DAG acyclicity, duplicate IDs, taxonomy reachability, layer A/B/C coverage gates, pack-id resolution, dedup uniqueness, lock consistency.
+Drop your own pack at `.evals-packs/<id>/` in your repo to extend or override the bundled ones.
 
-## Layout
+## Targeted re-runs
 
-| Path | Purpose |
-| --- | --- |
-| `SKILL.md` | Orchestrator instructions (the canonical "what does the skill do") |
-| `output_format.md` | On-disk shape reference for `evals/` |
-| `CHANGELOG.md` | Versioned migration notes for consumers (v0.0.1 → v0.2 → v0.3) |
-| `contract/AUTHORING_CONTRACT.md` | Author-orchestrator interface (v2); canonical rule list |
-| `contract/grader.schema.json` | Machine-readable grader schema (v2) |
-| `contract/pack.schema.json` | Machine-readable pack manifest schema (v1) |
-| `validate.py` | Authoritative validator (per-file + `--bundle` + `--pack`) |
-| `viewer.py` | Builds `evals/index.html` from the generated YAML |
-| `viewer_template/` | HTML + CSS + JS for the viewer (mustache placeholders) |
-| `authors/default/` | OSS fallback grader author (bundled markdown procedure, contract v2) |
-| `packs/` | Bundled packs — `security`, `quality`, `reliability`, `brand` |
-| `prompts/` | Per-step reasoning prompts the orchestrator loads |
-| `examples/` | Reference inputs (OTel trace sample) |
+After curating, regenerate one grader without redoing the whole pipeline:
 
-## Versions
+```
+/evals:synthesize-graders --only <grader-id>
+```
 
-- **Plugin / pipeline schema**: `0.3.0` (also the `version` field in emitted `pipeline.yaml`)
-- **Grader contract**: `v2` (the author/orchestrator interface)
-- **Pack contract**: `v1`
+Your edits to grader files are preserved across re-runs. Pass `--force` only after a deliberate review — it overrides edit locks.
 
-See `CHANGELOG.md` for migration notes when upgrading consumer code.
+## Validating
+
+```bash
+python3 validate.py --bundle evals/
+```
+
+Runs every check on the generated bundle: failure-mode coverage, schema conformance, dedup uniqueness, lock consistency. Add `--pack <id>` to filter the coverage matrix to one pack.
+
+For per-grader checks during curation:
+
+```bash
+python3 validate.py evals/graders/<file>.yaml --pipeline evals/
+```
+
+## Viewer
+
+`evals/index.html` is regenerated every run. 
 
 ## License
 
-Apache License 2.0 — see `LICENSE`.
+MIT — see `LICENSE`.
