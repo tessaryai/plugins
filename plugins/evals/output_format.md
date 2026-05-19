@@ -143,7 +143,7 @@ use_case: <string | null>          # human-readable display hint
 provider: <string>                 # "anthropic" / "openai" / "litellm" / "other"
 model: <string | null>
 system_prompt: <string | null>
-shape: <enum>                      # see prompts/classify_shape.md
+shape: <enum>                      # see prompts/per_site_kit.md
 shape_confidence: <high | medium | low>
 intent: <string>
 constraints:

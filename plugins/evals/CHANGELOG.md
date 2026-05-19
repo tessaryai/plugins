@@ -2,7 +2,12 @@
 
 This document summarizes every change to `synthesize-graders` since the initial commit (`92a4802`). It is written for **consumers of synthesize-graders output** — the teams whose runners, viewers, CI integrations, or curation tools read `tessary-evals/pipeline/*.yaml` and `tessary-evals/graders/*.yaml` — and tells you what your code needs to change to consume the current output cleanly.
 
-> **TL;DR (v0.5, current — breaking output-directory rename)**
+> **TL;DR (v0.6, current — resumable runs + leaner subagent fan-out)**
+> - **Resume from a prior run.** If `tessary-evals/` already contains shards from an interrupted or earlier run, the orchestrator now picks up where it left off — every step checks whether its outputs are already present and skips itself if so. Step 6 (grader synthesis) resumes per failure mode, so a partially-emitted batch continues from the first missing grader. The deterministic Python steps (dedup, audit, finalize, viewer) always run to refresh derived artifacts. `--force` overrides every skip.
+> - **Per-call-site subagents now read one instruction file.** What used to be three separate prompts (`classify_shape.md`, `extract_intent.md`, `hypothesize_failures.md`) is consolidated into a single `prompts/per_site_kit.md`. Fan-out batches issue all Agent calls back-to-back so the identical instruction prefix is reused across subagents in the batch, lowering per-site token cost on large repos.
+> - **No schema, contract, or grader-file shape changes.** Consumers that read `tessary-evals/**` see the same files. Authors of bundled packs see the same `pack.yaml` / `interview.md` / `failures.md` contract.
+
+> **TL;DR (v0.5 — previous, breaking output-directory rename)**
 > - **Output directory renamed from `evals/` to `tessary-evals/`.** Avoids collision with directories named `evals/` already present in many repos. Consumers must update any path that reads from `evals/pipeline/`, `evals/graders/`, `evals/datasets/`, `evals/index.html`, `evals/report.md`, or `evals/.synth-lock.yaml` — replace the leading `evals/` segment with `tessary-evals/`. Validator and viewer flags shift accordingly: `validate.py --bundle tessary-evals/`, `viewer.py tessary-evals`.
 > - **User pack override directory renamed from `.evals-packs/` to `.tessary-evals-packs/`.** Same rationale.
 > - **No schema, contract, or grader-file shape changes.** Pure rename — re-run synthesis once to migrate, or `mv evals tessary-evals && mv .evals-packs .tessary-evals-packs` if you'd rather not regenerate.

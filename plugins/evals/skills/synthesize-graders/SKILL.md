@@ -97,6 +97,32 @@ If `tessary-evals/` already exists in the target repo, load `tessary-evals/.synt
      3. **Force overwrite** — `--force`. Destructive; warn explicitly.
      4. **Cancel**.
 
+### Resume from a prior run
+
+When `tessary-evals/` is present from a previous (possibly interrupted) run, pick up where it left off rather than redoing finished work. Before each step, check whether its outputs already exist on disk:
+
+| Step | Skip when these are all present |
+| --- | --- |
+| 0 — product profile | `pipeline/product_profile.yaml`, `pipeline/invariants.yaml` |
+| 1 — call-site discovery | `pipeline/call_sites/*.yaml` (≥1 file) |
+| 0.5 — pack discovery | `pipeline/packs.yaml` |
+| 2+3+4 — per-site fan-out | every call-site shard has `shape`/`intent`/`constraints` set **and** `pipeline/failure_modes/<id>.yaml` exists for it |
+| 4.5 — chain analysis | `pipeline/chains.yaml` and `pipeline/failure_modes/_chains.yaml` |
+| 5 — taxonomy | `pipeline/taxonomy.yaml` |
+| 6 — grader synthesis | per failure mode: `graders/<grader_id_safe>.yaml` exists |
+
+If the check passes, print one line and move on:
+
+```
+Step <N>: resumed from prior run (outputs already present); skipping.
+```
+
+Steps 4.6 (dedup), 4.7 (audit), 7 (finalize), and 8 (viewer) always run — they're deterministic Python and cheap, and 7/8 must refresh the lock and viewer regardless.
+
+The step-6 check is per failure mode, not per batch — partially-emitted batches resume cleanly from the next missing grader. Do not skip the audit even when steps 0–5 all resumed; an audit on existing shards is the cheapest way to confirm the resumed pipeline is still healthy.
+
+`--force` overrides every skip and re-runs every step from scratch (use after intentional shard deletion, or when the prior run finished but the user wants a clean re-synthesis).
+
 ### Targeted regeneration (`--only`)
 
 `--only <grader_id|call_site_id|chain_id>`:
@@ -199,37 +225,29 @@ PY
 
 ### Step 2+3+4 — Per-call-site fan-out
 
-**Fan out one subagent per call site.** Cap 30 per message; sequential batches if call_sites > 30. Each subagent runs steps 2 (classify_shape), 3 (extract_intent), and 4 (hypothesize_failures) — see `$PLUGIN/prompts/hypothesize_failures.md` § "Subagent context".
+**Fan out one subagent per call site.** Cap 30 per message; sequential batches if call_sites > 30. Each subagent classifies the shape, extracts intent + constraints, and hypothesizes failure modes for its single assigned call site. The full instruction document is `$PLUGIN/prompts/per_site_kit.md` — a single file each subagent reads once.
+
+**Issue every Agent call in a batch in the same message, back-to-back, with no intervening tool calls.** Identical instructions across a batch let the runtime reuse work between subagents; interleaving other tool calls between Agent invocations breaks that.
 
 Per-subagent prompt template (fill the angle brackets):
 
 ```
-You are a subagent in steps 2+3+4 of synthesize-graders. Read the following files
-and produce two outputs as documented below.
+You are a per-call-site subagent for synthesize-graders. Your instruction
+document is at $PLUGIN/prompts/per_site_kit.md — read it once and follow it
+end-to-end for the single call site assigned below.
 
-CONTEXT
-- Plugin root:                 <abs $PLUGIN>
-- Repo root:                   <abs repo>
-- Call-site shard:             <abs path to tessary-evals/pipeline/call_sites/<id>.yaml>
-- Product profile:             <abs path to tessary-evals/pipeline/product_profile.yaml>
-- Invariants:                  <abs path to tessary-evals/pipeline/invariants.yaml>
-- Packs:                       <abs path to tessary-evals/pipeline/packs.yaml>
-- Per-pack failures.md prompts: <list of abs paths>
+CALL SITE: <id>
 
-PROMPTS TO APPLY (in order)
-1. $PLUGIN/prompts/classify_shape.md
-2. $PLUGIN/prompts/extract_intent.md
-3. $PLUGIN/prompts/hypothesize_failures.md  -- this prompt's "Subagent context"
-   section is the load-bearing artifact for output shape.
+INPUT PATHS
+- Plugin root:        <abs $PLUGIN>
+- Repo root:          <abs repo>
+- Call-site shard:    <abs path to tessary-evals/pipeline/call_sites/<id>.yaml>
+- Product profile:    <abs path to tessary-evals/pipeline/product_profile.yaml>
+- Invariants:         <abs path to tessary-evals/pipeline/invariants.yaml>
+- Packs:              <abs path to tessary-evals/pipeline/packs.yaml>
+- Pack failures.md:   <list of abs paths to each engaged pack's failures.md>
 
-OUTPUTS
-A. Patch the call-site shard in place (Read + Edit) to add `shape`,
-   `shape_confidence`, `intent`, `constraints`. Do not rewrite the file from
-   scratch -- preserve the static fields step 1 wrote.
-B. Write tessary-evals/pipeline/failure_modes/<call_site_id_safe>.yaml with top-level
-   key `failure_modes:` (canonical-sorted list, taxonomy_node_id left empty).
-
-Return ONLY the manifest specified in hypothesize_failures.md (no prose).
+Return ONLY the manifest specified at the bottom of per_site_kit.md.
 ```
 
 Read only the manifests. Print after each batch:
