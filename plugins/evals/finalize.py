@@ -294,6 +294,8 @@ def render_report(pipeline: dict[str, Any],
 # ---------------------------------------------------------------------------
 
 def write_lock(evals_dir: Path, inputs_digest: str | None) -> Path:
+    existing = pipeline_io.read_lock(evals_dir)
+
     shards: dict[str, str] = {}
     for path in pipeline_io.iter_shard_paths(evals_dir):
         rel = path.relative_to(evals_dir).as_posix()
@@ -311,6 +313,8 @@ def write_lock(evals_dir: Path, inputs_digest: str | None) -> Path:
         "shards": shards,
         "graders": graders,
     }
+    if isinstance(existing.get("completed_steps"), dict):
+        lock["completed_steps"] = existing["completed_steps"]
     out = evals_dir / ".synth-lock.yaml"
     out.write_text(yaml.safe_dump(lock, sort_keys=False), encoding="utf-8")
     return out

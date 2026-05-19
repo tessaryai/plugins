@@ -21,9 +21,11 @@ Shard paths under `tessary-evals/pipeline/`:
 """
 from __future__ import annotations
 
+import hashlib
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Iterable, Mapping
 
 try:
     import yaml
@@ -227,3 +229,168 @@ def iter_shard_paths(evals_dir: Path) -> list[Path]:
     if not p.is_dir():
         return []
     return sorted([f for f in p.rglob("*.yaml") if f.is_file()])
+
+
+# ---------------------------------------------------------------------------
+# Lock file — tracks which paths each step has produced, with content SHAs.
+# Used for deterministic resume: a step is considered complete only when every
+# path it recorded is still present and its content hashes match.
+# ---------------------------------------------------------------------------
+
+LOCK_FILENAME = ".synth-lock.yaml"
+
+
+def _sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _lock_path(evals_dir: Path) -> Path:
+    return evals_dir / LOCK_FILENAME
+
+
+def read_lock(evals_dir: Path) -> dict[str, Any]:
+    """Load the lock file, returning an empty mapping if absent or malformed."""
+    p = _lock_path(evals_dir)
+    if not p.is_file():
+        return {}
+    try:
+        doc = yaml.safe_load(p.read_text(encoding="utf-8"))
+    except yaml.YAMLError:
+        return {}
+    return doc if isinstance(doc, dict) else {}
+
+
+def write_lock(evals_dir: Path, lock: Mapping[str, Any]) -> Path:
+    """Serialize the lock atomically (write-then-rename)."""
+    p = _lock_path(evals_dir)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    tmp = p.with_suffix(p.suffix + ".tmp")
+    tmp.write_text(yaml.safe_dump(dict(lock), sort_keys=False, allow_unicode=True),
+                   encoding="utf-8")
+    tmp.replace(p)
+    return p
+
+
+def _rel(evals_dir: Path, path: Path) -> str:
+    return path.resolve().relative_to(evals_dir.resolve()).as_posix()
+
+
+def lock_paths(evals_dir: Path, step: str, paths: Iterable[Path]) -> Path:
+    """Record `paths` under `step` and capture each file's current SHA.
+
+    Extends rather than replaces: calling this multiple times for the same step
+    merges new paths into the step's list. Paths already recorded get their
+    SHA refreshed to the current content. Mirrors the per-file SHA under the
+    legacy `shards`/`graders` buckets so the bundle validator keeps working.
+    """
+    lock = read_lock(evals_dir)
+    lock.setdefault("version", 1)
+    lock["synthesized_at"] = _now_iso()
+    completed = lock.setdefault("completed_steps", {})
+    shards = lock.setdefault("shards", {})
+    graders = lock.setdefault("graders", {})
+
+    step_record = completed.setdefault(step, {"at": _now_iso(), "outputs": []})
+    if not isinstance(step_record, dict):
+        step_record = {"at": _now_iso(), "outputs": []}
+        completed[step] = step_record
+    step_record["at"] = _now_iso()
+    out_list = step_record.setdefault("outputs", [])
+
+    for raw in paths:
+        path = Path(raw)
+        if not path.is_file():
+            raise FileNotFoundError(f"lock_paths: not a file: {path}")
+        rel = _rel(evals_dir, path)
+        if rel not in out_list:
+            out_list.append(rel)
+        sha = _sha256(path)
+        if rel.startswith("graders/"):
+            graders[Path(rel).stem] = sha
+        else:
+            shards[rel] = sha
+
+    out_list.sort()
+    write_lock(evals_dir, lock)
+    return _lock_path(evals_dir)
+
+
+def file_locked(evals_dir: Path, path: Path) -> bool:
+    """True iff `path` exists and its current SHA matches the lock entry."""
+    if not path.is_file():
+        return False
+    lock = read_lock(evals_dir)
+    try:
+        rel = _rel(evals_dir, path)
+    except ValueError:
+        return False
+    recorded = (
+        lock.get("graders", {}).get(Path(rel).stem) if rel.startswith("graders/")
+        else lock.get("shards", {}).get(rel)
+    )
+    if not isinstance(recorded, str):
+        return False
+    return recorded == _sha256(path)
+
+
+def step_complete(evals_dir: Path, step: str) -> bool:
+    """True iff every path recorded under `step` is present and matches its lock SHA."""
+    lock = read_lock(evals_dir)
+    completed = lock.get("completed_steps", {})
+    record = completed.get(step)
+    if not isinstance(record, dict):
+        return False
+    outputs = record.get("outputs")
+    if not isinstance(outputs, list) or not outputs:
+        return False
+    for rel in outputs:
+        if not isinstance(rel, str):
+            return False
+        if not file_locked(evals_dir, evals_dir / rel):
+            return False
+    return True
+
+
+# ---------------------------------------------------------------------------
+# CLI — small dispatcher so the orchestrator can drive lock/check from Bash.
+# ---------------------------------------------------------------------------
+
+def _cli(argv: list[str]) -> int:
+    import argparse
+    ap = argparse.ArgumentParser(prog="pipeline_io.py")
+    sub = ap.add_subparsers(dest="cmd", required=True)
+
+    p_lock = sub.add_parser("lock", help="Record paths under a step.")
+    p_lock.add_argument("step")
+    p_lock.add_argument("paths", nargs="+")
+    p_lock.add_argument("--evals-dir", default="tessary-evals")
+
+    p_check_step = sub.add_parser("check-step",
+                                  help="Exit 0 if step is recorded and all paths match.")
+    p_check_step.add_argument("step")
+    p_check_step.add_argument("--evals-dir", default="tessary-evals")
+
+    p_check_file = sub.add_parser("check-file",
+                                  help="Exit 0 if file is recorded and content matches.")
+    p_check_file.add_argument("path")
+    p_check_file.add_argument("--evals-dir", default="tessary-evals")
+
+    args = ap.parse_args(argv)
+    evals = Path(args.evals_dir).resolve()
+
+    if args.cmd == "lock":
+        lock_paths(evals, args.step, [Path(p) for p in args.paths])
+        return 0
+    if args.cmd == "check-step":
+        return 0 if step_complete(evals, args.step) else 1
+    if args.cmd == "check-file":
+        return 0 if file_locked(evals, Path(args.path)) else 1
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(_cli(sys.argv[1:]))

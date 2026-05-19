@@ -99,29 +99,49 @@ If `tessary-evals/` already exists in the target repo, load `tessary-evals/.synt
 
 ### Resume from a prior run
 
-When `tessary-evals/` is present from a previous (possibly interrupted) run, pick up where it left off rather than redoing finished work. Before each step, check whether its outputs already exist on disk:
+When `tessary-evals/` is present from a previous (possibly interrupted) run, pick up where it left off rather than redoing finished work. The lock file at `tessary-evals/.synth-lock.yaml` records, per step, the files that step produced and the SHA-256 of each file's content. A step is considered complete only when its lock entry exists **and every recorded file is still present with a matching hash** — file existence alone is never enough.
 
-| Step | Skip when these are all present |
+Two helpers drive this; both are CLI shims around `pipeline_io.py`:
+
+```bash
+# Exit 0 if step <N>'s outputs are recorded and every file's content still matches.
+python3 "$PLUGIN/pipeline_io.py" check-step <N> --evals-dir tessary-evals
+
+# Record the listed paths as outputs of step <N>, capturing their current SHA-256.
+python3 "$PLUGIN/pipeline_io.py" lock <N> <path>... --evals-dir tessary-evals
+
+# Per-file check (used at step 6 for per-grader resume).
+python3 "$PLUGIN/pipeline_io.py" check-file <path> --evals-dir tessary-evals
+```
+
+Wrap each step like this:
+
+```bash
+if python3 "$PLUGIN/pipeline_io.py" check-step <N> --evals-dir tessary-evals; then
+  echo "Step <N>: resumed from prior run; skipping."
+else
+  # ... run the step ...
+  python3 "$PLUGIN/pipeline_io.py" lock <N> <produced paths> --evals-dir tessary-evals
+fi
+```
+
+Step-by-step recording (paths supplied by the orchestrator when it locks the step):
+
+| Step | Paths to record on completion |
 | --- | --- |
 | 0 — product profile | `pipeline/product_profile.yaml`, `pipeline/invariants.yaml` |
-| 1 — call-site discovery | `pipeline/call_sites/*.yaml` (≥1 file) |
+| 1 — call-site discovery | every `pipeline/call_sites/<id>.yaml` written by the subagent |
 | 0.5 — pack discovery | `pipeline/packs.yaml` |
-| 2+3+4 — per-site fan-out | every call-site shard has `shape`/`intent`/`constraints` set **and** `pipeline/failure_modes/<id>.yaml` exists for it |
-| 4.5 — chain analysis | `pipeline/chains.yaml` and `pipeline/failure_modes/_chains.yaml` |
-| 5 — taxonomy | `pipeline/taxonomy.yaml` |
-| 6 — grader synthesis | per failure mode: `graders/<grader_id_safe>.yaml` exists |
+| 2+3+4 — per-site fan-out | every `pipeline/failure_modes/<id>.yaml` returned in the batch manifests (also re-lock the patched `pipeline/call_sites/<id>.yaml` shards) |
+| 4.5 — chain analysis | `pipeline/chains.yaml`, `pipeline/failure_modes/_chains.yaml` |
+| 5 — taxonomy | `pipeline/taxonomy.yaml` (and re-lock the patched failure-modes shards) |
+| 6 — grader synthesis | every `graders/<grader_id_safe>.yaml` as it is emitted |
 
-If the check passes, print one line and move on:
+At step 6, also check each expected grader file individually with `check-file` before spawning its subagent. Skip the subagent when the grader's content is locked and current; spawn it (and lock the result afterward) when not. Partially-emitted batches resume cleanly from the first missing grader.
 
-```
-Step <N>: resumed from prior run (outputs already present); skipping.
-```
+Steps 4.6 (dedup), 4.7 (audit), 7 (finalize), and 8 (viewer) always run — they're deterministic Python, cheap, and 7/8 must refresh the lock and viewer regardless. `dedup.py` and the audit-driven targeted fix subagents rewrite failure-modes shards; re-lock those shards after each rewrite.
 
-Steps 4.6 (dedup), 4.7 (audit), 7 (finalize), and 8 (viewer) always run — they're deterministic Python and cheap, and 7/8 must refresh the lock and viewer regardless.
-
-The step-6 check is per failure mode, not per batch — partially-emitted batches resume cleanly from the next missing grader. Do not skip the audit even when steps 0–5 all resumed; an audit on existing shards is the cheapest way to confirm the resumed pipeline is still healthy.
-
-`--force` overrides every skip and re-runs every step from scratch (use after intentional shard deletion, or when the prior run finished but the user wants a clean re-synthesis).
+`--force` skips every resume check and re-runs every step from scratch (use after intentional shard deletion, or when a prior run finished but the user wants a clean re-synthesis).
 
 ### Targeted regeneration (`--only`)
 
