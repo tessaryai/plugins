@@ -5,55 +5,49 @@ description: Generate a calibrated eval suite for an LLM product. Point it at th
 
 # synthesize-graders — synthesize an eval pipeline from a real codebase
 
-You are running a multi-step synthesis pipeline against a target repo. v0.4
-moved every step that produces volume into a subagent so the main context
-stays small. The orchestrator's job is to plan fan-outs, run deterministic
-Python helpers, and read tiny return manifests — it never holds call-site
-bodies, failure-mode descriptions, taxonomy details, or grader bodies in
-context.
+You are running a phased synthesis pipeline against a target repo. The point of phasing is **time to first artifact**: a working `tessary-evals/index.html` appears after the first call site is graded, not after every call site is processed. The orchestrator processes one call site at a time, only synthesizes graders for `severity: high` failures in the first sweep, and defers everything else to an on-demand `--complete` flow. Medium- and low-severity failures still get hypothesized and written to disk — they just don't get graders until the user asks.
 
-Numbered steps run **0 → 0.5 → 1 → 2+3+4 → 4.5 → 4.6 → 4.7 → 5 → 6 → 7 → 8**.
-Steps 2, 3, and 4 are folded into a single per-call-site subagent.
+The orchestrator's job is to plan small fan-outs, run deterministic Python helpers, and read tiny return manifests — it never holds call-site bodies, failure-mode descriptions, taxonomy details, or grader bodies in context.
 
 Output goes to a directory in the **target repo's** working directory:
 
 ```
 tessary-evals/
   pipeline/
-    meta.yaml                         # version, product_hint, runtime
+    meta.yaml                         # version, product_hint, runtime, progress
     packs.yaml                        # engaged packs + interview answers
-    product_profile.yaml              # step 0
+    priorities.yaml                   # ordered list of call_site_ids
+    product_profile.yaml              # phase A
     invariants.yaml                   # implicit_invariants + invariant_coverage
     call_sites/<id>.yaml              # one per call site
     chains.yaml                       # all detected chains
     failure_modes/<call_site_id>.yaml # single_call failures per site
     failure_modes/_chains.yaml        # chain failures
-    taxonomy.yaml                     # taxonomy tree
-  graders/<grader_id_safe>.yaml       # one file per grader
+    taxonomy.yaml                     # taxonomy tree (populated at end of phase C)
+  graders/<grader_id_safe>.yaml       # one file per emitted (non-deferred) grader
   datasets/<call_site_id>.jsonl       # captured inputs (Path A only)
   report.md                           # human-readable walkthrough
   index.html                          # self-contained visual viewer
   .synth-lock.yaml                    # SHA-256 of every shard + grader
 ```
 
-One grader per file is deliberate: emission failures are isolated (re-run one
-grader, not the whole batch), diffs are scoped to the grader that changed, and
-validation happens per file so a single malformed grader doesn't poison the
-pipeline. The same logic now applies to the *pipeline itself* — sharded across
-per-artifact files so no single Write call carries the whole synthesis.
+One grader per file is deliberate: emission failures are isolated (re-run one grader, not the whole batch), diffs are scoped to the grader that changed, and validation happens per file so a single malformed grader doesn't poison the pipeline. The same logic applies to the pipeline itself — sharded across per-artifact files so no single Write call carries the whole synthesis.
 
-**Steps 0 and 1 run in parallel** (one subagent each, single message with two
-Agent calls). **Step 2+3+4 fans out one subagent per call site**, batched at
-30 per message. **Step 6 fans out one subagent per call site + chain**, also
-batched at 30. All other steps are serial — most are deterministic Python
-scripts shipped with this plugin.
+## Deferred failure modes
+
+Every failure-mode entry carries a `grader_deferred: <bool>` field. The orchestrator sets it during phase C:
+
+- `severity: high` → `grader_deferred: false` and a grader is synthesized this sweep.
+- `severity: medium | low` → `grader_deferred: true` and `grader_id: null`; the failure is recorded but no grader is emitted yet.
+
+The user can flesh out the deferred ones later with `/evals:synthesize-graders --complete <call_site_id>` (or `--complete all`). The viewer renders deferred failures with a distinct "deferred" badge and the same hint string.
 
 ## Plugin path resolution
 
 All bundled scripts (`validate.py`, `viewer.py`, `dedup.py`, `audit.py`,
 `finalize.py`, `pipeline_io.py`) and the OSS fallback author live in this
 plugin directory. **Resolve the plugin path once, at the start of the run,
-and reuse it.** At step 0, do this via Bash:
+and reuse it.** At the start of Phase A, do this via Bash:
 
 ```bash
 PLUGIN="${CLAUDE_PLUGIN_ROOT:-$(find ~/.claude -name SKILL.md -path '*synthesize-graders*' 2>/dev/null | head -1 | xargs -I{} dirname {} | xargs dirname | xargs dirname)}"
@@ -67,14 +61,16 @@ Cache the result as `$PLUGIN`. **Never hardcode `.claude/skills/synthesize-grade
 The pipeline produces graders in two distinct scopes that must remain cleanly separated:
 
 - **`scope: single_call`** — grades one LLM call's output. Layer A (mechanical) and Layer B (judgmental) failures live here.
-- **`scope: chain`** — grades a relationship across N call-site outputs in the same logical session. Produced by step 4.5; require a runner that can fetch multiple outputs from one trace.
+- **`scope: chain`** — grades a relationship across N call-site outputs in the same logical session. Produced by Phase D; requires a runner that can fetch multiple outputs from one trace.
 
 ## Inputs
 
 - **Repo path** (required) — local directory to analyze. If they don't give one, assume CWD and confirm.
 - **Traces file** (optional) — JSONL of OpenTelemetry GenAI spans.
 - **Product hint** (optional) — 1-2 sentences describing what the product does.
-- **Pack selection** (optional) — `--pack <id>` / `--no-pack <id>`. Without flags, step 0.5 auto-discovers from `applies_when` signals. `quality` is always-on.
+- **Pack selection** (optional) — `--pack <id>` / `--no-pack <id>`. Without flags, the triage phase auto-discovers from `applies_when` signals. `quality` is always-on.
+- **Deep-grade** (optional) — `--complete <call_site_id>` flips that site's deferred medium/low failures to non-deferred and synthesizes their graders. `--complete all` does the same for every site in priority order, reusing the same adaptive approval gate.
+- **Pause cadence** (optional) — `--pause-every N` overrides the adaptive gate; the orchestrator pauses after every N sites instead of using the measured per-site budget.
 
 ## Re-run safety
 
@@ -99,142 +95,133 @@ If `tessary-evals/` already exists in the target repo, load `tessary-evals/.synt
 
 ### Resume from a prior run
 
-When `tessary-evals/` is present from a previous (possibly interrupted) run, pick up where it left off rather than redoing finished work. The lock file at `tessary-evals/.synth-lock.yaml` records, per step, the files that step produced and the SHA-256 of each file's content. A step is considered complete only when its lock entry exists **and every recorded file is still present with a matching hash** — file existence alone is never enough.
+When `tessary-evals/` is present from a previous (possibly interrupted) run, pick up where it left off rather than redoing finished work. The lock file at `tessary-evals/.synth-lock.yaml` records, per labeled unit of work, the files that unit produced and the SHA-256 of each file's content. A unit is considered complete only when its lock entry exists **and every recorded file is still present with a matching hash** — file existence alone is never enough.
 
 Two helpers drive this; both are CLI shims around `pipeline_io.py`:
 
 ```bash
-# Exit 0 if step <N>'s outputs are recorded and every file's content still matches.
-python3 "$PLUGIN/pipeline_io.py" check-step <N> --evals-dir tessary-evals
+# Exit 0 if <label>'s outputs are recorded and every file's content still matches.
+python3 "$PLUGIN/pipeline_io.py" check-step <label> --evals-dir tessary-evals
 
-# Record the listed paths as outputs of step <N>, capturing their current SHA-256.
-python3 "$PLUGIN/pipeline_io.py" lock <N> <path>... --evals-dir tessary-evals
+# Record the listed paths as outputs of <label>, capturing their current SHA-256.
+python3 "$PLUGIN/pipeline_io.py" lock <label> <path>... --evals-dir tessary-evals
 
-# Per-file check (used at step 6 for per-grader resume).
+# Per-file check (used inside grader fan-outs for per-grader resume).
 python3 "$PLUGIN/pipeline_io.py" check-file <path> --evals-dir tessary-evals
 ```
 
-Wrap each step like this:
+Wrap each unit like this:
 
 ```bash
-if python3 "$PLUGIN/pipeline_io.py" check-step <N> --evals-dir tessary-evals; then
-  echo "Step <N>: resumed from prior run; skipping."
+if python3 "$PLUGIN/pipeline_io.py" check-step <label> --evals-dir tessary-evals; then
+  echo "<label>: resumed from prior run; skipping."
 else
-  # ... run the step ...
-  python3 "$PLUGIN/pipeline_io.py" lock <N> <produced paths> --evals-dir tessary-evals
+  # ... run the unit ...
+  python3 "$PLUGIN/pipeline_io.py" lock <label> <produced paths> --evals-dir tessary-evals
 fi
 ```
 
-Step-by-step recording (paths supplied by the orchestrator when it locks the step):
+Lock labels used by the phased flow:
 
-| Step | Paths to record on completion |
+| Label | Paths to record on completion |
 | --- | --- |
-| 0 — product profile | `pipeline/product_profile.yaml`, `pipeline/invariants.yaml` |
-| 1 — call-site discovery | every `pipeline/call_sites/<id>.yaml` written by the subagent |
-| 0.5 — pack discovery | `pipeline/packs.yaml` |
-| 2+3+4 — per-site fan-out | every `pipeline/failure_modes/<id>.yaml` returned in the batch manifests (also re-lock the patched `pipeline/call_sites/<id>.yaml` shards) |
-| 4.5 — chain analysis | `pipeline/chains.yaml`, `pipeline/failure_modes/_chains.yaml` |
-| 5 — taxonomy | `pipeline/taxonomy.yaml` (and re-lock the patched failure-modes shards) |
-| 6 — grader synthesis | every `graders/<grader_id_safe>.yaml` as it is emitted |
+| `A` — Phase A (discovery) | `pipeline/product_profile.yaml`, `pipeline/invariants.yaml`, every `pipeline/call_sites/<id>.yaml` |
+| `B` — Phase B (triage) | `pipeline/packs.yaml`, `pipeline/priorities.yaml` |
+| `C-fm-<id>` — Phase C.1 per-site failure modes | `pipeline/failure_modes/<id>.yaml` plus the patched `pipeline/call_sites/<id>.yaml` |
+| `D` — Phase D (chains + taxonomy) | `pipeline/chains.yaml`, `pipeline/failure_modes/_chains.yaml`, `pipeline/taxonomy.yaml` |
 
-At step 6, also check each expected grader file individually with `check-file` before spawning its subagent. Skip the subagent when the grader's content is locked and current; spawn it (and lock the result afterward) when not. Partially-emitted batches resume cleanly from the first missing grader.
+Grader files are not locked under a step label — they're locked individually as they're emitted, and `check-file` is the per-grader resume check. Partial grader batches resume cleanly from the first missing grader.
 
-Steps 4.6 (dedup), 4.7 (audit), 7 (finalize), and 8 (viewer) always run — they're deterministic Python, cheap, and 7/8 must refresh the lock and viewer regardless. `dedup.py` and the audit-driven targeted fix subagents rewrite failure-modes shards; re-lock those shards after each rewrite.
+`dedup.py`, `audit.py`, `finalize.py`, and `viewer.py` always run — they're deterministic Python, cheap, and `finalize.py` / `viewer.py` must refresh the lock and viewer regardless. `dedup.py` and audit-driven targeted fix subagents rewrite failure-modes shards; re-lock the affected `C-fm-<id>` entries after each rewrite.
 
-`--force` skips every resume check and re-runs every step from scratch (use after intentional shard deletion, or when a prior run finished but the user wants a clean re-synthesis).
+`--force` skips every resume check and re-runs every unit from scratch (use after intentional shard deletion, or when a prior run finished but the user wants a clean re-synthesis).
 
 ### Targeted regeneration (`--only`)
 
 `--only <grader_id|call_site_id|chain_id>`:
 
-- **`<grader_id>`** — re-synthesize that grader only. Read its call-site shard
-  + the relevant `failure_modes/<call_site>.yaml`. Do not re-run steps 0–5;
-  do not re-emit any other file. Update the lock entry for that one file.
-- **`<call_site_id>`** — re-synthesize every grader for that site. Reads the
-  one call-site shard + failure-modes shard.
-- **`<chain_id>`** — re-synthesize the chain's graders.
+- **`<grader_id>`** — re-synthesize that grader only. Read its call-site shard + the relevant `failure_modes/<call_site>.yaml`. Do not re-run Phases A–B or other sites; do not re-emit any other file. Update the lock entry for that one file.
+- **`<call_site_id>`** — re-synthesize every non-deferred grader for that site. Reads the one call-site shard + failure-modes shard. Use `--complete <call_site_id>` instead if you also want the site's medium/low deferred failures fleshed out.
+- **`<chain_id>`** — re-synthesize that chain's graders (non-deferred only; `--complete` to include deferred).
 
 `--only` always respects `_meta.locked_fields`. Combine with `--force` to
 override locks (rare).
 
 ## Pipeline
 
-Execute the steps **in order**. The DAG:
+Five phases. A and B run once. C is the per-site loop with the user-approval gate. D wraps up chains + taxonomy at the end. E is the on-demand deep-grade flow triggered by `--complete`.
 
 ```
-   [Step 0 — product profile subagent]  ┐
-                                        ├─ PARALLEL (one message, 2 Agent calls)
-   [Step 1 — call-site discovery]       ┘
-                       │
-                       ▼
-   [Step 0.5 — pack discovery + interview]       (main, serial)
-                       │
-                       ▼
-   [Step 2+3+4 — per-call-site subagent fan-out] (batches of 30, parallel within batch)
-                       │
-                       ▼
-   [Step 4.5 — chain analysis subagent]          (serial)
-                       │
-                       ▼
-   [Step 4.6 — dedup.py]                         (deterministic)
-                       │
-                       ▼
-   [Step 4.7 — audit.py + targeted fixes]        (deterministic + targeted fan-out)
-                       │
-                       ▼
-   [Step 5 — taxonomy subagent]                  (serial)
-                       │
-                       ▼
-   [Step 6 — grader fan-out]                     (batches of 30)
-                       │
-                       ▼
-   [Step 7 — finalize.py]                        (deterministic)
-                       │
-                       ▼
-   [Step 8 — viewer.py]                          (deterministic)
+┌─ Phase A — Discovery (parallel) ────────────────────────────────┐
+│  Product profile subagent  ‖  Call-site discovery subagent      │
+└──────────────────────────────────┬──────────────────────────────┘
+                                   ▼
+┌─ Phase B — Triage (main agent, serial) ─────────────────────────┐
+│  Pack discovery + interview  →  Rank call sites  →  Confirm     │
+└──────────────────────────────────┬──────────────────────────────┘
+                                   ▼
+┌─ Phase C — Per-site loop ───────────────────────────────────────┐
+│   For each call_site_id in priorities.yaml:                     │
+│     Per-site subagent (steps 2+3+4)                             │
+│     Mark grader_deferred per severity                           │
+│     Grader fan-out for non-deferred FMs only                    │
+│     dedup.py + audit.py --partial + finalize.py --partial       │
+│     viewer.py — rebuild tessary-evals/index.html                │
+│     Adaptive gate (strict for sites 1–2, then batch budget)     │
+└──────────────────────────────────┬──────────────────────────────┘
+                                   ▼
+┌─ Phase D — Chains + taxonomy (once at end of C) ────────────────┐
+│   Chain detection subagent → taxonomy subagent → final pass     │
+│   of dedup / audit / finalize / viewer                          │
+└─────────────────────────────────────────────────────────────────┘
+
+Phase E (on demand): /evals:synthesize-graders --complete <id>
 ```
 
-### Steps 0 + 1 (parallel) — Product profile + Call-site discovery
+### Phase A — Discovery
 
-Send **one message with two Agent tool calls**:
+Send **one message with two Agent tool calls** so they run in parallel.
 
-1. **Step 0 subagent** (`subagent_type: Explore`) — pass it `$PLUGIN/prompts/analyze_product.md`, the target repo path, and the absolute path to `<repo>/evals/` (it must create `tessary-evals/pipeline/`). It writes `tessary-evals/pipeline/product_profile.yaml` and `tessary-evals/pipeline/invariants.yaml` and returns a manifest with domain, regulatory regimes, data sensitivity kinds, invariant counts, and `coverage_deferred: true` (because step 1 may still be running).
+1. **Product profile subagent** (`subagent_type: Explore`) — pass `$PLUGIN/prompts/analyze_product.md`, the target repo path, and the absolute `tessary-evals/` path. Writes `tessary-evals/pipeline/product_profile.yaml` and `tessary-evals/pipeline/invariants.yaml`. Returns a manifest with domain, regulatory regimes, data sensitivity kinds, invariant counts, and `coverage_deferred: true` (because call-site discovery may still be running).
 
-2. **Step 1 subagent** — choose:
-   - **Path A — traces provided**: `subagent_type: general-purpose`. Parse the JSONL (handle OTLP/JSON or flat Python SDK exporter shape), normalize spans, group by normalized system-prompt hash, write one `tessary-evals/pipeline/call_sites/<id>.yaml` per group and `tessary-evals/datasets/<id>.jsonl` per group. The full span taxonomy (chat / tool / embedding / streaming / errored / retry-collapse / non-GenAI) and observability stats (`observed.*` p50/p95/error_rate/refusal_rate/cost) are required as described in v0.3 — those rules are unchanged; only the *output destination* moved to per-site shards. Stratified sampling at up to 10 representative spans per site stays.
+2. **Call-site discovery subagent** — choose:
+   - **Path A — traces provided**: `subagent_type: general-purpose`. Parse the JSONL (OTLP/JSON or flat Python SDK exporter shape), normalize spans, group by normalized system-prompt hash, write one `tessary-evals/pipeline/call_sites/<id>.yaml` per group and `tessary-evals/datasets/<id>.jsonl` per group. Span taxonomy and observability stats (`observed.*` p50/p95/error_rate/refusal_rate/cost) are required. Stratified sampling at up to 10 representative spans per site.
    - **Path B — static repo**: `subagent_type: Explore`. Grep for LLM-call patterns; write one shard per discovered call site.
 
-   The subagent returns a manifest: a list of `{id, use_case, provider, sample_count, has_system_prompt, redaction_state, file_hint?}` and the overall `runtime.redaction_state` (worst case across sites).
+   Returns a manifest: a list of `{id, use_case, provider, sample_count, has_system_prompt, redaction_state, file_hint?}` and the overall `runtime.redaction_state` (worst case across sites).
 
-Wait for both subagents to finish, then read only the manifests. Print:
+After both return, read only the manifests. Print:
 
 ```
-Step 0 done: domain=<x>; <N> invariants (<high>/<medium>/<low>); regulatory: [<regimes>]
-Step 1 done: <N> call sites; redaction_state=<>
+Phase A done: domain=<x>; <N> invariants (<high>/<medium>/<low>); regulatory: [<regimes>] | <M> call sites; redaction_state=<>
 ```
 
-If the step-0 subagent set `coverage_deferred: true`, spawn a tiny serial follow-up subagent that reads `invariants.yaml` and the call-site shards, computes `invariant_coverage`, and rewrites `invariants.yaml` in place. (Keep this subagent small; pass only the file paths.)
+If the product subagent set `coverage_deferred: true`, spawn a tiny serial follow-up subagent that reads `invariants.yaml` and the call-site shards, computes `invariant_coverage`, and rewrites `invariants.yaml` in place.
 
-**Scale gates** (run after step 1 manifest is in): ≤30 call sites → proceed; 30–50 → confirm with the user; >50 → ask to narrow scope. The gate is a *curatability* check; v0.4 sharding removes the main-context constraint, but a report with 100 call sites is still hard to review.
+Lock phase A:
 
-### Step 0.5 — Pack discovery + interview
+```bash
+python3 "$PLUGIN/pipeline_io.py" lock A \
+  tessary-evals/pipeline/product_profile.yaml \
+  tessary-evals/pipeline/invariants.yaml \
+  tessary-evals/pipeline/call_sites/*.yaml \
+  --evals-dir tessary-evals
+```
 
-Stays in main context. Bundle paths:
+### Phase B — Triage
+
+**Pack discovery + interview.** Stays in main context. Bundle paths:
 
 ```bash
 for f in "$PLUGIN/packs"/*/pack.yaml; do ... ; done
 for f in "$REPO/.tessary-evals-packs"/*/pack.yaml 2>/dev/null; do ... ; done
 ```
 
-Evaluate `applies_when.always` / `applies_when.auto_signals` against `product_profile.yaml`'s summary fields (`domain`, `regulatory_context`, `brand_voice_signals`, `data_sensitivity`) and the step-1 manifest — read only what you need.
+Evaluate `applies_when.always` / `applies_when.auto_signals` against `product_profile.yaml` summary fields and the call-site manifest. Categorize each pack: **always-on** (`quality`), **auto-recommended**, **opt-in**, **explicit override**. Print one line per pack.
 
-Categorize each pack: **always-on** (`quality`), **auto-recommended**, **opt-in**, **explicit override**. Print one line per pack as in v0.3.
+For each engaged pack, read its `interview.md`, apply pre-fill rules against the phase-A artifacts, batch every genuinely-needed question into a single dialog turn. Compute each pack's `content_digest` (sha256 of `pack.yaml + interview.md + failures.md`, first 16 hex chars). Verify pack manifests against `$PLUGIN/contract/pack.schema.json`. Check `dependencies` / `conflicts`.
 
-For each engaged pack, read its `interview.md`, apply pre-fill rules against the step-0 artifacts, batch all genuinely-needed user questions into a single dialogue turn. Record results into the in-memory pack list with `interview_answers` keyed by question id and per-question `source` / `evidence`.
-
-Compute `content_digest` (sha256 of `pack.yaml + interview.md + failures.md`, first 16 hex chars). Verify pack manifests against `$PLUGIN/contract/pack.schema.json`. Check `dependencies` / `conflicts`.
-
-Write `tessary-evals/pipeline/packs.yaml` via Python (the file is small enough for one Write, but using the helper is cleaner):
+Write `tessary-evals/pipeline/packs.yaml`:
 
 ```bash
 python3 - <<'PY'
@@ -243,13 +230,38 @@ pipeline_io.write_packs("tessary-evals", json.loads('''<packs json>'''))
 PY
 ```
 
-### Step 2+3+4 — Per-call-site fan-out
+**Rank call sites.** Main-agent inline reasoning over the phase-A manifest. Signals, in order of weight:
 
-**Fan out one subagent per call site.** Cap 30 per message; sequential batches if call_sites > 30. Each subagent classifies the shape, extracts intent + constraints, and hypothesizes failure modes for its single assigned call site. The full instruction document is `$PLUGIN/prompts/per_site_kit.md` — a single file each subagent reads once.
+1. **Trace anchoring** — Path A sites outrank Path B sites; among Path A, higher `observed.sample_count` wins.
+2. **User-facing surface** — sites whose use_case / file_hint indicate a user-visible surface (UI chat, transactional email, support response) outrank purely-internal helpers.
+3. **Data sensitivity / regulatory exposure** — sites whose surrounding code touches `product_profile.data_sensitivity` kinds or `regulatory_context` regimes get a bump.
+4. **Path-prominence heuristic for Path B** — public route paths (`/api/v1/...`), exported top-level functions, and modules referenced from the repo's entrypoint outrank deeper utility modules.
 
-**Issue every Agent call in a batch in the same message, back-to-back, with no intervening tool calls.** Identical instructions across a batch let the runtime reuse work between subagents; interleaving other tool calls between Agent invocations breaks that.
+Produce a full ordering. Print the top 3 with one-line reasons and a single y/n prompt:
 
-Per-subagent prompt template (fill the angle brackets):
+```
+Top call sites by impact:
+  1. <id_a> — <reason>
+  2. <id_b> — <reason>
+  3. <id_c> — <reason>
+I'll process them in this order; proceed? (y / "start with <id>" / "reorder")
+```
+
+Write `tessary-evals/pipeline/priorities.yaml` as `{"call_site_ids": [<id_a>, <id_b>, ...]}` and lock phase B:
+
+```bash
+python3 "$PLUGIN/pipeline_io.py" lock B \
+  tessary-evals/pipeline/packs.yaml tessary-evals/pipeline/priorities.yaml \
+  --evals-dir tessary-evals
+```
+
+### Phase C — Per-site loop
+
+For each `call_site_id` in `priorities.yaml`, in order. **Track wall time for each iteration** — sites 1 and 2 set the per-site cost baseline used by the adaptive gate.
+
+**Step C.1 — Per-site subagent (steps 2+3+4 for this one site).** One Agent call (not a fan-out batch). Subagent reads `prompts/per_site_kit.md` and follows it end-to-end. The kit hypothesizes all 11–26 failure modes; the orchestrator decides which get graded now.
+
+Subagent prompt template:
 
 ```
 You are a per-call-site subagent for synthesize-graders. Your instruction
@@ -270,101 +282,104 @@ INPUT PATHS
 Return ONLY the manifest specified at the bottom of per_site_kit.md.
 ```
 
-Read only the manifests. Print after each batch:
+**Step C.2 — Mark deferred.** Read the just-written `failure_modes/<id>.yaml`. For each entry:
 
-```
-Step 2+3+4 batch <i>/<n>: <count> sites done; shapes=[<distribution>]; mean failures/site=<X>
-```
+- `severity: high` → set `grader_deferred: false`.
+- `severity: medium` or `severity: low` → set `grader_deferred: true` and `grader_id: null`.
 
-### Step 4.5 — Chain analysis subagent
-
-One subagent (`subagent_type: general-purpose`). Pass:
-
-- Plugin root, repo root, tessary-evals/ root.
-- The list of call_site IDs and shard paths (the manifests from step 4 already
-  give you names + paths; the subagent reads each shard).
-- Absolute path to `$PLUGIN/prompts/analyze_chains.md` — the "Subagent context"
-  section at the bottom describes its output shape and tells it to write
-  `chains.yaml` + `failure_modes/_chains.yaml` directly.
-
-Read only the manifest. Print:
-
-```
-Step 4.5: detected <N> chains (<methods>); <M> chain failures
-```
-
-If the system has clearly independent call sites, an empty `chains: []` is a valid result.
-
-### Step 4.6 — Dedup (deterministic)
+Patch the shard in place via Read + Edit. Re-lock the shard:
 
 ```bash
-python3 "$PLUGIN/dedup.py" tessary-evals/
+python3 "$PLUGIN/pipeline_io.py" lock C-fm tessary-evals/pipeline/failure_modes/<id>.yaml \
+  tessary-evals/pipeline/call_sites/<id>.yaml --evals-dir tessary-evals
 ```
 
-`dedup.py` reads every `tessary-evals/pipeline/failure_modes/*.yaml` shard, runs the
-three-pass dedup (exact → semantic via SequenceMatcher ≥ 0.85 → conflict
-suffix) deterministically, and rewrites each shard in place. Print line
-matches v0.3 wording.
+**Step C.3 — Grader synthesis for this site.** Fan out one subagent per non-deferred failure-mode group in parallel inside a single Agent message. Author discovery and per-grader template are described under "Grader subagent template" below. Before spawning each subagent, run `python3 "$PLUGIN/pipeline_io.py" check-file tessary-evals/graders/<grader_id_safe>.yaml --evals-dir tessary-evals` — if exit 0, skip (already emitted in a prior partial run). Lock each emitted grader file as the subagent returns.
 
-### Step 4.7 — Audit (deterministic + targeted fix subagents)
+**Step C.4 — Bookkeeping.** Run, in order:
 
 ```bash
-python3 "$PLUGIN/audit.py" tessary-evals/
+python3 "$PLUGIN/dedup.py"    tessary-evals/
+python3 "$PLUGIN/audit.py"    tessary-evals/ --partial
+python3 "$PLUGIN/finalize.py" tessary-evals/ --partial --skip-meta=false
+python3 "$PLUGIN/viewer.py"   tessary-evals
 ```
 
-The script emits a JSON punch list. For each item, choose:
+`audit.py --partial` is informational only — it never exits non-zero and suppresses checks that need every call site to be processed (generic-failure-repeated and pack_no_contribution). `finalize.py --partial` threads through to the embedded `validate.py --bundle` call so deferred failure modes don't trip the FM↔grader bijection check, and writes `sites_completed` / `sites_total` / `deferred_failure_count` into `pipeline/meta.yaml`.
 
-- `layer_a_undercoverage` / `layer_b_undercoverage` / `layer_c_undercoverage`
-  / `invariant_gap_uncovered` / `generic_failure_repeated` → spawn a targeted
-  subagent for that **call_site** with the failure-modes shard path and the
-  audit item description; it adds 2–4 new failures to the shard and returns
-  the updated count.
-- `chain_undercoverage` / `chain_low_confidence_no_evidence` → spawn a
-  subagent for the chain.
-- `pack_no_contribution` → spawn a subagent to re-apply that pack's
-  `failures.md` across all engaged call sites.
-- `conflict_suffix_present` / `unresolved_pack_id` → main agent only;
-  surface as a WARN line and continue.
-- `high_severity_skew_mechanical` → flag in `report.md`; do not block.
+**Step C.5 — Status line.** Print exactly one line:
 
-Targeted fix subagents go out in **one parallel batch** (cap 30) per audit
-run. Re-run `audit.py` after the batch. If items remain after two passes,
-print a WARN and continue — the bundle validator at step 7 is the final gate.
-
-### Step 5 — Taxonomy subagent
-
-One subagent (`subagent_type: general-purpose`). Pass:
-
-- Plugin root, tessary-evals/ root.
-- The list of failure-modes shard paths.
-
-The subagent reads every shard, clusters all failure modes (single_call +
-chain) into a 2-level taxonomy with 6–15 top-level nodes (subcategories
-encouraged). Writes `tessary-evals/pipeline/taxonomy.yaml`. Patches `taxonomy_node_id`
-back onto each failure-mode entry **shard-by-shard** via Read+Edit. Returns:
-
-```yaml
-step: 5
-node_count: <int>
-top_level_count: <int>
-uncategorized_count: <int>
+```
+Phase C site <i>/<n> [<id>]: <H> high-severity graders emitted; <D> failures deferred. Viewer: tessary-evals/index.html
 ```
 
-Use the v0.3 node-name conventions (snake_case, plural where appropriate;
-keep chain-flavor nodes their own cluster).
+**Step C.6 — Approval gate.**
 
-### Step 6 — Synthesize graders + calibrate self-tests (parallel fan-out)
+- After **site 1** completes: pause; ask the user `Continue to <next_id>?`.
+- After **site 2** completes: pause; ask the user `Continue?`. Compute `mean_sec = (t1 + t2) / 2`. Propose the next batch size as `K = min(remaining, max(1, floor(600 / mean_sec)))`. Print: `Sites 1 & 2 averaged ~<round(mean_sec)>s each. I can process the next K sites in ~<round(K * mean_sec / 60)> min. Proceed? (y / pick N)`.
+- After each subsequent **batch** of K sites: re-measure mean per-site wall time on the batch just completed, re-propose, repeat.
+- `--pause-every N` overrides: pause every N sites instead of the adaptive batching.
 
-Discovery and subagent template are unchanged from v0.3 except for the input
-paths. Author discovery:
+If the user declines, exit cleanly — the lock plus the SHA-verified resume from the re-run safety section lets them resume next session.
+
+### Phase D — Chains + taxonomy (end-of-Phase-C wrap-up)
+
+Run only after Phase C has processed every site in `priorities.yaml` (not after each site). Mid-stream chain detection and taxonomy re-clustering just churn the shards.
+
+**D.1 — Chain detection** (skip if `priorities.yaml` length < 2). One subagent (`subagent_type: general-purpose`) passing plugin root, repo root, `tessary-evals/` root, the list of call-site shard paths, and `$PLUGIN/prompts/analyze_chains.md`. Writes `chains.yaml` + `failure_modes/_chains.yaml`. Apply the same `grader_deferred` rule for chain failure modes (high → false, medium/low → true) before step D.3.
+
+**D.2 — Taxonomy.** One subagent reads every failure-modes shard, clusters all failure modes (single_call + chain) into a 2-level taxonomy with 6–15 top-level nodes, writes `taxonomy.yaml`, and patches `taxonomy_node_id` back onto each failure-mode entry shard-by-shard via Read + Edit.
+
+**D.3 — Grader synthesis for chains** (skip if no chains). Same fan-out pattern as C.3, applied to chain-scope failure modes that are not deferred.
+
+**D.4 — Final pass.**
+
+```bash
+python3 "$PLUGIN/dedup.py"    tessary-evals/
+python3 "$PLUGIN/audit.py"    tessary-evals/ --partial
+python3 "$PLUGIN/finalize.py" tessary-evals/ --partial
+python3 "$PLUGIN/viewer.py"   tessary-evals
+```
+
+(Audit and finalize stay in `--partial` mode while any failure mode remains deferred; the bundle is consistent, just not exhaustively graded.)
+
+Lock phase D:
+
+```bash
+python3 "$PLUGIN/pipeline_io.py" lock D \
+  tessary-evals/pipeline/chains.yaml \
+  tessary-evals/pipeline/failure_modes/_chains.yaml \
+  tessary-evals/pipeline/taxonomy.yaml \
+  --evals-dir tessary-evals
+```
+
+Print:
+
+```
+Synthesis complete: <K> graders emitted across <S> sites; <D> failures deferred. Run /evals:synthesize-graders --complete <call_site_id> to flesh out deferred failures for a site.
+```
+
+Then the platform-specific viewer-open line (see "Viewer open command" below).
+
+### Phase E — Deep grade on demand
+
+Triggered by `/evals:synthesize-graders --complete <call_site_id>` or `--complete all`.
+
+1. For each targeted site: read `failure_modes/<id>.yaml`, flip `grader_deferred: true → false` for medium/low entries. Patch via Read + Edit; re-lock the shard.
+2. Re-run Step C.3 (grader fan-out) for that site. `check-file` already skips emitted graders, so this only spawns subagents for the freshly-undeferred failures.
+3. Re-run dedup + audit (`--partial` if other sites still have deferrals; otherwise plain) + taxonomy (re-cluster — new graders may shift taxonomy assignments) + finalize + viewer.
+4. `--complete all` iterates over `priorities.yaml` and applies the same adaptive approval gate as Phase C.
+
+When the final remaining site has zero `grader_deferred: true` failures, `finalize.py` runs in non-partial mode and `validate.py --bundle` is the authoritative gate.
+
+### Grader subagent template (used by C.3 and D.3)
+
+Author discovery:
 
 1. **`evals-prompt`** skill — prefer if available.
-2. **`authors/default`** — bundled OSS fallback at `$PLUGIN/authors/default/AUTHOR.md`.
+2. **`authors/default`** — bundled fallback at `$PLUGIN/authors/default/AUTHOR.md`.
 
-Print `Step 6: using grader author <name>`. Spawn one subagent per call site
-+ one per chain, batch of 30 per message.
-
-Per-subagent prompt template (changed lines marked with [v0.4]):
+Print `Using grader author <name>` once at first use. Per-subagent prompt:
 
 ```
 You are synthesizing and calibrating graders for one call site (or chain) as part
@@ -373,16 +388,16 @@ of a synthesize-graders run.
 CONTEXT
 - Plugin root: <abs $PLUGIN>
 - Repo: <abs repo>
-- [v0.4] Call-site shard path: <abs tessary-evals/pipeline/call_sites/<id>.yaml>     (single_call)
-- [v0.4] Failure-modes shard path: <abs tessary-evals/pipeline/failure_modes/<id>.yaml> (single_call)
-- [v0.4] Chains shard path: <abs tessary-evals/pipeline/chains.yaml>                  (chain)
-- [v0.4] Chain-failures shard: <abs tessary-evals/pipeline/failure_modes/_chains.yaml> (chain)
-- [v0.4] Product profile path: <abs tessary-evals/pipeline/product_profile.yaml>
-- Existing grader files for this call site, if any (re-run): <list of paths and locks>
+- Call-site shard path: <abs tessary-evals/pipeline/call_sites/<id>.yaml>     (single_call)
+- Failure-modes shard path: <abs tessary-evals/pipeline/failure_modes/<id>.yaml> (single_call)
+- Chains shard path: <abs tessary-evals/pipeline/chains.yaml>                  (chain)
+- Chain-failures shard: <abs tessary-evals/pipeline/failure_modes/_chains.yaml> (chain)
+- Product profile path: <abs tessary-evals/pipeline/product_profile.yaml>
+- Existing grader files for this call site, if any: <list of paths and locks>
 - Grader author: <AUTHOR>
 - Author invocation: <skill | bundled-markdown>
 
-FOR EACH FAILURE MODE in the relevant shard (filter by call_site_id or chain_id):
+PROCESS each failure mode where grader_deferred is falsy (skip deferred ones):
 1. If a grader file already exists, load it; pass _meta.locked_fields to the author
    as existing_grader.
 2. Author body via the selected author (skill or bundled-markdown). Author-owned
@@ -408,50 +423,23 @@ RETURN ONLY this YAML manifest (no prose):
     <grader_id>: { pass_rate, variance, confidence, adversarial_uncaught }
 ```
 
-The orchestrator sees only the manifests — never grader bodies. The contract
-is authoritative on the author I/O shape; do not duplicate those rules here.
+The orchestrator sees only the manifests — never grader bodies. The contract is authoritative on the author I/O shape; do not duplicate those rules here.
 
-### Step 7 — Finalize (deterministic)
+### Viewer open command
 
-```bash
-python3 "$PLUGIN/finalize.py" tessary-evals/ \
-  --version 0.4.0 \
-  --product-hint "<hint or empty>"
-```
-
-`finalize.py`:
-
-1. Writes `tessary-evals/pipeline/meta.yaml` (version + product_hint + runtime).
-2. Generates `tessary-evals/report.md` from the shards (no Write tool call in the
-   main agent; this happens in the script).
-3. Writes `tessary-evals/.synth-lock.yaml` with SHA-256 of every shard + every
-   grader file.
-4. Runs `python3 $PLUGIN/validate.py --bundle tessary-evals/` and propagates the
-   exit code.
-
-If `validate.py --bundle` reports errors, surface them, but the shards stay
-on disk — the user can fix and re-run with `--only` for affected ids.
-
-### Step 8 — Build the HTML viewer
-
-```bash
-python3 "$PLUGIN/viewer.py" tessary-evals
-```
-
-Accepts `--cta-url` / `--cta-label`. Then, detect platform via `uname -s` and
-print the matching open command:
+After every viewer rebuild in C.4 and D.4, detect the platform via `uname -s` and print the matching open command:
 
 - macOS (`Darwin`): `Browse the synthesized pipeline visually: open tessary-evals/index.html`
 - Linux: `Browse the synthesized pipeline visually: xdg-open tessary-evals/index.html`
 - Windows / unknown: `Browse the synthesized pipeline visually: start tessary-evals/index.html`
 
 Then on the next line, print verbatim:
+
 ```
 The viewer reads only the local files under `tessary-evals/` — nothing leaves your machine until you click through the CTA button.
 ```
 
-`viewer.py` reads the shards under `tessary-evals/pipeline/`, every `tessary-evals/graders/*.yaml`, and `tessary-evals/report.md` if present, assembles them into the in-memory pipeline view, and emits a single self-contained HTML file — no server, no network, no build step. The template files under `viewer_template/` (`template.html`, `styles.css`, `app.js`) are still the editable surface.
-
+`viewer.py` reads the shards under `tessary-evals/pipeline/`, every `tessary-evals/graders/*.yaml`, and `tessary-evals/report.md` if present, and emits a single self-contained HTML file. The template files under `viewer_template/` are the editable surface.
 ## Stable IDs
 
 Unchanged from v0.3.
@@ -468,34 +456,46 @@ files under `pipeline/call_sites/` and `pipeline/failure_modes/`.
 ## Constraints
 
 - **No network for synthesis.** Purely local reasoning + files.
-- **Use the Bash, Read, Grep, Glob tools** to drive the helpers. Subagents are responsible for writing shards; the orchestrator never directly writes shards under `pipeline/` (except via `pipeline_io.write_packs` for `packs.yaml`, which is small and orchestrator-owned).
-- **Stable IDs**. Re-runs produce diffable output.
+- **Use the Bash, Read, Grep, Glob tools** to drive the helpers. Subagents are responsible for writing shards; the orchestrator never directly writes shards under `pipeline/` (except via `pipeline_io.write_packs` for `packs.yaml`, which is orchestrator-owned).
+- **Stable IDs.** Re-runs produce diffable output.
 - **No invented sources.** Every field must be grounded in traces or source code.
-- **Show your work between steps.** One-line status per step.
-- **Subagents at steps 0, 1, 2+3+4, 4.5, 5, 6, and audit-driven targeted fixes.** Every other step is deterministic Python or main-agent dialogue. Do not spawn subagents at step 0.5, 4.6, 4.7, 7, or 8.
+- **Show your work between phases.** One-line status per phase and per per-site iteration; the per-site status line format is fixed (see Phase C.5).
+- **Subagents** at Phase A (product profile + call-site discovery), Phase C.1 (one per site), Phase C.3 (one per non-deferred failure group per site), Phase D.1 (chains), Phase D.2 (taxonomy), Phase D.3 (chain graders), and audit-driven targeted fixes. Every other step is deterministic Python or main-agent dialogue.
 
 ## Verification (what the user should expect)
 
 A clean run on a small repo (3–4 call sites, 1 chain) with all four packs engaged:
 
 ```
-Step 0 done: domain=B2B sales productivity; 4 invariants (2/2/0 high/medium/low); regulatory: []
-Step 1 done: 4 call sites; redaction_state=none
-Step 0.5: pack discovery
+Phase A done: domain=B2B sales productivity; 4 invariants (2/2/0 high/medium/low); regulatory: [] | 4 call sites; redaction_state=none
+Phase B: pack discovery
   - quality       (always-on) -- engaged
   - security      (auto: regulatory_context [HIPAA]) -- engaged
   - reliability   (auto: traces ingested) -- engaged
   - brand         (auto: brand_voice_signals non-empty) -- engaged
-Step 2+3+4 batch 1/1: 4 sites done; shapes=[summarize, rag_answer, extract, draft]; mean failures/site=22
-Step 4.5: detected 1 chain (trace_confirmed); 5 chain failures
-Step 4.6: dedup -- 93 raw failures -> 76 canonical (12 exact-merged, 5 semantic-merged, 0 conflict-suffixed); packs contributing: [brand, quality, reliability, security]
-Step 4.7: audit passed -- no items.
-Step 5: 19 taxonomy nodes (13 top-level + 6 sub)
-Step 6: using grader author evals-prompt; fanned out 5 subagents (4 sites + 1 chain) -- 76 graders (0 failed validation; 51 high, 19 medium, 6 low)
-tessary-evals/ written: 4 call sites | 1 chain | 76 failures | 76 graders (0 failed validation, 6 low-confidence) | 19 taxonomy nodes | 4 packs
-Step 8: wrote tessary-evals/index.html
+Top call sites by impact:
+  1. summarize_meeting_notes — user-facing, 1.2k traced calls/day
+  2. extract_action_items — downstream of #1
+  3. classify_intent — high-frequency router
+I'll process them in this order; proceed? (y / "start with <id>" / "reorder")
+> y
+
+Phase C site 1/4 [summarize_meeting_notes]: 6 high-severity graders emitted; 14 failures deferred. Viewer: tessary-evals/index.html
+Continue to extract_action_items? (y / pause)
+> y
+
+Phase C site 2/4 [extract_action_items]: 5 high-severity graders emitted; 12 failures deferred. Viewer: tessary-evals/index.html
+Sites 1 & 2 averaged ~72s each. I can process the next 2 sites in ~3 min. Proceed? (y / pick N)
+> y
+
+Phase C site 3/4 [classify_intent]: 4 high-severity graders emitted; 9 failures deferred. Viewer: tessary-evals/index.html
+Phase C site 4/4 [render_email_draft]: 5 high-severity graders emitted; 11 failures deferred. Viewer: tessary-evals/index.html
+
+Phase D: detected 1 chain (trace_confirmed); 5 chain failures (3 high → graded, 2 deferred)
+Phase D: 18 taxonomy nodes (13 top-level + 5 sub)
+Synthesis complete: 23 graders emitted across 4 sites; 48 failures deferred. Run /evals:synthesize-graders --complete <call_site_id> to flesh out deferred failures for a site.
 Browse the synthesized pipeline visually: open tessary-evals/index.html
 The viewer reads only the local files under `tessary-evals/` — nothing leaves your machine until you click through the CTA button.
 ```
 
-For a 12-call-site repo with traces, expect ~140–200 single-call graders + ~10–30 chain graders. The main agent context now holds only manifests; the failure mode is no longer context exhaustion but subagent-token spend across batches. If the user reports a slow run, the cost is in step 2+3+4 and step 6 fan-outs — both batched at 30 per message; you can lower the batch size as a polite-throttle if needed (do not raise it).
+On a 12-call-site repo with traces, the first sweep typically emits 40–80 high-severity graders (≈25–35% of full-coverage output) and defers the rest. Time-to-first-HTML on site 1 should be 2–3 minutes; the per-site cost stabilizes after sites 1 & 2 and the adaptive gate keeps each batch under roughly 10 minutes wall. Users who want exhaustive coverage run `--complete all` after the first sweep finishes, and the same adaptive gate paces it.

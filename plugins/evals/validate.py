@@ -430,12 +430,15 @@ def validate_grader(g: Grader, pipeline: Pipeline | None = None) -> list[str]:
 def _bundle_fm_grader_bijection(
     pipeline: Pipeline,
     graders_by_id: Mapping[str, Grader],
+    partial: bool = False,
 ) -> list[str]:
     errors: list[str] = []
     fms = pipeline.get("failure_modes") or []
     expected_grader_ids: set[str] = set()
     for fm in fms:
         if not isinstance(fm, dict):
+            continue
+        if partial and fm.get("grader_deferred") is True:
             continue
         gid = fm.get("grader_id")
         if not _is_nonempty_str(gid):
@@ -822,7 +825,8 @@ def _pack_filter_report(
 
 
 def _run_bundle(evals_dir: Path, calibration_csv: Path | None,
-                pack_filter: str | None = None) -> int:
+                pack_filter: str | None = None,
+                partial: bool = False) -> int:
     if not evals_dir.is_dir():
         print(f"validate.py: --bundle path is not a directory: {evals_dir}", file=sys.stderr)
         return 2
@@ -843,34 +847,40 @@ def _run_bundle(evals_dir: Path, calibration_csv: Path | None,
         return 1
 
     graders_dir = evals_dir / "graders"
-    if not graders_dir.is_dir():
-        print(f"validate.py: {graders_dir} missing", file=sys.stderr)
-        return 2
-
     graders: list[tuple[Path, Grader]] = []
     per_file_errors: list[str] = []
-    for path in sorted(graders_dir.glob("*.yaml")):
-        g = _load_yaml(path, "grader")
-        if not isinstance(g, dict):
-            per_file_errors.append(f"{path}: must be a YAML mapping at the top level")
-            continue
-        graders.append((path, g))
-        for msg in validate_grader(g, pipeline):
-            per_file_errors.append(f"{path}: {msg}")
+    if graders_dir.is_dir():
+        for path in sorted(graders_dir.glob("*.yaml")):
+            g = _load_yaml(path, "grader")
+            if not isinstance(g, dict):
+                per_file_errors.append(f"{path}: must be a YAML mapping at the top level")
+                continue
+            graders.append((path, g))
+            for msg in validate_grader(g, pipeline):
+                per_file_errors.append(f"{path}: {msg}")
+    elif not partial:
+        print(f"validate.py: {graders_dir} missing", file=sys.stderr)
+        return 2
 
     graders_by_id: dict[str, Grader] = {
         g.get("id"): g for _, g in graders if _is_nonempty_str(g.get("id"))
     }
 
     bundle_errors: list[str] = []
-    bundle_errors += _bundle_fm_grader_bijection(pipeline, graders_by_id)
+    bundle_errors += _bundle_fm_grader_bijection(pipeline, graders_by_id, partial=partial)
     bundle_errors += _bundle_duplicate_ids(graders)
     bundle_errors += _bundle_taxonomy_reachability(pipeline)
     bundle_errors += _bundle_chain_acyclic(pipeline)
-    bundle_errors += _bundle_coverage_gates(pipeline)
     bundle_errors += _bundle_pack_resolution(pipeline, graders)
     bundle_errors += _bundle_dedup_uniqueness(pipeline)
     bundle_errors += _bundle_pack_dependencies(pipeline)
+
+    coverage_msgs = _bundle_coverage_gates(pipeline)
+    if partial:
+        bundle_warnings = list(coverage_msgs)
+    else:
+        bundle_errors += coverage_msgs
+        bundle_warnings = []
 
     lock_path = evals_dir / ".synth-lock.yaml"
     if lock_path.is_file():
@@ -887,6 +897,8 @@ def _run_bundle(evals_dir: Path, calibration_csv: Path | None,
     print(f"bundle: {len(graders)} grader file(s) under {graders_dir}")
     for line in notes:
         print(line)
+    for warn in bundle_warnings:
+        print(f"warn: {warn}", file=sys.stderr)
 
     all_errors = per_file_errors + bundle_errors
     if all_errors:
@@ -894,7 +906,10 @@ def _run_bundle(evals_dir: Path, calibration_csv: Path | None,
             print(msg, file=sys.stderr)
         print(f"bundle: {len(all_errors)} error(s)", file=sys.stderr)
         return 1
-    print("bundle: OK")
+    if partial:
+        print(f"bundle: OK (partial; {len(bundle_warnings)} coverage warning(s))")
+    else:
+        print("bundle: OK")
     return 0
 
 
@@ -908,6 +923,9 @@ def main() -> int:
                                               "informational agreement reporting.")
     ap.add_argument("--pack", help="Bundle mode only — narrow output to a single pack id and "
                                    "print a compliance-tag coverage matrix.")
+    ap.add_argument("--partial", action="store_true",
+                    help="Bundle mode — tolerate deferred failure modes (no grader file yet) "
+                         "and downgrade per-site coverage shortfalls to warnings.")
     args = ap.parse_args()
 
     if args.bundle:
@@ -917,7 +935,7 @@ def main() -> int:
             return 2
         evals_dir = Path(args.bundle).resolve()
         cal = Path(args.calibration_set).resolve() if args.calibration_set else None
-        return _run_bundle(evals_dir, cal, args.pack)
+        return _run_bundle(evals_dir, cal, args.pack, partial=args.partial)
     if args.pack:
         print("validate.py: --pack is only valid with --bundle", file=sys.stderr)
         return 2

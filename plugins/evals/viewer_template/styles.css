@@ -576,6 +576,15 @@ h4 {
 }
 .fm-row .fm-link:hover { text-decoration: underline; }
 
+.fm-deferred {
+  display: inline-flex; align-items: center;
+  padding: 1px 6px; border-radius: 9px;
+  background: var(--bg-2); border: 1px dashed var(--border);
+  color: var(--muted); font-size: 9.5px; letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.fm-row-deferred .fm-title { color: var(--muted); }
+
 /* ---------- Taxonomy tree ---------- */
 
 .tree {

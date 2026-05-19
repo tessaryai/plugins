@@ -106,14 +106,18 @@ def collect(evals_dir: Path) -> dict[str, Any]:
     """
     pipeline_root = evals_dir / "pipeline"
     if not pipeline_root.is_dir():
-        print(f"viewer.py: missing {pipeline_root}/ (v0.4 sharded layout)",
-              file=sys.stderr)
-        sys.exit(2)
-    try:
-        pipeline = pipeline_io.load_pipeline(evals_dir)
-    except RuntimeError as e:
-        print(f"viewer.py: {e}", file=sys.stderr)
-        sys.exit(2)
+        pipeline: dict[str, Any] = {
+            "version": None, "product_hint": None, "packs": [],
+            "product_profile": None, "implicit_invariants": [], "invariant_coverage": [],
+            "runtime": {}, "progress": {},
+            "call_sites": [], "chains": [], "failure_modes": [], "taxonomy": [],
+        }
+    else:
+        try:
+            pipeline = pipeline_io.load_pipeline(evals_dir)
+        except RuntimeError as e:
+            print(f"viewer.py: {e}", file=sys.stderr)
+            sys.exit(2)
 
     graders: list[Mapping[str, Any]] = []
     graders_dir = evals_dir / "graders"

@@ -83,6 +83,7 @@ def load_pipeline(evals_dir: Path) -> dict[str, Any]:
         "implicit_invariants": [],
         "invariant_coverage": [],
         "runtime": {},
+        "progress": {},
         "call_sites": [],
         "chains": [],
         "failure_modes": [],
@@ -95,6 +96,8 @@ def load_pipeline(evals_dir: Path) -> dict[str, Any]:
         out["product_hint"] = meta.get("product_hint")
         runtime = meta.get("runtime")
         out["runtime"] = runtime if isinstance(runtime, dict) else {}
+        progress = meta.get("progress")
+        out["progress"] = progress if isinstance(progress, dict) else {}
 
     packs_doc = _expect_mapping(_load_yaml(p / "packs.yaml"), p / "packs.yaml")
     out["packs"] = _expect_list(packs_doc.get("packs"), "packs", p / "packs.yaml")
@@ -155,9 +158,17 @@ def _dump(path: Path, doc: Mapping[str, Any]) -> None:
 
 
 def write_meta(evals_dir: Path, version: str, product_hint: str | None,
-               runtime: Mapping[str, Any]) -> Path:
+               runtime: Mapping[str, Any],
+               progress: Mapping[str, Any] | None = None) -> Path:
     path = pipeline_dir(evals_dir) / "meta.yaml"
-    _dump(path, {"version": version, "product_hint": product_hint, "runtime": dict(runtime)})
+    doc: dict[str, Any] = {
+        "version": version,
+        "product_hint": product_hint,
+        "runtime": dict(runtime),
+    }
+    if progress is not None:
+        doc["progress"] = dict(progress)
+    _dump(path, doc)
     return path
 
 

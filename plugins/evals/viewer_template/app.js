@@ -45,8 +45,19 @@
   function plural(n, singular, pluralForm) {
     return `${n} ${n === 1 ? singular : (pluralForm || singular + 's')}`;
   }
-  document.getElementById('brand-sub').textContent =
-    `${plural(callSites.length, 'LLM call')} · ${plural(totalGraders, 'grader')}`;
+  const progress = pipeline.progress || {};
+  const sitesCompleted = Number(progress.sites_completed) || 0;
+  const sitesTotal = Number(progress.sites_total) || callSites.length;
+  const deferredCount = Number(progress.deferred_failure_count) || 0;
+  const subParts = [`${plural(callSites.length, 'LLM call')}`,
+                    `${plural(totalGraders, 'grader')}`];
+  if (sitesTotal && sitesCompleted < sitesTotal) {
+    subParts.push(`${sitesCompleted}/${sitesTotal} complete`);
+  }
+  if (deferredCount > 0) {
+    subParts.push(`${deferredCount} deferred`);
+  }
+  document.getElementById('brand-sub').textContent = subParts.join(' · ');
 
   // v3 sidebar: exactly three sections.
   const views = [
@@ -811,12 +822,17 @@
     const secondary = (showTitle && fm.description)
       ? `<span class="fm-desc">${escapeHtml(fm.description)}</span>`
       : '';
-    return `<div class="fm-row">
+    const deferred = fm.grader_deferred === true;
+    const deferredBadge = deferred
+      ? `<span class="fm-deferred" title="Grader not yet synthesized. Run /evals:synthesize-graders --complete &lt;call_site_id&gt; to flesh out.">deferred</span>`
+      : '';
+    return `<div class="fm-row${deferred ? ' fm-row-deferred' : ''}">
       <span class="fm-dot dot ${sev ? 'sev-' + sev : ''}"></span>
       ${primary}
       <span class="fm-meta">
         ${sev ? humanize(sev) : ''}
         ${g && g.kind ? ` · ${escapeHtml(humanize(g.kind))}` : ''}
+        ${deferredBadge}
       </span>
       ${showGraderLink && g ? `<span><a href="#" data-modal-open="g:${escapeHtml(g.id)}">Grader →</a></span>` : '<span></span>'}
       ${secondary}

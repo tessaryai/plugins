@@ -39,7 +39,7 @@ MIN_LAYER_C = 3
 MIN_CHAIN_FAILURES = 3
 
 
-def audit(pipeline: dict[str, Any]) -> list[dict[str, Any]]:
+def audit(pipeline: dict[str, Any], partial: bool = False) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
 
     call_sites = {cs.get("id"): cs for cs in pipeline.get("call_sites") or []
@@ -108,13 +108,15 @@ def audit(pipeline: dict[str, Any]) -> list[dict[str, Any]]:
                       "high_bc": high_bc, "high_total": high_total})
 
     # Q5: same generic failure across every call site.
-    GENERIC_NAMES = {"hallucinates", "hallucination", "wrong_format",
-                     "incorrect_output", "vulnerable_to_injection"}
-    for name in GENERIC_NAMES:
-        sites_with = {sid for sid, names in per_site_names.items() if name in names}
-        if call_sites and len(sites_with) == len(call_sites) and len(sites_with) > 1:
-            items.append({"kind": "generic_failure_repeated", "target": name,
-                          "sites": sorted(sites_with)})
+    # Requires every call site to be processed to be meaningful; skip when partial.
+    if not partial:
+        GENERIC_NAMES = {"hallucinates", "hallucination", "wrong_format",
+                         "incorrect_output", "vulnerable_to_injection"}
+        for name in GENERIC_NAMES:
+            sites_with = {sid for sid, names in per_site_names.items() if name in names}
+            if call_sites and len(sites_with) == len(call_sites) and len(sites_with) > 1:
+                items.append({"kind": "generic_failure_repeated", "target": name,
+                              "sites": sorted(sites_with)})
 
     # Q6: every chain has >=3 cross-call failures.
     for cid in chains:
@@ -142,11 +144,13 @@ def audit(pipeline: dict[str, Any]) -> list[dict[str, Any]]:
                               "invariant": cov.get("invariant")})
 
     # Q9: every engaged pack contributed at least one failure (except quality).
-    for pid in declared_packs:
-        if pid == "quality":
-            continue
-        if per_pack_count[pid] == 0:
-            items.append({"kind": "pack_no_contribution", "target": pid})
+    # Needs the full call-site set to be meaningful; skip when partial.
+    if not partial:
+        for pid in declared_packs:
+            if pid == "quality":
+                continue
+            if per_pack_count[pid] == 0:
+                items.append({"kind": "pack_no_contribution", "target": pid})
 
     # Q10: conflict-suffixed names exist (informational; dedup already flagged).
     for fm in failure_modes:
@@ -171,6 +175,9 @@ def main() -> int:
     ap.add_argument("evals_dir", help="Path to the tessary-evals/ directory.")
     ap.add_argument("--json", action="store_true",
                     help="Emit only JSON (default also prints a human summary).")
+    ap.add_argument("--partial", action="store_true",
+                    help="Tolerate mid-synthesis state: report items but exit 0, and "
+                         "suppress checks that need the full call-site set.")
     args = ap.parse_args()
 
     evals_dir = Path(args.evals_dir).resolve()
@@ -184,7 +191,7 @@ def main() -> int:
         print(f"audit.py: {e}", file=sys.stderr)
         return 2
 
-    items = audit(pipeline)
+    items = audit(pipeline, partial=args.partial)
 
     if args.json:
         print(json.dumps({"items": items}, indent=2))
@@ -192,7 +199,8 @@ def main() -> int:
         if not items:
             print("Step 4.7: audit passed -- no items.")
         else:
-            print(f"Step 4.7: audit -- {len(items)} item(s):")
+            label = "warning(s)" if args.partial else "item(s)"
+            print(f"Step 4.7: audit -- {len(items)} {label}:")
             for it in items:
                 print(f"  - {it.get('kind')} target={it.get('target')!r} "
                       + " ".join(f"{k}={v!r}" for k, v in it.items()
@@ -200,6 +208,8 @@ def main() -> int:
             print()
             print(json.dumps({"items": items}, indent=2))
 
+    if args.partial:
+        return 0
     return 1 if items else 0
 
 

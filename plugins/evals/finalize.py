@@ -293,6 +293,48 @@ def render_report(pipeline: dict[str, Any],
 # Lock file.
 # ---------------------------------------------------------------------------
 
+def _compute_progress(pipeline: dict[str, Any],
+                      graders: list[dict[str, Any]]) -> dict[str, Any]:
+    """Summarize how much of the synthesis is done so the viewer can show progress."""
+    call_sites = [cs for cs in pipeline.get("call_sites") or [] if isinstance(cs, dict)]
+    sites_total = len(call_sites)
+    fms = [fm for fm in pipeline.get("failure_modes") or [] if isinstance(fm, dict)]
+    deferred = sum(1 for fm in fms if fm.get("grader_deferred") is True)
+
+    grader_ids = {g.get("id") for g in graders if isinstance(g, dict)}
+    per_site_expected: dict[str, int] = {}
+    per_site_emitted: dict[str, int] = {}
+    for fm in fms:
+        if fm.get("scope") != "single_call":
+            continue
+        sid = fm.get("call_site_id")
+        if not sid:
+            continue
+        if fm.get("grader_deferred") is True:
+            continue
+        per_site_expected[sid] = per_site_expected.get(sid, 0) + 1
+        if fm.get("grader_id") in grader_ids:
+            per_site_emitted[sid] = per_site_emitted.get(sid, 0) + 1
+
+    sites_completed = 0
+    for cs in call_sites:
+        sid = cs.get("id")
+        if not sid:
+            continue
+        if cs.get("shape") is None:
+            continue
+        expected = per_site_expected.get(sid, 0)
+        emitted = per_site_emitted.get(sid, 0)
+        if expected == 0 or emitted >= expected:
+            sites_completed += 1
+
+    return {
+        "sites_completed": sites_completed,
+        "sites_total": sites_total,
+        "deferred_failure_count": deferred,
+    }
+
+
 def write_lock(evals_dir: Path, inputs_digest: str | None) -> Path:
     existing = pipeline_io.read_lock(evals_dir)
 
@@ -340,6 +382,9 @@ def main() -> int:
                     help="Skip writing meta.yaml (orchestrator wrote it earlier).")
     ap.add_argument("--skip-report", action="store_true")
     ap.add_argument("--skip-validate", action="store_true")
+    ap.add_argument("--partial", action="store_true",
+                    help="Mid-synthesis run: deferred failures get no grader, bundle "
+                         "validator runs in --partial mode, meta.yaml records progress.")
     args = ap.parse_args()
 
     evals_dir = Path(args.evals_dir).resolve()
@@ -347,18 +392,7 @@ def main() -> int:
         print(f"finalize.py: {evals_dir}/pipeline/ not found", file=sys.stderr)
         return 2
 
-    # 1. meta.yaml
-    if not args.skip_meta:
-        runtime: dict[str, Any] = {}
-        if args.runtime_yaml:
-            runtime_path = Path(args.runtime_yaml).resolve()
-            if runtime_path.is_file():
-                loaded = yaml.safe_load(runtime_path.read_text(encoding="utf-8"))
-                if isinstance(loaded, dict):
-                    runtime = loaded
-        pipeline_io.write_meta(evals_dir, args.version, args.product_hint, runtime)
-
-    # Load assembled pipeline + grader files for the report.
+    # Load assembled pipeline + grader files for the report and progress fields.
     try:
         pipeline = pipeline_io.load_pipeline(evals_dir)
     except RuntimeError as e:
@@ -375,6 +409,20 @@ def main() -> int:
             if isinstance(doc, dict):
                 graders.append(doc)
 
+    progress = _compute_progress(pipeline, graders)
+
+    # 1. meta.yaml
+    if not args.skip_meta:
+        runtime: dict[str, Any] = {}
+        if args.runtime_yaml:
+            runtime_path = Path(args.runtime_yaml).resolve()
+            if runtime_path.is_file():
+                loaded = yaml.safe_load(runtime_path.read_text(encoding="utf-8"))
+                if isinstance(loaded, dict):
+                    runtime = loaded
+        pipeline_io.write_meta(evals_dir, args.version, args.product_hint, runtime,
+                               progress=progress)
+
     # 2. report.md
     if not args.skip_report:
         report = render_report(pipeline, graders)
@@ -387,10 +435,10 @@ def main() -> int:
     bundle_rc = 0
     if not args.skip_validate:
         validate_path = SCRIPT_DIR / "validate.py"
-        proc = subprocess.run(
-            [sys.executable, str(validate_path), "--bundle", str(evals_dir)],
-            capture_output=False,
-        )
+        cmd = [sys.executable, str(validate_path), "--bundle", str(evals_dir)]
+        if args.partial:
+            cmd.append("--partial")
+        proc = subprocess.run(cmd, capture_output=False)
         bundle_rc = proc.returncode
 
     # Summary line for the orchestrator log.
