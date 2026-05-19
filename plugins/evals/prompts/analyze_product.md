@@ -1,4 +1,4 @@
-You are analyzing a repository as a *product*, not as code. Your job is to surface the implicit context that every LLM call site in this repo inherits — the things the product almost certainly assumes but never explicitly states in any one prompt.
+You are analyzing a repository as a *product*, not as code. Your job is to surface the implicit context that every LLM call site in this repo inherits — the things the product as a whole assumes but that **no LLM prompt in the repo actually states or enforces**. Treat the prompts themselves as material to filter your candidates against, never as evidence for them: anything a system prompt already says is an explicit constraint, picked up downstream — keeping it here would double-count and hide the real gaps.
 
 This step's output drives:
 
@@ -56,7 +56,9 @@ Run these searches before writing the profile. State which ones you ran and what
 
 ## 2. `implicit_invariants`
 
-Rules the developer almost certainly believes apply to every LLM call but might not have written into every prompt. Each one needs evidence and a confidence level.
+A rule that the surrounding product assumes is true for every LLM output, but that **no LLM prompt in the repo actually states or enforces**. If you can find the rule written into any system prompt, prompt template, or prompt-builder string, it is **not** an implicit invariant — it is an explicit constraint and gets picked up later as a Layer A constraint at step 2+3+4. Drop it from this list.
+
+The value of this list is precisely the gap: things the product needs to be true that the prompts forgot to say.
 
 ```yaml
 - name: <snake_case, e.g. "no_competitor_recommendations">
@@ -67,24 +69,44 @@ Rules the developer almost certainly believes apply to every LLM call but might 
   applies_to: <"all_call_sites" | list of call_site_ids if scoped>
 ```
 
-**Confidence calibration:**
+### Evidence must come from outside the prompts
 
-- `high` — multiple independent pieces of evidence (e.g. `gdpr_redactor.py` exists AND a `data_processor_agreement.md` exists AND tables include `eu_residence_status`). The invariant is so well-grounded that absence of an explicit grader for it is a real bug.
-- `medium` — one strong piece of evidence (e.g. a `medical_disclaimer.py` file). Likely an invariant; surface it for review.
-- `low` — circumstantial signal (e.g. a `users` table has a `country` column). Speculative; surface as a question, not an assertion.
+**Valid evidence sources:** frontend copy and marketing pages; database schemas and migrations; `*_redactor.py`, `*_disclaimer.py`, `compliance*.py`, `pii*.py`, `safety*.py`, `audit*.py`, `consent*.py`, `policy*.py` and similar guardrail modules; dependency choices (`presidio`, `stripe`, regulated-cloud SDKs); env config (`*_HIPAA_*`, `EU_REGION_ONLY`, `PII_REDACTOR_URL`); legal/compliance docs in the repo (`PRIVACY.md`, `DPA.md`, `data_processor_agreement.md`).
 
-**Examples of good invariants** (illustrative shape; what you produce must come from the actual repo):
+**Invalid evidence sources** — do not cite these:
 
-- `no_legal_advice_without_disclaimer` — high — evidence: `frontend/copy.ts` has a "not legal advice" banner; LLM call sites don't all check for this in their prompts.
-- `pii_redacted_before_external_send` — high — evidence: `redaction.py` exists with explicit functions; one of the LLM call sites bypasses it.
-- `competitor_brand_silence` — medium — evidence: `frontend/marketing/*.tsx` only ever names this product, never competitors; LLM-drafted emails could surface competitors from training data.
-- `eu_data_residency_respected` — low — evidence: `users.country` column exists; no explicit residency-routing logic visible.
+- System prompt files (anything that *is* an LLM prompt: `*.prompt`, `*.txt` loaded as a prompt, `system_prompt = "..."` constants, Jinja/handlebars templates rendered into LLM input).
+- Prompt-builder functions (`build_system_prompt(...)`, `make_prompt(...)`).
+- Inline f-strings or template literals that get sent to the model.
+- Any docstring on the LLM call function that paraphrases the prompt.
 
-**Anti-patterns:**
+Before finalizing each candidate invariant, run this check:
 
+1. Grep the repo for the rule's keywords in obvious prompt locations (`prompts/`, `templates/`, files matching `*prompt*`, and the string arguments of LLM SDK call sites — `messages=[...]`, `system=...`, `chat.completions.create(messages=...)`, `client.messages.create(system=...)`, `ChatPromptTemplate.from_messages(...)`).
+2. If any LLM prompt in the repo already states the rule (even loosely), **drop the candidate**. It will be re-discovered as an explicit constraint downstream — keeping it here would double-count and obscure the actual gaps.
+3. If no prompt states it but the rule is grounded in non-prompt evidence above, keep it.
+
+### Confidence calibration
+
+- `high` — multiple independent non-prompt pieces of evidence (e.g. `gdpr_redactor.py` exists AND a `data_processor_agreement.md` exists AND tables include `eu_residence_status`). The invariant is so well-grounded that absence of an explicit grader for it is a real bug.
+- `medium` — one strong non-prompt piece of evidence (e.g. a `medical_disclaimer.py` file).
+- `low` — circumstantial signal (e.g. a `users` table has a `country` column). Surface as a candidate for review, not an assertion.
+
+### Examples of good invariants
+
+(Illustrative shape; what you produce must come from the actual repo.)
+
+- `no_legal_advice_without_disclaimer` — high — evidence: `frontend/copy.ts` has a "not legal advice" banner; no LLM prompt in the repo enforces this.
+- `pii_redacted_before_external_send` — high — evidence: `redaction.py` exposes `redact_pii()`; the LLM-calling code paths do not all call it before constructing prompts.
+- `competitor_brand_silence` — medium — evidence: `frontend/marketing/*.tsx` only ever names this product, never competitors; no system prompt forbids competitor mentions, so model-trained mentions can leak through.
+- `eu_data_residency_respected` — low — evidence: `users.country` column exists and `EU_REGION_ONLY` env var is referenced in deploy config; no prompt mentions residency.
+
+### Anti-patterns
+
+- ❌ **Citing a prompt file or prompt-builder as evidence.** If the rule is in a prompt, it's explicit, not implicit — drop the candidate.
+- ❌ **Restating something the system prompt already says.** "Output must be JSON" is in the prompt; that's a constraint extracted later, not an implicit invariant.
 - ❌ Generic "be helpful and harmless." Every product has this; not actionable.
-- ❌ Invariants without evidence. If you can't cite, don't surface it.
-- ❌ Tautologies derived from the system prompt itself. Those are extracted as Layer A constraints in step 3.
+- ❌ Invariants without evidence. If you can't cite a non-prompt source, don't surface it.
 
 ## 3. Initial coverage assessment
 
