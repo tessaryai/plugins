@@ -9,6 +9,8 @@ You are running a phased synthesis pipeline against a target repo. The point of 
 
 The orchestrator's job is to plan small fan-outs, run deterministic Python helpers, and read tiny return manifests — it never holds call-site bodies, failure-mode descriptions, taxonomy details, or grader bodies in context.
 
+> **Mandatory stops — read before you start.** This skill MUST hand control back to the user after the first call site and again after the second. "Hand control back" means **end your turn**: print the status line and the gate prompt, then emit no more tool calls and no more output until the user replies. Do not process the whole `priorities.yaml` in one unattended turn — doing so silently consumes the entire session, which is the exact failure this skill is built to avoid. These two stops hold even if the user previously said "go fast" or "don't stop to ask"; an early human preview is the whole point. See Phase C.6 for the full gate. The only zero-gate path is `--complete all` on a run that has already been previewed.
+
 Output goes to a directory in the **target repo's** working directory:
 
 ```
@@ -313,14 +315,26 @@ python3 "$PLUGIN/viewer.py"   tessary-evals
 Phase C site <i>/<n> [<id>]: <H> high-severity graders emitted; <D> failures deferred. Viewer: tessary-evals/index.html
 ```
 
-**Step C.6 — Approval gate.**
+**Step C.6 — Approval gate. This is a HARD STOP, not a printed question.**
 
-- After **site 1** completes: pause; ask the user `Continue to <next_id>?`.
-- After **site 2** completes: pause; ask the user `Continue?`. Compute `mean_sec = (t1 + t2) / 2`. Propose the next batch size as `K = min(remaining, max(1, floor(600 / mean_sec)))`. Print: `Sites 1 & 2 averaged ~<round(mean_sec)>s each. I can process the next K sites in ~<round(K * mean_sec / 60)> min. Proceed? (y / pick N)`.
-- After each subsequent **batch** of K sites: re-measure mean per-site wall time on the batch just completed, re-propose, repeat.
-- `--pause-every N` overrides: pause every N sites instead of the adaptive batching.
+The gate only works if you actually return control to the user. Printing a question and then continuing in the same turn is the bug this step exists to prevent — it silently burns the whole session. To stop correctly you must **end your turn**: print the status line and the prompt, then **emit no further tool calls and produce no further output**. Do not pre-fetch the next site, do not spawn the next subagent, do not "keep going while waiting." The run resumes only when the user sends their next message.
 
-If the user declines, exit cleanly — the lock plus the SHA-verified resume from the re-run safety section lets them resume next session.
+Mechanically:
+
+1. After the gated site/batch finishes (status line already printed in C.5), print the gate prompt for that boundary (below).
+2. **Stop. End the turn. Wait for the user.** The next site does not begin until the user replies.
+3. When the user replies, honor it: `y`/`yes`/`continue` → proceed; a number `N` → process the next N sites then gate again; `pause`/`stop`/`no` → exit cleanly (the SHA-verified lock lets them resume next session); `start with <id>` / `reorder` → adjust `priorities.yaml` and continue.
+
+Gate boundaries (where you must stop):
+
+- **After site 1 completes** — always. Prompt: `Site 1 of <n> done. Continue to <next_id>? (y / pause)`.
+- **After site 2 completes** — always. Compute `mean_sec = (t1 + t2) / 2` and `K = min(remaining, max(1, floor(600 / mean_sec)))`. Prompt: `Sites 1 & 2 averaged ~<round(mean_sec)>s each. I can do the next K sites in ~<round(K * mean_sec / 60)> min before checking in again. Proceed? (y / pick N / pause)`.
+- **After each subsequent batch of K sites** — re-measure mean per-site wall time on the batch just finished, re-propose K, stop again.
+- `--pause-every N` overrides the adaptive batch: stop every N sites regardless.
+
+The first two stops (sites 1 and 2) are non-negotiable even if the user earlier said "go fast" or "don't ask me" — the whole point is an early preview before committing the session. If the user wants zero gates, that is the `--complete all` flow on an already-previewed run, not the first sweep.
+
+Never process the entire `priorities.yaml` in one unattended turn. If you ever find yourself about to start site 2's work without having stopped after site 1, that is the bug — stop instead.
 
 ### Phase D — Chains + taxonomy (end-of-Phase-C wrap-up)
 
@@ -460,6 +474,7 @@ files under `pipeline/call_sites/` and `pipeline/failure_modes/`.
 - **Stable IDs.** Re-runs produce diffable output.
 - **No invented sources.** Every field must be grounded in traces or source code.
 - **Show your work between phases.** One-line status per phase and per per-site iteration; the per-site status line format is fixed (see Phase C.5).
+- **Stop after site 1 and after site 2 — always.** End the turn and wait for the user; never run the whole priority list unattended. This overrides any prior "go fast / don't ask" instruction. See Phase C.6.
 - **Subagents** at Phase A (product profile + call-site discovery), Phase C.1 (one per site), Phase C.3 (one per non-deferred failure group per site), Phase D.1 (chains), Phase D.2 (taxonomy), Phase D.3 (chain graders), and audit-driven targeted fixes. Every other step is deterministic Python or main-agent dialogue.
 
 ## Verification (what the user should expect)
