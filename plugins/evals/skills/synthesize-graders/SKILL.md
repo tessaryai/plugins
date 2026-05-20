@@ -9,7 +9,7 @@ You are running a phased synthesis pipeline against a target repo. The point of 
 
 The orchestrator's job is to plan small fan-outs, run deterministic Python helpers, and read tiny return manifests — it never holds call-site bodies, failure-mode descriptions, taxonomy details, or grader bodies in context.
 
-> **Mandatory stops — read before you start.** This skill MUST hand control back to the user after the first call site and again after the second. "Hand control back" means **end your turn**: print the status line and the gate prompt, then emit no more tool calls and no more output until the user replies. Do not process the whole `priorities.yaml` in one unattended turn — doing so silently consumes the entire session, which is the exact failure this skill is built to avoid. These two stops hold even if the user previously said "go fast" or "don't stop to ask"; an early human preview is the whole point. See Phase C.6 for the full gate. The only zero-gate path is `--complete all` on a run that has already been previewed.
+> **Mandatory stops — read before you start.** This skill MUST hand control back to the user after the first call site and again after the second. "Hand control back" means **end your turn**: print the status line and the gate prompt, then emit no more tool calls and no more output until the user replies. Do not process the whole `priorities.yaml` in one unattended turn — doing so silently consumes the entire session, which is the exact failure this skill is built to avoid. These two stops hold even if the user previously said "go fast" or "don't stop to ask"; an early human preview is the whole point. See Phase C.7 for the full gate. The only zero-gate path is `--complete all` on a run that has already been previewed.
 
 Output goes to a directory in the **target repo's** working directory:
 
@@ -165,10 +165,10 @@ Five phases. A and B run once. C is the per-site loop with the user-approval gat
 ┌─ Phase C — Per-site loop ───────────────────────────────────────┐
 │   For each call_site_id in priorities.yaml:                     │
 │     Per-site subagent (steps 2+3+4)                             │
+│     dedup.py (before deferral — settles severity)               │
 │     Mark grader_deferred per severity                           │
 │     Grader fan-out for non-deferred FMs only                    │
-│     dedup.py + audit.py --partial + finalize.py --partial       │
-│     viewer.py — rebuild tessary-evals/index.html                │
+│     audit.py --partial + finalize.py --partial + viewer.py      │
 │     Adaptive gate (strict for sites 1–2, then batch budget)     │
 └──────────────────────────────────┬──────────────────────────────┘
                                    ▼
@@ -297,44 +297,45 @@ INPUT PATHS
 Return ONLY the manifest specified at the bottom of per_site_kit.md.
 ```
 
-**Step C.2 — Mark deferred.** Read the just-written `failure_modes/<id>.yaml`. For each entry:
+**Step C.2 — Dedup (deterministic) — before marking deferred or grading.** Run `python3 "$PLUGIN/dedup.py" tessary-evals/`. Dedup is intra-site (it only merges failures that share a `call_site_id` / `chain_id`, never across sites) and byte-stable on already-deduped shards, so re-running it each iteration leaves prior sites untouched. **Order matters:** dedup can merge failures and bump severity, so it must run *before* you derive `grader_deferred` (which depends on severity) and *before* grading (so a failure that gets merged away never gets an orphaned grader file).
+
+**Step C.3 — Mark deferred.** Read the deduped `failure_modes/<id>.yaml`. For each entry:
 
 - `severity: high` → set `grader_deferred: false`.
 - `severity: medium` or `severity: low` → set `grader_deferred: true` and `grader_id: null`.
 
-Patch the shard in place via Read + Edit. Re-lock the shard:
+Patch the shard in place via Read + Edit, then re-lock:
 
 ```bash
 python3 "$PLUGIN/pipeline_io.py" lock C-fm tessary-evals/pipeline/failure_modes/<id>.yaml \
   tessary-evals/pipeline/call_sites/<id>.yaml --evals-dir tessary-evals
 ```
 
-**Step C.3 — Grader synthesis for this site.** Fan out one subagent per non-deferred failure-mode group in parallel inside a single Agent message. Author discovery and per-grader template are described under "Grader subagent template" below. Before spawning each subagent, run `python3 "$PLUGIN/pipeline_io.py" check-file tessary-evals/graders/<grader_id_safe>.yaml --evals-dir tessary-evals` — if exit 0, skip (already emitted in a prior partial run). Lock each emitted grader file as the subagent returns.
+**Step C.4 — Grader synthesis for this site.** Fan out one subagent per non-deferred failure-mode group in parallel inside a single Agent message. Author discovery and per-grader template are described under "Grader subagent template" below. Before spawning each subagent, run `python3 "$PLUGIN/pipeline_io.py" check-file tessary-evals/graders/<grader_id_safe>.yaml --evals-dir tessary-evals` — if exit 0, skip (already emitted in a prior partial run). Lock each emitted grader file as the subagent returns.
 
-**Step C.4 — Bookkeeping.** Run, in order:
+**Step C.5 — Bookkeeping.** Run, in order:
 
 ```bash
-python3 "$PLUGIN/dedup.py"    tessary-evals/
 python3 "$PLUGIN/audit.py"    tessary-evals/ --partial
-python3 "$PLUGIN/finalize.py" tessary-evals/ --partial --skip-meta=false
+python3 "$PLUGIN/finalize.py" tessary-evals/ --partial
 python3 "$PLUGIN/viewer.py"   tessary-evals
 ```
 
 `audit.py --partial` is informational only — it never exits non-zero and suppresses checks that need every call site to be processed (generic-failure-repeated and pack_no_contribution). `finalize.py --partial` threads through to the embedded `validate.py --bundle` call so deferred failure modes don't trip the FM↔grader bijection check, and writes `sites_completed` / `sites_total` / `deferred_failure_count` into `pipeline/meta.yaml`.
 
-**Step C.5 — Status line.** Print exactly one line:
+**Step C.6 — Status line.** Print exactly one line:
 
 ```
 Phase C site <i>/<n> [<id>]: <H> high-severity graders emitted; <D> failures deferred. Viewer: tessary-evals/index.html
 ```
 
-**Step C.6 — Approval gate. This is a HARD STOP, not a printed question.**
+**Step C.7 — Approval gate. This is a HARD STOP, not a printed question.**
 
 The gate only works if you actually return control to the user. Printing a question and then continuing in the same turn is the bug this step exists to prevent — it silently burns the whole session. To stop correctly you must **end your turn**: print the status line and the prompt, then **emit no further tool calls and produce no further output**. Do not pre-fetch the next site, do not spawn the next subagent, do not "keep going while waiting." The run resumes only when the user sends their next message.
 
 Mechanically:
 
-1. After the gated site/batch finishes (status line already printed in C.5), print the gate prompt for that boundary (below).
+1. After the gated site/batch finishes (status line already printed in C.6), print the gate prompt for that boundary (below).
 2. **Stop. End the turn. Wait for the user.** The next site does not begin until the user replies.
 3. When the user replies, honor it: `y`/`yes`/`continue` → proceed; a number `N` → process the next N sites then gate again; `pause`/`stop`/`no` → exit cleanly (the SHA-verified lock lets them resume next session); `start with <id>` / `reorder` → adjust `priorities.yaml` and continue.
 
@@ -353,16 +354,19 @@ Never process the entire `priorities.yaml` in one unattended turn. If you ever f
 
 Run only after Phase C has processed every site in `priorities.yaml` (not after each site). Mid-stream chain detection and taxonomy re-clustering just churn the shards.
 
-**D.1 — Chain detection** (skip if `priorities.yaml` length < 2). One subagent (`subagent_type: general-purpose`) passing plugin root, repo root, `tessary-evals/` root, the list of call-site shard paths, and `$PLUGIN/prompts/analyze_chains.md`. Writes `chains.yaml` + `failure_modes/_chains.yaml`. Apply the same `grader_deferred` rule for chain failure modes (high → false, medium/low → true) before step D.3.
+**D.1 — Chain detection** (skip if `priorities.yaml` length < 2). One subagent (`subagent_type: general-purpose`) passing plugin root, repo root, `tessary-evals/` root, the list of call-site shard paths, and `$PLUGIN/prompts/analyze_chains.md`. Writes `chains.yaml` + `failure_modes/_chains.yaml`.
 
-**D.2 — Taxonomy.** One subagent reads every failure-modes shard, clusters all failure modes (single_call + chain) into a 2-level taxonomy with 6–15 top-level nodes, writes `taxonomy.yaml`, and patches `taxonomy_node_id` back onto each failure-mode entry shard-by-shard via Read + Edit.
+**D.2 — Dedup.** Run `python3 "$PLUGIN/dedup.py" tessary-evals/`. As in Phase C, dedup runs before deferral and grading so it can settle chain-failure severities and merges without orphaning graders.
 
-**D.3 — Grader synthesis for chains** (skip if no chains). Same fan-out pattern as C.3, applied to chain-scope failure modes that are not deferred.
+**D.3 — Mark deferred for chain failures.** Apply the same rule to `failure_modes/_chains.yaml`: `severity: high` → `grader_deferred: false`; medium/low → `grader_deferred: true` and `grader_id: null`.
 
-**D.4 — Final pass.**
+**D.4 — Taxonomy.** One subagent reads every failure-modes shard, clusters all failure modes (single_call + chain) into a 2-level taxonomy with 6–15 top-level nodes, writes `taxonomy.yaml`, and patches `taxonomy_node_id` back onto each failure-mode entry shard-by-shard via Read + Edit. (Taxonomy runs before grading so `taxonomy_node_id` can be spliced onto each grader.)
+
+**D.5 — Grader synthesis for chains** (skip if no chains). Same fan-out pattern as C.4, applied to chain-scope failure modes that are not deferred.
+
+**D.6 — Final pass.**
 
 ```bash
-python3 "$PLUGIN/dedup.py"    tessary-evals/
 python3 "$PLUGIN/audit.py"    tessary-evals/ --partial
 python3 "$PLUGIN/finalize.py" tessary-evals/ --partial
 python3 "$PLUGIN/viewer.py"   tessary-evals
@@ -393,8 +397,8 @@ Then the platform-specific viewer-open line (see "Viewer open command" below).
 Triggered by `/evals:synthesize-graders --complete <call_site_id>` or `--complete all`.
 
 1. For each targeted site: read `failure_modes/<id>.yaml`, flip `grader_deferred: true → false` for medium/low entries. Patch via Read + Edit; re-lock the shard.
-2. Re-run Step C.3 (grader fan-out) for that site. `check-file` already skips emitted graders, so this only spawns subagents for the freshly-undeferred failures.
-3. Re-run dedup + audit (`--partial` if other sites still have deferrals; otherwise plain) + taxonomy (re-cluster — new graders may shift taxonomy assignments) + finalize + viewer.
+2. Re-run Step C.4 (grader fan-out) for that site. `check-file` already skips emitted graders, so this only spawns subagents for the freshly-undeferred failures. The failures already carry a `taxonomy_node_id` from Phase D — splice the existing value; do **not** re-cluster the taxonomy (the failure set isn't changing, only the deferred flag, so re-clustering would only risk making already-emitted graders' `taxonomy_node_id` stale). Dedup is likewise unnecessary — these failures already survived it.
+3. Run `audit.py` + `finalize.py` + `viewer.py` (`--partial` if other sites still have deferrals; otherwise plain).
 4. `--complete all` iterates over `priorities.yaml` and applies the same adaptive approval gate as Phase C.
 
 When the final remaining site has zero `grader_deferred: true` failures, `finalize.py` runs in non-partial mode and `validate.py --bundle` is the authoritative gate.
@@ -486,9 +490,9 @@ files under `pipeline/call_sites/` and `pipeline/failure_modes/`.
 - **Use the Bash, Read, Grep, Glob tools** to drive the helpers. Subagents are responsible for writing shards; the orchestrator never directly writes shards under `pipeline/` (except via `pipeline_io.write_packs` for `packs.yaml`, which is orchestrator-owned).
 - **Stable IDs.** Re-runs produce diffable output.
 - **No invented sources.** Every field must be grounded in traces or source code.
-- **Show your work between phases.** One-line status per phase and per per-site iteration; the per-site status line format is fixed (see Phase C.5).
-- **Stop after site 1 and after site 2 — always.** End the turn and wait for the user; never run the whole priority list unattended. This overrides any prior "go fast / don't ask" instruction. See Phase C.6.
-- **Subagents** at Phase A (product profile + call-site discovery), Phase C.1 (one per site), Phase C.3 (one per non-deferred failure group per site), Phase D.1 (chains), Phase D.2 (taxonomy), Phase D.3 (chain graders), and audit-driven targeted fixes. Every other step is deterministic Python or main-agent dialogue.
+- **Show your work between phases.** One-line status per phase and per per-site iteration; the per-site status line format is fixed (see Phase C.6).
+- **Stop after site 1 and after site 2 — always.** End the turn and wait for the user; never run the whole priority list unattended. This overrides any prior "go fast / don't ask" instruction. See Phase C.7.
+- **Subagents** at Phase A (product profile + call-site discovery), Phase C.1 (one per site), Phase C.4 (one per non-deferred failure group per site), Phase D.1 (chains), Phase D.4 (taxonomy), Phase D.5 (chain graders), and audit-driven targeted fixes. Every other step is deterministic Python or main-agent dialogue.
 
 ## Verification (what the user should expect)
 

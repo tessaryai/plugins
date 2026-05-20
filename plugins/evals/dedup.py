@@ -200,7 +200,10 @@ def dedup(failures: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], dict[st
             fm = dict(fm)
             fm["name"] = new_name
             fm["id"] = f"{site_or_chain}::{new_name}"
-            fm["grader_id"] = f"{fm['id']}::grader"
+            # Keep grader_id consistent with the deferred invariant: a deferred
+            # failure mode has no grader yet, so its grader_id stays null.
+            fm["grader_id"] = (None if fm.get("grader_deferred") is True
+                               else f"{fm['id']}::grader")
             stats["conflict_suffixed"] += 1
             print(
                 f"WARN: name conflict at {site_or_chain}::{name} across packs "
