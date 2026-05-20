@@ -65,18 +65,25 @@ import pipeline_io  # noqa: E402
 # Constants — frozen so they can't be mutated by callers importing this module.
 # ----------------------------------------------------------------------------
 
-VALID_KINDS: Final[frozenset[str]] = frozenset({"llm_judge", "deterministic", "execution"})
+VALID_KINDS: Final[frozenset[str]] = frozenset({"llm_judge", "deterministic", "execution", "score"})
+FAILURE_KINDS: Final[frozenset[str]] = frozenset({"llm_judge", "deterministic", "execution"})
 VALID_SCOPES: Final[frozenset[str]] = frozenset({"single_call", "chain"})
 VALID_VERDICTS: Final[frozenset[str]] = frozenset({"pass", "fail", "not_applicable"})
 VALID_CONFIDENCE: Final[frozenset[str]] = frozenset({"high", "medium", "low"})
 VALID_SELF_TEST_CATEGORIES: Final[frozenset[str]] = frozenset({
     "clear_pass", "clear_fail", "near_miss", "adversarial", "not_applicable",
+    "clear_high", "clear_low",
 })
 VALID_LAYERS: Final[frozenset[str]] = frozenset({"A", "B", "C"})
 
+# Failure-catching graders require these; score graders use a different set (below).
 REQUIRED_SCALAR_FIELDS: Final[tuple[str, ...]] = (
     "id", "scope", "failure_mode_id", "name", "kind",
     "confidence", "rationale", "taxonomy_node_id",
+)
+REQUIRED_SCALAR_FIELDS_SCORE: Final[tuple[str, ...]] = (
+    "id", "scope", "quality_dimension_id", "name", "kind",
+    "confidence", "rationale",
 )
 
 # Step 4.6 coverage gates the bundle mode enforces deterministically.
@@ -352,9 +359,17 @@ def _check_pipeline_refs(
         c.get("id"): c for c in pipeline.get("chains") or [] if isinstance(c, dict)
     }
 
-    fmid = g.get("failure_mode_id")
-    if fmid not in fm_ids:
-        errors.append(f"failure_mode_id {fmid!r} not found in pipeline.failure_modes")
+    if g.get("kind") == "score":
+        qd_ids = {qd.get("id") for qd in pipeline.get("quality_dimensions") or []
+                  if isinstance(qd, dict)}
+        qdid = g.get("quality_dimension_id")
+        if qdid not in qd_ids:
+            errors.append(f"quality_dimension_id {qdid!r} not found in "
+                          f"pipeline.quality_dimensions")
+    else:
+        fmid = g.get("failure_mode_id")
+        if fmid not in fm_ids:
+            errors.append(f"failure_mode_id {fmid!r} not found in pipeline.failure_modes")
 
     if scope == "single_call" and g.get("call_site_id") not in cs_ids:
         errors.append(f"call_site_id {g.get('call_site_id')!r} "
@@ -382,10 +397,118 @@ def _check_pipeline_refs(
 # Top-level per-file validator.
 # ----------------------------------------------------------------------------
 
+def _score_scale(g: Grader) -> tuple[int, int] | None:
+    sc = g.get("score_scale")
+    if not isinstance(sc, dict):
+        return None
+    lo, hi = sc.get("min"), sc.get("max")
+    if not isinstance(lo, int) or not isinstance(hi, int) or isinstance(lo, bool) or isinstance(hi, bool):
+        return None
+    return (lo, hi)
+
+
+def _check_score_body(g: Grader) -> list[str]:
+    errors: list[str] = []
+    if not _is_nonempty_str(g.get("judge_prompt")):
+        errors.append("kind=score requires non-empty judge_prompt")
+    scale = _score_scale(g)
+    if scale is None:
+        errors.append("kind=score requires score_scale with integer min and max")
+    elif scale[0] >= scale[1]:
+        errors.append(f"score_scale.min ({scale[0]}) must be < max ({scale[1]})")
+    rl = g.get("rubric_levels")
+    if not isinstance(rl, dict) or not rl:
+        errors.append("kind=score requires a non-empty rubric_levels mapping")
+    elif scale is not None:
+        expected = {str(n) for n in range(scale[0], scale[1] + 1)}
+        got = {str(k) for k in rl}
+        if got != expected:
+            errors.append(f"rubric_levels keys must be {sorted(expected)}; got {sorted(got)}")
+        for k, v in rl.items():
+            if not _is_nonempty_str(v):
+                errors.append(f"rubric_levels[{k!r}] must be a non-empty anchor description")
+    return errors
+
+
+def _check_score_self_tests(self_tests: Sequence[Any], scale: tuple[int, int] | None,
+                            scope: str | None) -> list[str]:
+    errors: list[str] = []
+    categories_seen: set[str] = set()
+    levels_seen: list[int] = []
+    for i, st in enumerate(self_tests):
+        if not isinstance(st, dict):
+            errors.append(f"self_tests[{i}] must be a mapping")
+            continue
+        lvl = st.get("expected_level")
+        if not isinstance(lvl, int) or isinstance(lvl, bool):
+            errors.append(f"self_tests[{i}].expected_level must be an integer for kind=score")
+        elif scale is not None and not (scale[0] <= lvl <= scale[1]):
+            errors.append(f"self_tests[{i}].expected_level {lvl} out of score_scale "
+                          f"[{scale[0]}, {scale[1]}]")
+        else:
+            levels_seen.append(lvl)
+        if not _is_nonempty_str(st.get("rationale")):
+            errors.append(f"self_tests[{i}].rationale must be a non-empty string")
+        cat = st.get("category")
+        if cat is not None and cat not in VALID_SELF_TEST_CATEGORIES:
+            errors.append(f"self_tests[{i}].category must be one of "
+                          f"{sorted(VALID_SELF_TEST_CATEGORIES)}; got {cat!r}")
+        elif cat is not None:
+            categories_seen.add(cat)
+        errors += _check_self_test_body(st, scope, i)
+    # Require anchored extremes + a near-miss.
+    for need in ("clear_high", "clear_low", "near_miss"):
+        if need not in categories_seen:
+            errors.append(f"score graders must include a self_test with category: {need}")
+    if len(self_tests) >= ADVERSARIAL_REQUIRED_AT_SELF_TESTS_COUNT and "adversarial" not in categories_seen:
+        errors.append(f"self_tests must include a category: adversarial when length >= "
+                      f"{ADVERSARIAL_REQUIRED_AT_SELF_TESTS_COUNT}")
+    return errors
+
+
+def _check_id_shape_score(g: Grader) -> list[str]:
+    gid, qdid = g.get("id"), g.get("quality_dimension_id")
+    if not (_is_nonempty_str(gid) and _is_nonempty_str(qdid)):
+        return []
+    if gid != f"{qdid}::grader":
+        return [f"id should be '{qdid}::grader' for kind=score; got {gid!r}"]
+    return []
+
+
+def _validate_score_grader(g: Grader, pipeline: Pipeline | None) -> list[str]:
+    errors: list[str] = []
+    errors += [f"missing or empty required field: {k}"
+               for k in REQUIRED_SCALAR_FIELDS_SCORE if not _is_nonempty_str(g.get(k))]
+    errors += _check_enums(g)
+    scope = g.get("scope") if g.get("scope") in VALID_SCOPES else None
+    errors += _check_scope_routing(g, scope)
+    errors += _check_score_body(g)
+    errors += _check_pass_rate(g)
+    errors += _check_meta(g)
+    if g.get("applies_when") not in (None, ""):
+        errors.append("kind=score must not set applies_when (a score grader always applies)")
+
+    raw_tests = g.get("self_tests")
+    if not isinstance(raw_tests, list) or len(raw_tests) < 3:
+        got = len(raw_tests) if isinstance(raw_tests, list) else type(raw_tests).__name__
+        errors.append(f"self_tests must be a list of >= 3 entries; got {got}")
+        self_tests: list[Any] = raw_tests if isinstance(raw_tests, list) else []
+    else:
+        self_tests = list(raw_tests)
+    errors += _check_score_self_tests(self_tests, _score_scale(g), scope)
+    errors += _check_id_shape_score(g)
+    if pipeline is not None:
+        errors += _check_pipeline_refs(g, pipeline, scope, self_tests)
+    return errors
+
+
 def validate_grader(g: Grader, pipeline: Pipeline | None = None) -> list[str]:
     # Accepted-broken short-circuit. See contract § "Retry semantics".
     if _is_nonempty_str(g.get("_validation_error")):
         return []
+
+    if g.get("kind") == "score":
+        return _validate_score_grader(g, pipeline)
 
     errors: list[str] = []
     errors += _check_required_fields(g)
@@ -446,13 +569,66 @@ def _bundle_fm_grader_bijection(
             continue
         expected_grader_ids.add(gid)
 
-    actual = set(graders_by_id.keys())
+    # Only failure-catching graders participate in the FM bijection; score
+    # graders are matched against quality dimensions separately.
+    actual = {gid for gid, g in graders_by_id.items() if g.get("kind") != "score"}
     missing = expected_grader_ids - actual
     orphan = actual - expected_grader_ids
     for gid in sorted(missing):
         errors.append(f"pipeline references grader_id {gid!r} but no grader file exists")
     for gid in sorted(orphan):
         errors.append(f"grader file {gid!r} has no matching failure_mode.grader_id in pipeline")
+    return errors
+
+
+def _bundle_qd_grader_bijection(
+    pipeline: Pipeline,
+    graders_by_id: Mapping[str, Grader],
+) -> list[str]:
+    """Quality dimensions <-> score graders. Quality dimensions are always graded
+    in the first sweep (never deferred), so this is enforced in full and partial mode."""
+    errors: list[str] = []
+    expected: set[str] = set()
+    for qd in pipeline.get("quality_dimensions") or []:
+        if not isinstance(qd, dict):
+            continue
+        gid = qd.get("grader_id")
+        if not _is_nonempty_str(gid):
+            errors.append(f"quality_dimension {qd.get('id')!r} is missing grader_id")
+            continue
+        expected.add(gid)
+    actual = {gid for gid, g in graders_by_id.items() if g.get("kind") == "score"}
+    for gid in sorted(expected - actual):
+        errors.append(f"quality_dimension references grader_id {gid!r} but no score "
+                      f"grader file exists")
+    for gid in sorted(actual - expected):
+        errors.append(f"score grader {gid!r} has no matching "
+                      f"quality_dimension.grader_id in pipeline")
+    return errors
+
+
+# Shapes whose output involves judgment — must carry >= 1 quality dimension.
+JUDGMENT_SHAPES: Final[frozenset[str]] = frozenset({
+    "agent_step", "route", "rag_answer", "classify", "draft", "rerank",
+    "summarize", "conversational_turn",
+})
+
+
+def _bundle_quality_coverage(pipeline: Pipeline) -> list[str]:
+    """Every judgment-shape call site must have at least one quality dimension.
+
+    This is the never-skipped guarantee: the gap the synthesizer used to leave
+    (no quality/grey-area evals at all) is now a hard error."""
+    errors: list[str] = []
+    qd_sites = {qd.get("call_site_id") for qd in pipeline.get("quality_dimensions") or []
+                if isinstance(qd, dict)}
+    for cs in pipeline.get("call_sites") or []:
+        if not isinstance(cs, dict):
+            continue
+        if cs.get("shape") in JUDGMENT_SHAPES and cs.get("id") not in qd_sites:
+            errors.append(f"call_site {cs.get('id')!r} (shape={cs.get('shape')!r}) has no "
+                          f"quality dimensions — judgment call sites must be scored on "
+                          f"at least one quality axis")
     return errors
 
 
@@ -868,6 +1044,8 @@ def _run_bundle(evals_dir: Path, calibration_csv: Path | None,
 
     bundle_errors: list[str] = []
     bundle_errors += _bundle_fm_grader_bijection(pipeline, graders_by_id, partial=partial)
+    bundle_errors += _bundle_qd_grader_bijection(pipeline, graders_by_id)
+    bundle_errors += _bundle_quality_coverage(pipeline)
     bundle_errors += _bundle_duplicate_ids(graders)
     bundle_errors += _bundle_taxonomy_reachability(pipeline)
     bundle_errors += _bundle_chain_acyclic(pipeline)

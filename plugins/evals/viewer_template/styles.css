@@ -585,6 +585,21 @@ h4 {
 }
 .fm-row-deferred .fm-title { color: var(--muted); }
 
+.qd-row {
+  display: grid; grid-template-columns: minmax(140px, auto) 1fr auto;
+  gap: 10px; align-items: baseline;
+  padding: 6px 0; border-bottom: 1px solid var(--border-soft);
+}
+.qd-row:last-child { border-bottom: 0; }
+.qd-row .qd-name { font-weight: 500; }
+.qd-row .qd-desc { color: var(--muted); font-size: 11.5px; }
+.rubric-table { width: 100%; border-collapse: collapse; margin-top: 4px; }
+.rubric-table td { padding: 4px 8px; border-bottom: 1px solid var(--border-soft); vertical-align: top; }
+.rubric-table .rubric-lvl {
+  font-family: var(--font-mono); font-weight: 600; color: var(--accent);
+  width: 1.5em; text-align: center;
+}
+
 /* ---------- Taxonomy tree ---------- */
 
 .tree {

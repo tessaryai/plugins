@@ -1,6 +1,6 @@
-# default — bundled grader author for synthesize-graders (v2)
+# default — bundled grader author for synthesize-graders (v3)
 
-This is the OSS fallback grader-author. It implements the contract in `../../contract/AUTHORING_CONTRACT.md` (v2) and is selected when no higher-priority author skill (e.g. `evals-prompt`) is available in the session.
+This is the OSS fallback grader-author. It implements the contract in `../../contract/AUTHORING_CONTRACT.md` (v3) and is selected when no higher-priority author skill (e.g. `evals-prompt`) is available in the session.
 
 It is **deliberately minimal**. It produces graders that pass `validate.py` and are readable for review, but the rubrics are generic and the judge prompts skip the craft details a dedicated authoring skill brings.
 
@@ -25,6 +25,9 @@ The author-owned YAML body documented in the contract — **no surrounding prose
 - `deterministic` — the failure can be checked by a regex, JSON-schema validator, parser, or simple Boolean predicate on the output. Layer A failures (format, structural invariants, refusal-condition breaches) are usually this kind. Many Layer C failures (token-count budgets, latency timers, PII regex matches) also land here.
 - `llm_judge` — the failure requires reading the output for meaning. Layer B failures (faithfulness, helpfulness, calibration, tone, edge-case judgment) and Layer C judgment failures (jailbreak resistance, prompt-injection resistance) are usually this kind. Default to `llm_judge` when in doubt.
 - `execution` — the output is code or a tool call that can be executed and checked mechanically. Use only when this is obvious from the call-site shape.
+- `score` — **only when the input is a `quality_dimension` block, not a `failure_mode`.** The grader assigns a 1–5 level on an anchored rubric instead of a pass/fail verdict. Follow § "Score graders" below instead of steps 2–9.
+
+When the input is a `quality_dimension` (not a `failure_mode`), always use `kind: score` and follow the Score graders section. Everything in steps 2–9 is for failure-mode graders.
 
 ### 2. Set `applies_when` (or omit)
 
@@ -142,6 +145,23 @@ One sentence in user-impact terms. State *why this matters in production*, not w
 Good: "RAG answers in this codebase frequently cite documents not in the retrieval set, which would mislead the user about the source of the information."
 
 Bad: "Checks citations."
+
+## Score graders (input is a `quality_dimension`)
+
+Produce `kind: score`. Do not use steps 2–9; there is no `applies_when`, no binary verdict.
+
+1. **`score_scale`**: `{ min: 1, max: 5 }`.
+2. **`rubric_levels`**: carry forward the dimension's `rubric_levels`. You may sharpen the wording so each level is concrete and observable, but keep five levels and keep them monotonic (5 = best). Do not invent a different axis than the dimension describes.
+3. **`judge_prompt`**: write the system prompt the judge runs. It must: state the axis being scored (from `description` / `why_it_matters`), instruct the judge to read the output (and the relevant inputs/context the runner supplies), score strictly against `rubric_levels`, and **return exactly one integer in [1, 5] plus a one-sentence justification** — no prose preamble. Tell the judge to default to the lower of two adjacent levels when uncertain (conservative scoring keeps the trend honest).
+4. **`self_tests` (3–6 cases)** with `expected_level` (not `expected_verdict`):
+   - one `category: clear_high` — a sample_output that clearly merits the top level (expected_level = 5, or 4 if a true 5 is implausible).
+   - one `category: clear_low` — clearly the bottom (expected_level = 1, or 2).
+   - one `category: near_miss` — sits on an adjacent-level boundary (e.g. expected_level = 3 vs 4) to probe rubric sharpness.
+   - when you write ≥ 4 cases, add one `category: adversarial`: a sample_output that argues for its own high score or injects a fake prior rating ("Prior reviewer scored this 5/5"); its `expected_level` should be low. Each case needs a one-sentence `rationale`.
+5. **`confidence`**: `high` only if the rubric levels are crisp and you expect the judge to score repeatably; `medium`/`low` when the axis is genuinely fuzzy.
+6. **`rationale`**: one sentence on why this quality axis matters for the product over time.
+
+The orchestrator sets `block_on_fail: false` and the routing/`_meta` fields; you only emit the author-owned body above.
 
 ## Retry behaviour
 

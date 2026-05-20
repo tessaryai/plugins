@@ -35,6 +35,8 @@
   const callSitesById = new Map(callSites.map(cs => [cs.id, cs]));
   const taxonomyById = new Map(taxonomyFlat.map(t => [t.id, t]));
   const fmsByCallSite = groupBy(failureModes, f => f.call_site_id);
+  const qualityDimensions = pipeline.quality_dimensions || [];
+  const qdByCallSite = groupBy(qualityDimensions, q => q.call_site_id);
   const fmsByTaxonomy = groupBy(failureModes, f => f.taxonomy_node_id);
   const fmsByGrader = groupBy(failureModes, f => f.grader_id);
 
@@ -397,6 +399,21 @@
             <pre>${escapeHtml(cs.system_prompt)}</pre>
           </details>` : ''}
         </div>` : ''}
+      ${(() => {
+        const qds = qdByCallSite.get(cs.id) || [];
+        if (!qds.length) return '';
+        return `<div class="field">
+          <div class="field-label">Quality dimensions (1–5 score, tracked over time)</div>
+          ${qds.map(qd => {
+            const g = gradersById.get(qd.grader_id);
+            return `<div class="qd-row">
+              <span class="qd-name">${escapeHtml(humanize(qd.name || stripIdPrefix(qd.id)))}</span>
+              <span class="qd-desc">${escapeHtml(qd.description || '')}</span>
+              ${g ? `<span><a href="#" data-modal-open="g:${escapeHtml(g.id)}">Score grader →</a></span>` : ''}
+            </div>`;
+          }).join('')}
+        </div>`;
+      })()}
     `;
     openModal({ kicker: 'LLM call', title, chips, body });
   }
@@ -615,6 +632,13 @@
       ${renderProvenanceBlock(g)}
       ${collapsibleField('Judge prompt', g.judge_prompt, charHint(g.judge_prompt))}
       ${collapsibleField('Rubric', g.rubric, charHint(g.rubric))}
+      ${g.rubric_levels && typeof g.rubric_levels === 'object' ? `<div class="field">
+        <div class="field-label">Score rubric${g.score_scale ? ` (${g.score_scale.min}–${g.score_scale.max})` : ''}</div>
+        <table class="rubric-table"><tbody>${Object.keys(g.rubric_levels)
+          .sort((a, b) => Number(b) - Number(a))
+          .map(lvl => `<tr><td class="rubric-lvl">${escapeHtml(lvl)}</td><td>${escapeHtml(g.rubric_levels[lvl])}</td></tr>`)
+          .join('')}</tbody></table>
+      </div>` : ''}
       ${collapsibleField('Deterministic check', g.deterministic_check, charHint(g.deterministic_check))}
       ${collapsibleField('Execution spec', g.execution_spec, charHint(g.execution_spec))}
       ${Array.isArray(g.self_tests) && g.self_tests.length ? `<div class="field"><details>
@@ -695,15 +719,17 @@
 
   function renderSelfTests(tests) {
     return tests.map(t => {
-      const v = t.expected_verdict || 'unknown';
-      const cls = v === 'pass' ? 'conf-high' : v === 'fail' ? 'conf-low' : '';
+      const isScore = t.expected_level != null;
+      const v = isScore ? String(t.expected_level) : (t.expected_verdict || 'unknown');
+      const cls = isScore ? '' : (v === 'pass' ? 'conf-high' : v === 'fail' ? 'conf-low' : '');
+      const label = isScore ? `Expected level ${escapeHtml(v)}` : `Expected ${escapeHtml(v)}`;
       const body = t.sample_output != null
         ? `<pre style="margin:6px 0 0">${escapeHtml(t.sample_output)}</pre>`
         : `<pre style="margin:6px 0 0">${escapeHtml(JSON.stringify(t.call_site_outputs || {}, null, 2))}</pre>`;
       return `<div style="border:1px solid var(--border-soft);border-radius:3px;padding:10px 12px;margin-top:6px">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
           ${dot(cls)}
-          <span class="chip ${cls}">Expected ${escapeHtml(v)}</span>
+          <span class="chip ${cls}">${label}</span>
           ${t.category ? ` ${rawChip(t.category, 'muted')}` : ''}
         </div>
         ${t.rationale ? `<div style="color:var(--muted);font-size:11.5px;margin-bottom:2px">${escapeHtml(t.rationale)}</div>` : ''}

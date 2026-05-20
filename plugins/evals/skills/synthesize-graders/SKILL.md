@@ -5,7 +5,7 @@ description: Generate a calibrated eval suite for an LLM product. Point it at th
 
 # synthesize-graders — synthesize an eval pipeline from a real codebase
 
-You are running a phased synthesis pipeline against a target repo. The point of phasing is **time to first artifact**: a working `tessary-evals/index.html` appears after the first call site is graded, not after every call site is processed. The orchestrator processes one call site at a time, only synthesizes graders for `severity: high` failures in the first sweep, and defers everything else to an on-demand `--complete` flow. Medium- and low-severity failures still get hypothesized and written to disk — they just don't get graders until the user asks.
+You are running a phased synthesis pipeline against a target repo. The point of phasing is **time to first artifact**: a working `tessary-evals/index.html` appears after the first call site is graded, not after every call site is processed. The orchestrator processes one call site at a time. For each site it synthesizes graders for `severity: high` failure modes plus **all of that site's quality dimensions** (the grey-area 1–5 quality scores), and defers the medium/low failure-mode graders to an on-demand `--complete` flow. Deferred failure modes are still hypothesized and written to disk — they just don't get graders until the user asks. Quality dimensions are never deferred.
 
 The orchestrator's job is to plan small fan-outs, run deterministic Python helpers, and read tiny return manifests — it never holds call-site bodies, failure-mode descriptions, taxonomy details, or grader bodies in context.
 
@@ -25,6 +25,7 @@ tessary-evals/
     chains.yaml                       # all detected chains
     failure_modes/<call_site_id>.yaml # single_call failures per site
     failure_modes/_chains.yaml        # chain failures
+    quality_dimensions/<call_site_id>.yaml # 1-5 quality axes per judgment site
     taxonomy.yaml                     # taxonomy tree (populated at end of phase C)
   graders/<grader_id_safe>.yaml       # one file per emitted (non-deferred) grader
   datasets/<call_site_id>.jsonl       # captured inputs (Path A only)
@@ -35,6 +36,13 @@ tessary-evals/
 
 One grader per file is deliberate: emission failures are isolated (re-run one grader, not the whole batch), diffs are scoped to the grader that changed, and validation happens per file so a single malformed grader doesn't poison the pipeline. The same logic applies to the pipeline itself — sharded across per-artifact files so no single Write call carries the whole synthesis.
 
+## Two grader families
+
+The pipeline produces two complementary kinds of eval, and they must not be conflated:
+
+- **Failure-mode graders** — binary `pass | fail` checks for a specific defect (`kind: llm_judge | deterministic | execution`). Hypothesized as **failure modes**. Subject to the deferral rule below.
+- **Quality-dimension graders** — `kind: score` LLM-judges that assign a 1–5 level on an anchored rubric, tracked as a trend over time (never a gate). Hypothesized as **quality dimensions** (see `prompts/per_site_kit.md` § 4), required for judgment call sites. **Always graded in the first sweep — never deferred.** This is the grey-area "how good is the output" eval that black-and-white failure checks miss.
+
 ## Deferred failure modes
 
 Every failure-mode entry carries a `grader_deferred: <bool>` field. The orchestrator sets it during phase C:
@@ -42,7 +50,7 @@ Every failure-mode entry carries a `grader_deferred: <bool>` field. The orchestr
 - `severity: high` → `grader_deferred: false` and a grader is synthesized this sweep.
 - `severity: medium | low` → `grader_deferred: true` and `grader_id: null`; the failure is recorded but no grader is emitted yet.
 
-The user can flesh out the deferred ones later with `/evals:synthesize-graders --complete <call_site_id>` (or `--complete all`). The viewer renders deferred failures with a distinct "deferred" badge and the same hint string.
+Quality dimensions have no deferral flag — they are always graded. The user can flesh out the deferred *failure modes* later with `/evals:synthesize-graders --complete <call_site_id>` (or `--complete all`). The viewer renders deferred failures with a distinct "deferred" badge and the same hint string.
 
 ## Plugin path resolution
 
@@ -129,7 +137,7 @@ Lock labels used by the phased flow:
 | --- | --- |
 | `A` — Phase A (discovery) | `pipeline/product_profile.yaml`, `pipeline/invariants.yaml`, every `pipeline/call_sites/<id>.yaml` |
 | `B` — Phase B (triage) | `pipeline/packs.yaml`, `pipeline/priorities.yaml` |
-| `C-fm-<id>` — Phase C.1 per-site failure modes | `pipeline/failure_modes/<id>.yaml` plus the patched `pipeline/call_sites/<id>.yaml` |
+| `C-fm-<id>` — Phase C.1 per-site failure modes | `pipeline/failure_modes/<id>.yaml`, the patched `pipeline/call_sites/<id>.yaml`, and (judgment sites) `pipeline/quality_dimensions/<id>.yaml` |
 | `D` — Phase D (chains + taxonomy) | `pipeline/chains.yaml`, `pipeline/failure_modes/_chains.yaml`, `pipeline/taxonomy.yaml` |
 
 Grader files are not locked under a step label — they're locked individually as they're emitted, and `check-file` is the per-grader resume check. Partial grader batches resume cleanly from the first missing grader.
@@ -274,7 +282,7 @@ python3 "$PLUGIN/pipeline_io.py" lock B \
 
 For each `call_site_id` in `priorities.yaml`, in order. **Track wall time for each iteration** — sites 1 and 2 set the per-site cost baseline used by the adaptive gate.
 
-**Step C.1 — Per-site subagent (steps 2+3+4 for this one site).** One Agent call (not a fan-out batch). Subagent reads `prompts/per_site_kit.md` and follows it end-to-end. The kit hypothesizes all 11–26 failure modes; the orchestrator decides which get graded now.
+**Step C.1 — Per-site subagent (steps 2+3+4 for this one site).** One Agent call (not a fan-out batch). Subagent reads `prompts/per_site_kit.md` and follows it end-to-end. The kit hypothesizes all 11–26 failure modes **and** (for judgment call sites) 2–5 quality dimensions, writing both the `failure_modes/<id>.yaml` and `quality_dimensions/<id>.yaml` shards. The orchestrator decides which failure modes get graded now; **all quality dimensions for this site are graded this iteration** (they're the grey-area quality trends — never deferred).
 
 Subagent prompt template:
 
@@ -304,14 +312,22 @@ Return ONLY the manifest specified at the bottom of per_site_kit.md.
 - `severity: high` → set `grader_deferred: false`.
 - `severity: medium` or `severity: low` → set `grader_deferred: true` and `grader_id: null`.
 
-Patch the shard in place via Read + Edit, then re-lock:
+Patch the shard in place via Read + Edit, then re-lock (include the quality-dimensions shard):
 
 ```bash
 python3 "$PLUGIN/pipeline_io.py" lock C-fm tessary-evals/pipeline/failure_modes/<id>.yaml \
-  tessary-evals/pipeline/call_sites/<id>.yaml --evals-dir tessary-evals
+  tessary-evals/pipeline/call_sites/<id>.yaml \
+  tessary-evals/pipeline/quality_dimensions/<id>.yaml --evals-dir tessary-evals
 ```
 
-**Step C.4 — Grader synthesis for this site.** Fan out one subagent per non-deferred failure-mode group in parallel inside a single Agent message. Author discovery and per-grader template are described under "Grader subagent template" below. Before spawning each subagent, run `python3 "$PLUGIN/pipeline_io.py" check-file tessary-evals/graders/<grader_id_safe>.yaml --evals-dir tessary-evals` — if exit 0, skip (already emitted in a prior partial run). Lock each emitted grader file as the subagent returns.
+(Quality dimensions aren't deduped or deferred — skip them in C.2/C.3 and lock them here as-is.)
+
+**Step C.4 — Grader synthesis for this site.** Fan out grader subagents in parallel inside a single Agent message, **scoped to this one call site** — never a project-wide sweep. Two kinds of grader come out of this step:
+
+- one per **non-deferred failure mode** → a failure-catching grader (`kind: llm_judge | deterministic | execution`);
+- one per **quality dimension** of this site → a `kind: score` grader (always — quality dimensions are never deferred).
+
+Author discovery and both per-grader templates are under "Grader subagent template" below. Before spawning each subagent, run `python3 "$PLUGIN/pipeline_io.py" check-file tessary-evals/graders/<grader_id_safe>.yaml --evals-dir tessary-evals` — if exit 0, skip (already emitted in a prior partial run). Lock each emitted grader file as the subagent returns.
 
 **Step C.5 — Bookkeeping.** Run, in order:
 
@@ -403,7 +419,7 @@ Triggered by `/evals:synthesize-graders --complete <call_site_id>` or `--complet
 
 When the final remaining site has zero `grader_deferred: true` failures, `finalize.py` runs in non-partial mode and `validate.py --bundle` is the authoritative gate.
 
-### Grader subagent template (used by C.3 and D.3)
+### Grader subagent template (used by C.4 and D.5)
 
 Author discovery:
 
@@ -421,6 +437,7 @@ CONTEXT
 - Repo: <abs repo>
 - Call-site shard path: <abs tessary-evals/pipeline/call_sites/<id>.yaml>     (single_call)
 - Failure-modes shard path: <abs tessary-evals/pipeline/failure_modes/<id>.yaml> (single_call)
+- Quality-dimensions shard path: <abs tessary-evals/pipeline/quality_dimensions/<id>.yaml> (single_call)
 - Chains shard path: <abs tessary-evals/pipeline/chains.yaml>                  (chain)
 - Chain-failures shard: <abs tessary-evals/pipeline/failure_modes/_chains.yaml> (chain)
 - Product profile path: <abs tessary-evals/pipeline/product_profile.yaml>
@@ -428,15 +445,16 @@ CONTEXT
 - Grader author: <AUTHOR>
 - Author invocation: <skill | bundled-markdown>
 
-PROCESS each failure mode where grader_deferred is falsy (skip deferred ones):
+PART 1 — FAILURE-MODE GRADERS. For each failure mode where grader_deferred is falsy
+(skip deferred ones):
 1. If a grader file already exists, load it; pass _meta.locked_fields to the author
    as existing_grader.
-2. Author body via the selected author (skill or bundled-markdown). Author-owned
+2. Author body via the selected author (pass the failure_mode block). Author-owned
    output shape: $PLUGIN/contract/AUTHORING_CONTRACT.md.
 3. Splice orchestrator-owned fields onto the body (id, scope, failure_mode_id,
    call_site_id|chain_id, name, taxonomy_node_id; owner=null; block_on_fail=null;
    cost/latency budgets from observed.*; dataset_refs; _meta provenance with
-   author_contract_version=2).
+   author_contract_version=3).
 4. Write to tessary-evals/graders/<grader_id_safe>.yaml.
 5. Validate: python3 "$PLUGIN/validate.py" tessary-evals/graders/<file>.yaml --pipeline tessary-evals/
    On failure, retry author up to 3x with validator_feedback; after 3 failures,
@@ -445,9 +463,23 @@ PROCESS each failure mode where grader_deferred is falsy (skip deferred ones):
    bias). Compute pass_rate, variance, confidence (high if pass>=0.8 var<=0.1;
    medium if pass>=0.5 var<=0.2; else low). Patch via Read+Edit.
 
+PART 2 — QUALITY-DIMENSION SCORE GRADERS. For EVERY quality dimension in the
+quality-dimensions shard (none are deferred):
+1. Pass the quality_dimension block to the author (see AUTHORING_CONTRACT § "Score
+   graders"). The author returns kind: score with judge_prompt, rubric_levels,
+   score_scale, and score self_tests (expected_level).
+2. Splice orchestrator-owned fields (id = <quality_dimension_id>::grader, scope,
+   quality_dimension_id, call_site_id|chain_id, name, eval propagation; owner=null;
+   block_on_fail=FALSE — score graders are report-only trends; dataset_refs;
+   _meta provenance with author_contract_version=3). Do NOT set failure_mode_id or
+   taxonomy_node_id on score graders.
+3. Write, validate (same retry loop), and calibrate self-tests (level agreement +
+   order-reversed pass; confidence high if levels stable, else medium/low).
+
 RETURN ONLY this YAML manifest (no prose):
   call_site_id: <id>  # or chain_id
-  emitted: [<grader_id>, ...]
+  emitted: [<grader_id>, ...]            # both failure and score graders
+  score_graders: [<grader_id>, ...]      # subset that are kind: score
   failed_validation: [<grader_id>, ...]
   carried_locked: [<grader_id>, ...]
   calibration:

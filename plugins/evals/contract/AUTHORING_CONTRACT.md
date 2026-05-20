@@ -1,10 +1,16 @@
-# Grader-author contract (v2)
+# Grader-author contract (v3)
 
-This document defines the interface between **synthesize-graders** (the orchestrator) and any **grader author** invoked at step 6 of the synthesis pipeline. It exists so that the author is swappable: the bundled `authors/default/` is the OSS fallback; closed-source or third-party authors (e.g. `evals-prompt`) declare conformance to this contract and become drop-in replacements.
+This document defines the interface between **synthesize-graders** (the orchestrator) and any **grader author** invoked during the grader-synthesis phase. It exists so that the author is swappable: the bundled `authors/default/` is the OSS fallback; closed-source or third-party authors (e.g. `evals-prompt`) declare conformance to this contract and become drop-in replacements.
 
 - **Authoritative schema**: [`grader.schema.json`](./grader.schema.json) — the on-disk grader YAML.
 - **Authoritative enforcer**: `validate.py` (at the plugin root) — runs the schema rules plus cross-field invariants, per-file and `--bundle` cross-references.
-- **Contract version**: 2. Author skills should declare `contract_version: 2` in their SKILL.md frontmatter (or equivalent) so the orchestrator can refuse mismatched versions. v1 authors remain compatible if they ignore the new author-owned fields below; the orchestrator will not require them on v1 output.
+- **Contract version**: 3. Author skills should declare `contract_version: 3` in their SKILL.md frontmatter (or equivalent). v3 is **additive over v2**: a v2 author that only produces failure-mode graders (`kind: llm_judge | deterministic | execution`) is still fully conformant for those, and the orchestrator keeps using it for failure modes. Only the new `kind: score` capability (§ "Score graders") is exclusive to v3.
+
+## What changed in v3
+
+- A new grader **`kind: score`** scores a **quality dimension** on an anchored 1–5 rubric, instead of returning a binary verdict. These are the subjective grey-area quality evals — tracked as a pass-rate/level trend over time, never a pass/fail gate.
+- The orchestrator passes a `quality_dimension` block (instead of `failure_mode`) when it wants a score grader. The author returns `kind: score` with `rubric_levels`, `score_scale`, and score self-tests (`expected_level`).
+- An author that cannot produce `kind: score` should still accept the `quality_dimension` input but may decline; the orchestrator then falls back to the bundled author for that grader.
 
 ## What changed in v2
 
@@ -138,6 +144,63 @@ rationale: <string>              # one sentence — user impact, not mechanics
 
 Everything else (id shape, taxonomy node, cross-reference against `pipeline.yaml`, `_meta` provenance) is the orchestrator's responsibility.
 
+## Score graders (v3)
+
+When the orchestrator wants a quality-dimension score grader, it passes a `quality_dimension` block in place of `failure_mode`:
+
+```yaml
+quality_dimension:
+  id: <string>                 # e.g. persona_decision::basis_selection_relevance
+  name: <string>               # snake_case axis name
+  description: <string>        # what this axis measures
+  why_it_matters: <string>     # why a sustained dip hurts the product
+  rubric_levels:               # anchored 1–5, each a concrete observable description
+    "5": <string>
+    "4": <string>
+    "3": <string>
+    "2": <string>
+    "1": <string>
+  scope: single_call
+
+scope: single_call
+call_site: { ... }             # same call_site block as for failure modes
+product_context: { ... }       # optional, same as above
+existing_grader: { ... }       # optional, on regeneration
+```
+
+The author returns the score-grader author-owned fields:
+
+```yaml
+kind: score
+judge_prompt: |                # the prompt the judge runs; it must instruct the judge to
+                               # return one integer level in [score_scale.min, max] + a
+                               # one-line justification, scoring strictly against rubric_levels
+rubric_levels:                 # carry forward (or sharpen) the dimension's anchored levels
+  "5": <string>
+  "4": <string>
+  "3": <string>
+  "2": <string>
+  "1": <string>
+score_scale: { min: 1, max: 5 }
+self_tests:
+  - sample_output: <string>
+    expected_level: <int in [min, max]>
+    category: clear_high | clear_low | near_miss | adversarial
+    rationale: <string>
+confidence: high | medium | low
+rationale: <string>            # one sentence — why this axis matters for the product
+```
+
+### Score-grader invariants
+
+1. **`self_tests` length**: at least 3.
+2. **Anchored extremes + a near-miss**: at least one self-test at (or near) the top level (`category: clear_high`), at least one at (or near) the bottom (`category: clear_low`), and at least one `near_miss` probing an adjacent-level boundary.
+3. **`expected_level` range**: every `expected_level` is an integer within `score_scale` `[min, max]`.
+4. **Adversarial coverage**: when `self_tests` has ≥ 4 entries, at least one `category: adversarial` — a `sample_output` that tries to inflate its own score (e.g. asserts "this is clearly a 5" or injects a fake high prior rating); its `expected_level` should be low.
+5. **Rubric fidelity**: `rubric_levels` keys must be the stringified integers covering `[min, max]`; each anchor must be concrete and observable.
+
+Score graders never use `applies_when` / `not_applicable` (they always apply when the call site fires), and `block_on_fail` is always `false` (orchestrator sets it) — a score grader is a trend, never a gate.
+
 ## Retry semantics
 
 The orchestrator (or its step-6 subagents) runs `validate.py` on every emitted grader. On failure it re-invokes the author with the original input **plus** a `validator_feedback` block (see input schema above). Up to **3 retries** total. After the third failure, the orchestrator writes the last attempt to disk with a top-level `_validation_error: <message>` key and continues — the operator handles it during review.
@@ -153,7 +216,7 @@ An author conforms to this contract when:
 1. It accepts the input schema above (extra fields ignored).
 2. It returns YAML matching the author-owned fields above.
 3. Its output passes `validate.py` once the orchestrator splices in the orchestrator-owned fields.
-4. It declares `contract_version: 2` — in its SKILL.md frontmatter for skill-based authors, or in its top-level markdown for bundled-procedure authors. (The bundled `authors/default/` author satisfies this via the `(v2)` reference in its first paragraph.)
+4. It declares `contract_version: 3` — in its SKILL.md frontmatter for skill-based authors, or in its top-level markdown for bundled-procedure authors. (The bundled `authors/default/` author satisfies this via the `(v3)` reference in its first paragraph.) A v2 author is still accepted for failure-mode graders; the orchestrator only requires v3 for `kind: score`.
 
 The orchestrator discovers authors by **two distinct invocation models**:
 

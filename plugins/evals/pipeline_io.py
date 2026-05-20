@@ -87,6 +87,7 @@ def load_pipeline(evals_dir: Path) -> dict[str, Any]:
         "call_sites": [],
         "chains": [],
         "failure_modes": [],
+        "quality_dimensions": [],
         "taxonomy": [],
     }
 
@@ -142,6 +143,16 @@ def load_pipeline(evals_dir: Path) -> dict[str, Any]:
             fm_doc = _expect_mapping(_load_yaml(fm_path), fm_path)
             shard = _expect_list(fm_doc.get("failure_modes"), "failure_modes", fm_path)
             out["failure_modes"].extend(shard)
+
+    # Quality dimensions: one file per call site (judgment sites only).
+    qd_dir = p / "quality_dimensions"
+    if qd_dir.is_dir():
+        for qd_path in sorted(qd_dir.glob("*.yaml")):
+            qd_doc = _expect_mapping(_load_yaml(qd_path), qd_path)
+            shard = _expect_list(
+                qd_doc.get("quality_dimensions"), "quality_dimensions", qd_path
+            )
+            out["quality_dimensions"].extend(shard)
 
     return out
 
@@ -227,6 +238,13 @@ def write_chain_failure_modes(evals_dir: Path,
                               failure_modes: list[Mapping[str, Any]]) -> Path:
     path = pipeline_dir(evals_dir) / "failure_modes" / "_chains.yaml"
     _dump(path, {"failure_modes": list(failure_modes)})
+    return path
+
+
+def write_quality_dimensions_for_site(evals_dir: Path, call_site_id: str,
+                                      quality_dimensions: list[Mapping[str, Any]]) -> Path:
+    path = pipeline_dir(evals_dir) / "quality_dimensions" / f"{id_safe(call_site_id)}.yaml"
+    _dump(path, {"quality_dimensions": list(quality_dimensions)})
     return path
 
 

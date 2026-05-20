@@ -13,7 +13,7 @@ under tessary-evals/graders/, then:
 
 Usage:
     python3 finalize.py tessary-evals/ \
-        [--version 0.7.0] \
+        [--version 0.8.0] \
         [--product-hint "<string>"] \
         [--runtime-yaml runtime.yaml] \
         [--inputs-digest <hex>] \
@@ -231,6 +231,30 @@ def _render_call_sites(call_sites: list[dict[str, Any]],
     return "\n".join(lines) + "\n"
 
 
+def _render_quality_dimensions(quality_dimensions: list[dict[str, Any]],
+                               graders_by_qd: dict[str, dict[str, Any]]) -> str:
+    if not quality_dimensions:
+        return "## Quality dimensions\n\n*(none — no judgment call sites scored)*\n"
+    by_site: dict[str, list[dict[str, Any]]] = {}
+    for qd in quality_dimensions:
+        if isinstance(qd, dict):
+            by_site.setdefault(qd.get("call_site_id") or "", []).append(qd)
+    lines = ["## Quality dimensions",
+             "",
+             "Continuous 1–5 quality scores tracked as a trend over time (never gates)."]
+    for site in sorted(by_site):
+        lines.append("")
+        lines.append(f"### `{site}`")
+        for qd in by_site[site]:
+            g = graders_by_qd.get(qd.get("id") or "", {})
+            conf = f" (judge confidence: {g.get('confidence')})" if g else ""
+            lines.append(f"- **{qd.get('name')}** — {qd.get('description') or ''}{conf}")
+            if qd.get("why_it_matters"):
+                lines.append(f"  - *Why:* {qd.get('why_it_matters')}")
+    lines.append("")
+    return "\n".join(lines) + "\n"
+
+
 def _render_validation_warnings(graders: list[dict[str, Any]]) -> str:
     bad = [g for g in graders
            if isinstance(g, dict) and g.get("_validation_error")]
@@ -261,6 +285,10 @@ def render_report(pipeline: dict[str, Any],
 
     graders_by_fm = {g.get("failure_mode_id"): g for g in graders
                      if isinstance(g, dict) and g.get("failure_mode_id")}
+    graders_by_qd = {g.get("quality_dimension_id"): g for g in graders
+                     if isinstance(g, dict) and g.get("quality_dimension_id")}
+    quality_dimensions = [qd for qd in pipeline.get("quality_dimensions") or []
+                          if isinstance(qd, dict)]
 
     head = [
         "# Synthesized eval pipeline",
@@ -284,6 +312,7 @@ def render_report(pipeline: dict[str, Any],
         + _render_taxonomy(pipeline.get("taxonomy") or [], fm_list)
         + _render_chains(pipeline.get("chains") or [], fm_list, graders_by_fm)
         + _render_call_sites(pipeline.get("call_sites") or [], fm_list, graders_by_fm)
+        + _render_quality_dimensions(quality_dimensions, graders_by_qd)
         + _render_validation_warnings(graders)
     )
     return "\n".join(head) + body
@@ -371,7 +400,7 @@ def main() -> int:
         description="Assemble final tessary-evals/ artifacts at step 7.",
     )
     ap.add_argument("evals_dir", help="Path to the tessary-evals/ directory.")
-    ap.add_argument("--version", default="0.7.0",
+    ap.add_argument("--version", default="0.8.0",
                     help="On-disk schema version written into meta.yaml.")
     ap.add_argument("--product-hint", default=None)
     ap.add_argument("--runtime-yaml", default=None,

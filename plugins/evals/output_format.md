@@ -52,7 +52,7 @@ the assembled view is never written back to disk during synthesis.
 ## `tessary-evals/pipeline/meta.yaml`
 
 ```yaml
-version: "0.7.0"
+version: "0.8.0"
 product_hint: <string | null>
 
 runtime:
@@ -74,8 +74,9 @@ progress:                                 # added in schema 0.7.0 (phased synthe
 
 `version` is the synthesizer's on-disk schema version, not the plugin version.
 Bump only when the shard layout or shard schemas change. Current schema is
-`0.7.0` (phased synthesis added the `progress` block here, the `priorities.yaml`
-shard, and the `grader_deferred` field on failure modes).
+`0.8.0` (0.7.0 added the `progress` block here, the `priorities.yaml` shard, and
+the `grader_deferred` field on failure modes; 0.8.0 added the `quality_dimensions/`
+shard and the `kind: score` grader for continuous 1–5 quality scoring).
 
 ## `tessary-evals/pipeline/priorities.yaml`
 
@@ -262,6 +263,36 @@ failure_modes:
     grader_id: <string | null>       # null when deferred
     grader_deferred: <bool>          # 0.7.0; same semantics as single_call
 ```
+
+## `tessary-evals/pipeline/quality_dimensions/<call_site_id>.yaml`
+
+One shard per **judgment** call site (added in schema 0.8.0). Quality dimensions are
+the continuous "how good is the output" axes scored 1–5 — distinct from failure
+modes, which are binary "what went wrong" checks. Each becomes a `kind: score`
+grader (see below). Mechanical sites (`embedding`, strict-schema `extract`, pure
+`guardrail`/`moderation`) have no shard.
+
+```yaml
+quality_dimensions:
+  - id: <string>                     # <call_site_id>::<dim_name>
+    call_site_id: <string>
+    scope: single_call               # v0.8.0 scopes quality dimensions to single_call
+    name: <string>                   # snake_case axis name
+    description: <string>            # what this axis measures
+    why_it_matters: <string>         # why a sustained dip hurts the product
+    rubric_levels:                   # anchored 1–5; each a concrete, observable description
+      "5": <string>
+      "4": <string>
+      "3": <string>
+      "2": <string>
+      "1": <string>
+    grader_id: <string>              # <id>::grader — the kind: score grader
+```
+
+Quality dimensions are never deferred: every judgment call site must carry at
+least one, and each is graded in the first sweep. `validate.py --bundle` enforces
+both (a judgment-shape call site with zero quality dimensions is an error, in full
+and `--partial` mode alike).
 
 ## `tessary-evals/pipeline/taxonomy.yaml`
 

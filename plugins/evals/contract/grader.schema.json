@@ -7,12 +7,10 @@
   "required": [
     "id",
     "scope",
-    "failure_mode_id",
     "name",
     "kind",
     "confidence",
     "rationale",
-    "taxonomy_node_id",
     "self_tests"
   ],
   "properties": {
@@ -26,7 +24,13 @@
     },
     "failure_mode_id": {
       "type": "string",
-      "minLength": 1
+      "minLength": 1,
+      "description": "Required for failure-catching kinds (llm_judge, deterministic, execution). The failure mode this grader catches."
+    },
+    "quality_dimension_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Required for kind=score. The quality dimension this grader scores (parallel to failure_mode_id). Resolves to a pipeline quality_dimensions[].id; validate.py --bundle enforces the bijection."
     },
     "call_site_id": {
       "type": ["string", "null"],
@@ -43,11 +47,25 @@
     "taxonomy_node_id": {
       "type": "string",
       "minLength": 1,
-      "description": "Attached by orchestrator at step 5 (clustering), before grader synthesis fan-out, so step-6 subagents can splice it onto each grader at write time."
+      "description": "Attached by orchestrator at the taxonomy step, before grader synthesis fan-out, so subagents can splice it onto each grader at write time. Required for failure-catching kinds; absent for kind=score (quality dimensions are not taxonomy-clustered)."
     },
 
     "kind": {
-      "enum": ["llm_judge", "deterministic", "execution"]
+      "enum": ["llm_judge", "deterministic", "execution", "score"]
+    },
+    "score_scale": {
+      "type": "object",
+      "description": "Required for kind=score. The integer range the judge assigns; current convention is min 1, max 5.",
+      "required": ["min", "max"],
+      "properties": {
+        "min": { "type": "integer" },
+        "max": { "type": "integer" }
+      }
+    },
+    "rubric_levels": {
+      "type": "object",
+      "description": "Required for kind=score. Maps each level (stringified integer in [min, max]) to a concrete, observable anchor describing output at that level. (For kind=llm_judge the prose `rubric` string is used instead.)",
+      "additionalProperties": { "type": "string", "minLength": 1 }
     },
     "applies_when": {
       "type": ["string", "null"],
@@ -185,6 +203,16 @@
       "then": { "required": ["execution_spec"] }
     },
     {
+      "comment": "Failure-catching kinds carry a failure_mode_id and a taxonomy_node_id.",
+      "if": { "properties": { "kind": { "enum": ["llm_judge", "deterministic", "execution"] } } },
+      "then": { "required": ["failure_mode_id", "taxonomy_node_id"] }
+    },
+    {
+      "comment": "Score graders link to a quality dimension and carry an anchored rubric + scale.",
+      "if": { "properties": { "kind": { "const": "score" } } },
+      "then": { "required": ["quality_dimension_id", "judge_prompt", "rubric_levels", "score_scale"] }
+    },
+    {
       "comment": "Bidirectional applies_when invariant. When applies_when is null/absent, no self_test may declare expected_verdict=not_applicable.",
       "if": {
         "anyOf": [
@@ -210,14 +238,23 @@
   "$defs": {
     "self_test": {
       "type": "object",
-      "required": ["expected_verdict", "rationale"],
+      "required": ["rationale"],
+      "anyOf": [
+        { "required": ["expected_verdict"] },
+        { "required": ["expected_level"] }
+      ],
       "properties": {
         "expected_verdict": {
-          "enum": ["pass", "fail", "not_applicable"]
+          "enum": ["pass", "fail", "not_applicable"],
+          "description": "For binary graders (kind=llm_judge/deterministic/execution)."
+        },
+        "expected_level": {
+          "type": "integer",
+          "description": "For kind=score: the rubric level this sample_output should receive, within score_scale [min, max]. validate.py enforces the range and that score graders include a clear-high, a clear-low, and a near-miss self-test."
         },
         "category": {
-          "enum": ["clear_pass", "clear_fail", "near_miss", "adversarial", "not_applicable"],
-          "description": "Taxonomy of self-test purpose. clear_pass/clear_fail anchor calibration; near_miss probes rubric sharpness; adversarial probes the judge's resistance to prompt-injection / role-confusion / fake prior verdicts in sample_output; not_applicable matches applies_when. validate.py requires at least one adversarial entry when self_tests has >= 4 items; recommends one of each otherwise. When absent, validate.py treats the entry as 'uncategorized' (no enforcement)."
+          "enum": ["clear_pass", "clear_fail", "near_miss", "adversarial", "not_applicable", "clear_high", "clear_low"],
+          "description": "Taxonomy of self-test purpose. Binary graders: clear_pass/clear_fail anchor calibration. Score graders: clear_high/clear_low anchor the rubric extremes. near_miss probes rubric sharpness (both); adversarial probes the judge's resistance to prompt-injection / role-confusion / fake prior verdicts in sample_output; not_applicable matches applies_when. validate.py requires at least one adversarial entry when self_tests has >= 4 items; recommends one of each otherwise. When absent, validate.py treats the entry as 'uncategorized' (no enforcement)."
         },
         "rationale": {
           "type": "string",
