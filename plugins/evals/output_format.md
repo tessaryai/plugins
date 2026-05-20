@@ -52,7 +52,7 @@ the assembled view is never written back to disk during synthesis.
 ## `tessary-evals/pipeline/meta.yaml`
 
 ```yaml
-version: "0.4.0"
+version: "0.7.0"
 product_hint: <string | null>
 
 runtime:
@@ -65,10 +65,26 @@ runtime:
     medium: <block | warn | report>       # default: warn
     low: <block | warn | report>          # default: report
   redaction_state: <none | partial | redacted | unknown>
+
+progress:                                 # added in schema 0.7.0 (phased synthesis)
+  sites_completed: <int>                  # call sites with all non-deferred graders emitted
+  sites_total: <int>                      # call sites discovered
+  deferred_failure_count: <int>           # failure modes recorded but not yet graded
 ```
 
 `version` is the synthesizer's on-disk schema version, not the plugin version.
-Bump only when the shard layout or shard schemas change.
+Bump only when the shard layout or shard schemas change. Current schema is
+`0.7.0` (phased synthesis added the `progress` block here, the `priorities.yaml`
+shard, and the `grader_deferred` field on failure modes).
+
+## `tessary-evals/pipeline/priorities.yaml`
+
+The order in which phased synthesis processes call sites (added in schema 0.7.0).
+
+```yaml
+call_site_ids: [<string>, ...]   # call_site ids, most-important first
+ranking_rationale: <string>      # optional; how the order was chosen
+```
 
 ## `tessary-evals/pipeline/packs.yaml`
 
@@ -215,9 +231,15 @@ failure_modes:
     layer: <A | B | C>
     pack_ids: [<string>, ...]
     compliance_tags: [<string>, ...]
-    taxonomy_node_id: <string>       # populated by step 5
-    grader_id: <string>              # <failure_mode_id>::grader
+    taxonomy_node_id: <string>       # populated by taxonomy step
+    grader_id: <string | null>       # <failure_mode_id>::grader; null when deferred
+    grader_deferred: <bool>          # 0.7.0; true = recorded but no grader emitted yet
 ```
+
+`grader_deferred` (schema 0.7.0): during the first sweep only `severity: high`
+failures are graded (`grader_deferred: false`, `grader_id` set). Medium/low
+failures are recorded with `grader_deferred: true` and `grader_id: null` until
+the user runs `--complete <call_site_id>`.
 
 ## `tessary-evals/pipeline/failure_modes/_chains.yaml`
 
@@ -237,7 +259,8 @@ failure_modes:
     pack_ids: [<string>, ...]
     compliance_tags: [<string>, ...]
     taxonomy_node_id: <string>
-    grader_id: <string>
+    grader_id: <string | null>       # null when deferred
+    grader_deferred: <bool>          # 0.7.0; same semantics as single_call
 ```
 
 ## `tessary-evals/pipeline/taxonomy.yaml`

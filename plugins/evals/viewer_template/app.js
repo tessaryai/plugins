@@ -84,7 +84,9 @@
   nav.appendChild(navRule);
   const navFoot = document.createElement('div');
   navFoot.className = 'nav-foot';
-  navFoot.textContent = 'synthesize-graders v3';
+  navFoot.textContent = pipeline.version
+    ? `synthesize-graders · schema ${pipeline.version}`
+    : 'synthesize-graders';
   nav.appendChild(navFoot);
 
   // ---------- utilities ----------
