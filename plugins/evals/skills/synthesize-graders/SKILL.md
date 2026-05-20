@@ -196,7 +196,14 @@ Send **one message with two Agent tool calls** so they run in parallel.
 
      Enumerate the branch keys from the registry definition, the enum, or the call sites that pass the parameter. If a branch set is unbounded or you cannot enumerate it, emit one call site and note the limitation in `use_case`. Conversely, do **not** over-split: parameters that only vary content (the user's text, a temperature, a retry count) are the *same* call site — split only when the prompt or schema or declared trace identity changes per branch.
 
-   Returns a manifest: a list of `{id, use_case, provider, sample_count, has_system_prompt, redaction_state, file_hint?}` and the overall `runtime.redaction_state` (worst case across sites). Keep `use_case` to a short noun phrase (≈8 words); it labels the call site, it is not a description of everything the site touches.
+   Returns a manifest: a list of `{id, use_case, provider, sample_count, has_system_prompt, redaction_state, file_hint?}` and the overall `runtime.redaction_state` (worst case across sites).
+
+   **`use_case` is the call site's display name — write it factually.** It names *what the call produces*, in a short noun phrase (≈3–6 words). State the operation and its object; nothing else.
+   - **Drop transport/implementation descriptors** — how the call is delivered or stored is not what it does: no `stream`/`streaming`, `async`, `batched`, `cached`, `via cron`, `background worker`, `structured`, `JSON`.
+   - **Drop rationale tails** — why it exists is not its name: cut `... to reduce token usage`, `... for downstream analysis`, `... so that ...`.
+   - **Drop the input plumbing** — `... from multiple test sessions`, `... about completed sessions` are usually noise; keep an object qualifier only when it distinguishes this call site from a sibling.
+
+   Examples (observed → factual): "Stream conversational chat responses about completed test sessions" → `Answer questions about a test session`; "Summarize conversation history into cached message to reduce token usage" → `Compact conversation history`; "Generate aggregate UX analysis report from multiple test sessions" → `Generate aggregate UX report`; "Extract episodic memories from session action steps via background worker" → `Extract episodic memories`.
 
 After both return, read only the manifests. Print:
 

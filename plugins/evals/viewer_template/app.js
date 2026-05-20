@@ -123,11 +123,6 @@
     }
     return '';
   }
-  // Call sites are titled by their concise id; use_case is a subtitle, not the title.
-  function csTitle(cs) {
-    if (!cs) return 'LLM call';
-    return humanize(stripIdPrefix(cs.id)) || titleFor(cs.use_case, cs.name) || 'LLM call';
-  }
   function chip(text, cls = '') {
     if (text == null || text === '') return '';
     return `<span class="chip ${cls}">${escapeHtml(humanize(text))}</span>`;
@@ -341,12 +336,12 @@
     const filePath = cs.file_hint || cs.file || '';
     const fileLine = cs.line_hint || cs.line || '';
     const fileLoc = filePath ? filePath + (fileLine ? ':' + fileLine : '') : '';
-    const title = csTitle(cs);
+    const title = titleFor(cs.use_case, cs.name, stripIdPrefix(cs.id)) || 'LLM call';
     const searchText = `${cs.id} ${cs.use_case || ''} ${cs.name || ''} ${cs.intent || ''} ${filePath}`.toLowerCase();
     const fms = fmsByCallSite.get(cs.id) || [];
     return `<tr id="cs-${escapeHtml(cs.id)}" data-modal-open="cs:${escapeHtml(cs.id)}" data-search="${escapeHtml(searchText)}">
       <td class="cell-num">${pad2(n)}</td>
-      <td class="cell-title">${escapeHtml(title)}${cs.use_case ? `<span class="cell-subtitle">${escapeHtml(cs.use_case)}</span>` : ''}</td>
+      <td class="cell-title">${escapeHtml(title)}</td>
       <td class="cell-file" title="${escapeHtml(fileLoc)}">${escapeHtml(fileLoc || '—')}</td>
       <td class="cell-mono">${escapeHtml(cs.provider || '—')}${cs.model ? ` <span style="color:var(--muted-2)">·</span> ${escapeHtml(cs.model)}` : ''}</td>
       <td class="cell-count">${fms.length}</td>
@@ -358,7 +353,7 @@
     const filePath = cs.file_hint || cs.file || '';
     const fileLine = cs.line_hint || cs.line || '';
     const fileLoc = filePath ? filePath + (fileLine ? ':' + fileLine : '') : '';
-    const title = csTitle(cs);
+    const title = titleFor(cs.use_case, cs.name, stripIdPrefix(cs.id)) || 'LLM call';
     const fms = fmsByCallSite.get(cs.id) || [];
     const hasConstraints = Array.isArray(cs.constraints) && cs.constraints.length;
     const chips = [
@@ -401,7 +396,7 @@
           </details>` : ''}
         </div>` : ''}
     `;
-    openModal({ kicker: cs.use_case ? `LLM call · ${cs.use_case}` : 'LLM call', title, chips, body });
+    openModal({ kicker: 'LLM call', title, chips, body });
   }
 
   // v0.2: observed production stats block. Only renders when at least one
@@ -456,7 +451,7 @@
   const graderScopes = unique(graders.map(g => {
     const fms = fmsByGrader.get(g.id) || [];
     const cs = fms.length ? callSitesById.get(fms[0].call_site_id) : null;
-    return cs ? (csTitle(cs)) : '';
+    return cs ? (titleFor(cs.use_case, cs.name, stripIdPrefix(cs.id)) || 'LLM call') : '';
   }));
 
   // Pack + compliance + Layer fields are present in the underlying data but
@@ -541,7 +536,7 @@
     const linkedCS = linkedFms.length ? callSitesById.get(linkedFms[0].call_site_id) : null;
     const linkedTax = linkedFms.length ? taxonomyById.get(linkedFms[0].taxonomy_node_id) : null;
     const conf = g.confidence || '';
-    const csLabel = linkedCS ? (csTitle(linkedCS)) : '';
+    const csLabel = linkedCS ? (titleFor(linkedCS.use_case, linkedCS.name, stripIdPrefix(linkedCS.id)) || 'LLM call') : '';
     const csCell = linkedCS
       ? `<span data-modal-open="cs:${escapeHtml(linkedCS.id)}" class="scope-link">${escapeHtml(csLabel)}</span>`
       : '<span style="color:var(--muted-2)">—</span>';
@@ -611,7 +606,7 @@
       ${g.applies_when ? `<div class="field"><div class="field-label">Applies when</div><div class="field-val">${escapeHtml(g.applies_when)}${g.applies_when_check ? `<div class="applies-when-check"><span class="field-label-inline">Code check</span> <code>${escapeHtml(g.applies_when_check)}</code></div>` : ''}</div></div>` : ''}
       ${(linkedCS || linkedTax) ? `<div class="field"><div class="field-label">Links</div>
         <div class="backlinks" style="margin:0;padding:0;border:0">
-          ${linkedCS ? `<span><span class="bl-label">LLM call</span><a href="#" data-modal-open="cs:${escapeHtml(linkedCS.id)}">${escapeHtml(csTitle(linkedCS))}</a></span>` : ''}
+          ${linkedCS ? `<span><span class="bl-label">LLM call</span><a href="#" data-modal-open="cs:${escapeHtml(linkedCS.id)}">${escapeHtml(titleFor(linkedCS.use_case, linkedCS.name, stripIdPrefix(linkedCS.id)) || 'LLM call')}</a></span>` : ''}
           ${linkedTax ? `<span><span class="bl-label">taxonomy</span><a href="#" data-modal-open="tax:${escapeHtml(linkedTax.id)}">${escapeHtml(titleFor(linkedTax.name, stripIdPrefix(linkedTax.id)) || 'Node')}</a></span>` : ''}
         </div></div>` : ''}
       ${renderOperationalBlock(g)}
