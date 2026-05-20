@@ -11,7 +11,7 @@
         "source": "git-subdir",
         "url": "https://github.com/tessaryai/plugins.git",
         "path": "plugins/evals",
-        "ref": "evals-v0.7.3"
+        "ref": "evals-v0.7.4"
       },
       "description": "Generate a calibrated eval suite for your LLM product — graders, datasets, and a visual report, straight from your repo."
     }
