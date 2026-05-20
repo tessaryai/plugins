@@ -52,7 +52,7 @@ the assembled view is never written back to disk during synthesis.
 ## `tessary-evals/pipeline/meta.yaml`
 
 ```yaml
-version: "0.8.0"
+version: "0.9.0"
 product_hint: <string | null>
 
 runtime:
@@ -74,9 +74,11 @@ progress:                                 # added in schema 0.7.0 (phased synthe
 
 `version` is the synthesizer's on-disk schema version, not the plugin version.
 Bump only when the shard layout or shard schemas change. Current schema is
-`0.8.0` (0.7.0 added the `progress` block here, the `priorities.yaml` shard, and
+`0.9.0` (0.7.0 added the `progress` block here, the `priorities.yaml` shard, and
 the `grader_deferred` field on failure modes; 0.8.0 added the `quality_dimensions/`
-shard and the `kind: score` grader for continuous 1–5 quality scoring).
+shard and the `kind: score` grader for continuous 1–5 quality scoring; 0.9.0 added
+the `invocation` field on call sites so indirect LLM calls — agent CLIs, raw HTTP,
+sandbox runners — are discovered and tracked alongside in-process SDK calls).
 
 ## `tessary-evals/pipeline/priorities.yaml`
 
@@ -157,9 +159,10 @@ subagents read only the specific shard they're working on.
 ```yaml
 id: <string>                       # snake_case label (Path B) or sha::<16hex> (Path A)
 use_case: <string | null>          # human-readable display hint
+invocation: <sdk | cli_agent | http | sandbox_agent>  # how the model is reached; default sdk
 provider: <string>                 # "anthropic" / "openai" / "litellm" / "other"
 model: <string | null>
-system_prompt: <string | null>
+system_prompt: <string | null>     # often null for cli_agent/sandbox_agent (prompt lives in the external tool)
 shape: <enum>                      # see prompts/per_site_kit.md
 shape_confidence: <high | medium | low>
 intent: <string>
@@ -202,6 +205,15 @@ discovered_at: <iso8601>           # written by step 1 subagent
 After step 2+3+4 has run, the same shard carries `shape`, `shape_confidence`,
 `intent`, and `constraints` (initially absent — step-1 writes only the static /
 trace-derived fields).
+
+`invocation` (schema 0.9.0) records *how* the model is reached, so indirect calls
+stay visible: `sdk` (in-process provider/framework SDK — the default and the only
+value pre-0.9.0), `cli_agent` (the repo shells out to an agent/LLM CLI such as
+`claude`, `opencode`, `aider`, `ollama`), `http` (raw HTTP to a model endpoint or
+gateway, no SDK), `sandbox_agent` (an agent/LLM run inside a sandbox runner such as
+e2b/modal/daytona/docker). Absent is treated as `sdk`. Indirect sites usually have
+`system_prompt: null` (the prompt lives in the external tool) and no enforced output
+schema, which shifts their failure surface (see `prompts/per_site_kit.md`).
 
 ## `tessary-evals/pipeline/chains.yaml`
 

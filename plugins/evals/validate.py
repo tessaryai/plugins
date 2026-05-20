@@ -613,6 +613,26 @@ JUDGMENT_SHAPES: Final[frozenset[str]] = frozenset({
     "summarize", "conversational_turn",
 })
 
+# How the model is reached (call-site `invocation`); absent means in-process SDK.
+VALID_INVOCATIONS: Final[frozenset[str]] = frozenset({
+    "sdk", "cli_agent", "http", "sandbox_agent",
+})
+
+
+def _bundle_invocation_enum(pipeline: Pipeline) -> list[str]:
+    """If a call site declares `invocation`, it must be a known kind.
+
+    Absent is allowed and treated as `sdk` (the only value pre-0.9.0)."""
+    errors: list[str] = []
+    for cs in pipeline.get("call_sites") or []:
+        if not isinstance(cs, dict):
+            continue
+        inv = cs.get("invocation")
+        if inv is not None and inv not in VALID_INVOCATIONS:
+            errors.append(f"call_site {cs.get('id')!r} has invalid invocation "
+                          f"{inv!r}; expected one of {sorted(VALID_INVOCATIONS)}")
+    return errors
+
 
 def _bundle_quality_coverage(pipeline: Pipeline) -> list[str]:
     """Every judgment-shape call site must have at least one quality dimension.
@@ -1046,6 +1066,7 @@ def _run_bundle(evals_dir: Path, calibration_csv: Path | None,
     bundle_errors += _bundle_fm_grader_bijection(pipeline, graders_by_id, partial=partial)
     bundle_errors += _bundle_qd_grader_bijection(pipeline, graders_by_id)
     bundle_errors += _bundle_quality_coverage(pipeline)
+    bundle_errors += _bundle_invocation_enum(pipeline)
     bundle_errors += _bundle_duplicate_ids(graders)
     bundle_errors += _bundle_taxonomy_reachability(pipeline)
     bundle_errors += _bundle_chain_acyclic(pipeline)

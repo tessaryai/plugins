@@ -135,6 +135,20 @@
     if (text == null || text === '') return '';
     return `<span class="chip ${cls}">${escapeHtml(text)}</span>`;
   }
+  function invocationLabel(inv) {
+    switch (inv) {
+      case 'cli_agent': return 'Agent CLI';
+      case 'http': return 'Raw HTTP';
+      case 'sandbox_agent': return 'Sandbox';
+      case 'sdk': return 'SDK';
+      default: return '';
+    }
+  }
+  // Only indirect invocations get a chip — SDK is the default and stays unmarked.
+  function invocationChip(inv) {
+    if (!inv || inv === 'sdk') return '';
+    return `<span class="chip invocation" title="Indirect LLM call (${escapeHtml(inv)}) — reached outside an in-process SDK">${escapeHtml(invocationLabel(inv))}</span>`;
+  }
   function dot(cls) { return `<span class="dot ${cls}"></span>`; }
   function jumpLink(viewId, anchorId, label) {
     return `<a href="#${escapeHtml(viewId)}" data-jump="${escapeHtml(viewId)}|${escapeHtml(anchorId)}">${escapeHtml(label)}</a>`;
@@ -345,7 +359,7 @@
     const fms = fmsByCallSite.get(cs.id) || [];
     return `<tr id="cs-${escapeHtml(cs.id)}" data-modal-open="cs:${escapeHtml(cs.id)}" data-search="${escapeHtml(searchText)}">
       <td class="cell-num">${pad2(n)}</td>
-      <td class="cell-title">${escapeHtml(title)}</td>
+      <td class="cell-title">${escapeHtml(title)}${invocationChip(cs.invocation)}</td>
       <td class="cell-file" title="${escapeHtml(fileLoc)}">${escapeHtml(fileLoc || '—')}</td>
       <td class="cell-mono">${escapeHtml(cs.provider || '—')}${cs.model ? ` <span style="color:var(--muted-2)">·</span> ${escapeHtml(cs.model)}` : ''}</td>
       <td class="cell-count">${fms.length}</td>
@@ -362,6 +376,7 @@
     const hasConstraints = Array.isArray(cs.constraints) && cs.constraints.length;
     const chips = [
       chip(cs.shape, 'kind'),
+      invocationChip(cs.invocation),
       cs.provider ? rawChip(cs.provider, 'muted') : '',
       cs.model ? rawChip(cs.model, 'muted') : '',
     ].filter(Boolean).join('');

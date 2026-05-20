@@ -62,6 +62,8 @@ Choose exactly one shape:
 
 **Confidence**: `high` (obvious from prompt + surrounding code), `medium` (most likely interpretation), `low` (ambiguous; flag for review).
 
+**Invocation matters for shape.** The call-site shard carries an `invocation` field (`sdk | cli_agent | http | sandbox_agent`; absent means `sdk`). For `cli_agent` and `sandbox_agent` the repo hands a task to an external agent that runs its own multi-step loop — classify as `agent_step` unless the call is a single-shot, single-turn request (then pick the generation shape that fits what it produces). For `http`, classify by what the request asks for, exactly as you would an `sdk` call. Note in your intent (sentence 1) that the call is indirect, since the rest of the analysis depends on it.
+
 **Disambiguation, in order:**
 
 1. A "summarize" that produces a JSON object with structured fields is `extract`.
@@ -157,6 +159,18 @@ Cover at least **3 categories** per call site when user-supplied data flows in; 
 8. **Audit-trail / provenance loss** (regulated domains only) — output omits required citations, sources, or disclaimers.
 
 Layer C uses a mix of `kind: deterministic` (token counts, regex PII match, latency timer) and `kind: llm_judge`. Layer C entries should be high or medium severity; low-severity adversarial failures are usually padding.
+
+### Invocation-specific failure surfaces (indirect calls)
+
+If the call-site `invocation` is `cli_agent`, `http`, or `sandbox_agent`, the model is reached **out of process** and two of your usual anchors disappear: there is typically **no in-repo system prompt** to read constraints from, and **no output schema** the SDK enforces. Do not skip Layer A just because there's no schema — the failure surface moves, it doesn't shrink. Add these on top of the baseline three layers (they're often the highest-severity failures for these sites):
+
+- **Output-contract drift (Layer A)** — output is free text on stdout, not a validated object. The repo parses it with a regex / `json.loads` on a fenced block / line-splitting. Failure: the agent wraps JSON in prose, emits Markdown, or changes format across versions and the parse silently breaks. Usually `kind: deterministic`.
+- **Tool / model version non-determinism (Layer C)** — the external CLI, its default model, or the gateway can change underneath the repo with no code change, shifting behavior. Anchor to the pinned binary/model if the repo pins one; flag as a gap if it doesn't.
+- **Agent-loop runaway (Layer C)** — `cli_agent`/`sandbox_agent` only: the agent loops, retries, or burns its turn/token budget without converging. Failure: no termination, runaway cost, or a timeout that leaves partial state. Anchor cost/latency to `observed.*` if known.
+- **Untrusted-output trust (Layer C, `high`)** — output (and for sandbox runs, files/commands the agent produced) is consumed downstream — written to disk, executed, fed to another call — without validation. A compromised or manipulated agent step becomes code execution or data corruption. For `sandbox_agent`, also consider sandbox escape / network egress if the surrounding code grants it.
+- **Argument / prompt injection into the spawn (Layer C, `high`)** — user-controlled data is interpolated into the argv, stdin, URL, or sandbox command. Failure: shell-arg injection, prompt override via the passed task, or SSRF for `http`.
+
+For `http` specifically, also check auth/endpoint failures the SDK would normally handle (missing retry/backoff, leaking the API key in logs, no timeout). Mark these failures `high` when they touch safety, security, or downstream execution — per the severity test above.
 
 ### Per-shape priorities
 

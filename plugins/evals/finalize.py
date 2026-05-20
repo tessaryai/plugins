@@ -13,7 +13,7 @@ under tessary-evals/graders/, then:
 
 Usage:
     python3 finalize.py tessary-evals/ \
-        [--version 0.8.0] \
+        [--version 0.9.0] \
         [--product-hint "<string>"] \
         [--runtime-yaml runtime.yaml] \
         [--inputs-digest <hex>] \
@@ -203,6 +203,9 @@ def _render_call_sites(call_sites: list[dict[str, Any]],
             continue
         sid = cs.get("id") or ""
         lines.append(f"### `{sid}` -- {cs.get('use_case', '')}")
+        invocation = cs.get("invocation") or "sdk"
+        if invocation != "sdk":
+            lines.append(f"- Invocation: `{invocation}` (indirect)")
         lines.append(f"- Provider/model: `{cs.get('provider')}` / "
                      f"`{cs.get('model')}`")
         lines.append(f"- Shape: `{cs.get('shape')}` "
@@ -400,7 +403,7 @@ def main() -> int:
         description="Assemble final tessary-evals/ artifacts at step 7.",
     )
     ap.add_argument("evals_dir", help="Path to the tessary-evals/ directory.")
-    ap.add_argument("--version", default="0.8.0",
+    ap.add_argument("--version", default="0.9.0",
                     help="On-disk schema version written into meta.yaml.")
     ap.add_argument("--product-hint", default=None)
     ap.add_argument("--runtime-yaml", default=None,
