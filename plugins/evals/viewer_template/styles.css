@@ -835,8 +835,15 @@ th {
 .data-table .cell-title {
   font-weight: 500; color: var(--text);
   letter-spacing: -0.005em;
-  max-width: 320px;
+  max-width: 360px;
+}
+.data-table .cell-title .cell-subtitle {
+  display: block;
+  margin-top: 2px;
+  font-weight: 400; font-size: 11.5px; color: var(--muted);
+  letter-spacing: 0;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  max-width: 360px;
 }
 .data-table .cell-title-with-dot {
   display: flex; align-items: center; gap: 8px;

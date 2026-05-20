@@ -188,9 +188,15 @@ Send **one message with two Agent tool calls** so they run in parallel.
 
 2. **Call-site discovery subagent** — choose:
    - **Path A — traces provided**: `subagent_type: general-purpose`. Parse the JSONL (OTLP/JSON or flat Python SDK exporter shape), normalize spans, group by normalized system-prompt hash, write one `tessary-evals/pipeline/call_sites/<id>.yaml` per group and `tessary-evals/datasets/<id>.jsonl` per group. Span taxonomy and observability stats (`observed.*` p50/p95/error_rate/refusal_rate/cost) are required. Stratified sampling at up to 10 representative spans per site.
-   - **Path B — static repo**: `subagent_type: Explore`. Grep for LLM-call patterns; write one shard per discovered call site.
+   - **Path B — static repo**: `subagent_type: Explore`. Grep for LLM-call patterns; write one shard per discovered call site. **Split on runtime dispatch — a single physical call location is not always a single call site.** A call site is one *(intent, system prompt, output schema)* combination, not one line of code. When a call location selects its prompt or schema from a registry / map / enum / `match` keyed on a parameter, follow the dispatch and emit **one call site per branch** — each branch has its own failure surface and deserves its own graders. Signals that a call location fans out and must be split:
+     - the system prompt is loaded by a variable key (`load_prompt(gate.system_prompt_path)`, `PROMPTS[kind]`, `f"{name}.txt"`) rather than a fixed literal;
+     - the response schema is chosen per branch (`schema = gate.response_schema`, `SCHEMAS[kind]`);
+     - a registry / dispatch table is indexed by the parameter (`REGISTRY.get(name)`, `HANDLERS[kind]`, `match kind:`);
+     - the trace label / `use_case` is parameterized (`use_case = f"epistemic-gate:{gate_name}"`) — this is the developer telling you these are distinct operations, so honor it: one call site per concrete label, named after it (`epistemic_gate_memory`, `epistemic_gate_concepts`, …).
 
-   Returns a manifest: a list of `{id, use_case, provider, sample_count, has_system_prompt, redaction_state, file_hint?}` and the overall `runtime.redaction_state` (worst case across sites).
+     Enumerate the branch keys from the registry definition, the enum, or the call sites that pass the parameter. If a branch set is unbounded or you cannot enumerate it, emit one call site and note the limitation in `use_case`. Conversely, do **not** over-split: parameters that only vary content (the user's text, a temperature, a retry count) are the *same* call site — split only when the prompt or schema or declared trace identity changes per branch.
+
+   Returns a manifest: a list of `{id, use_case, provider, sample_count, has_system_prompt, redaction_state, file_hint?}` and the overall `runtime.redaction_state` (worst case across sites). Keep `use_case` to a short noun phrase (≈8 words); it labels the call site, it is not a description of everything the site touches.
 
 After both return, read only the manifests. Print:
 

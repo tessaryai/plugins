@@ -197,13 +197,21 @@ Baseline failures (not from any pack) get `pack_ids: []` and `compliance_tags: [
 
 ### Severity calibration
 
-A typical 16-failure set:
+Severity drives what gets graded first: only `high` failures become graders in the first sweep, so `high` must mean *"if this ships ungraded, it can genuinely hurt the user or the business."* Be strict — inflating severity defeats the prioritization.
 
-- ~5–6 `high` (mostly Layer B faithfulness + Layer C injection/PII/refusal violations)
-- ~7–8 `medium` (mix of Layer A schema/format, Layer B helpfulness/tone, Layer C cost/latency)
-- ~2–3 `low` (Layer A polish, minor edge cases)
+Apply this test to each failure, in order. Assign the **first** level that matches:
 
-A bias toward `low` is a smell. So is "all `medium`" — you're not differentiating impact. Layer C should be dominated by `high` and `medium`.
+- **`high`** — only if at least one is true:
+  - it breaks **safety or security** (prompt injection succeeds, jailbreak, secret/PII leakage, tool-arg exfiltration), **or**
+  - it breaks **correctness in a way the user would act on** (a fabricated fact, an invented citation, a wrong extracted value that flows downstream, a hallucinated action item), **or**
+  - it **violates a stated refusal/compliance rule** (missing legally-required disclaimer, surfacing forbidden content), **or**
+  - it makes the output **structurally unusable** by a downstream consumer (unparseable JSON, missing required field that crashes a parser).
+- **`medium`** — the output is wrong, off-tone, over-verbose, or degraded in a way the user *notices and dislikes* but can recover from: helpfulness misses, tone/brand drift, soft calibration issues, cost/latency regressions that aren't in the hot path, recoverable format breakage.
+- **`low`** — polish: minor edge cases, cosmetic format nits, rare inputs.
+
+**Cap: at most ~⅓ of a call site's failures should be `high`.** A typical 18-failure set lands near **5–6 `high` / 8–10 `medium` / 2–3 `low`**. If you've marked more than a third `high`, re-read the test above and demote the ones that are merely "the user would notice" (those are `medium`) — reserve `high` for trust/safety/correctness breakers. A bias toward `low` is also a smell. "Everything `high`" and "everything `medium`" both mean you aren't differentiating impact.
+
+Severity is independent of layer: a Layer A unparseable-JSON failure can be `high` (crashes the consumer), while a Layer B tone wobble is usually `medium`. Don't default Layer A to `high` just because it's mechanical.
 
 The intent statement — especially who the user is — is your most important input for Layer B. `product_profile.data_sensitivity` and `regulatory_context` are your most important inputs for Layer C.
 
