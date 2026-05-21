@@ -81,6 +81,7 @@ The pipeline produces graders in two distinct scopes that must remain cleanly se
 - **Pack selection** (optional) — `--pack <id>` / `--no-pack <id>`. Without flags, the triage phase auto-discovers from `applies_when` signals. `quality` is always-on.
 - **Deep-grade** (optional) — `--complete <call_site_id>` flips that site's deferred medium/low failures to non-deferred and synthesizes their graders. `--complete all` does the same for every site in priority order, reusing the same adaptive approval gate.
 - **Pause cadence** (optional) — `--pause-every N` overrides the adaptive gate; the orchestrator pauses after every N sites instead of using the measured per-site budget.
+- **Publish** (optional) — `--publish` pre-consents to pushing the bundle to evals.tessary.ai so the user can run these graders on real traces. Without the flag the publish step is offered once at the site-1 gate (Phase C.7) and only runs if the user opts in. See "Publishing to the platform" below.
 
 ## Re-run safety
 
@@ -349,6 +350,14 @@ python3 "$PLUGIN/viewer.py"   tessary-evals
 
 `audit.py --partial` is informational only — it never exits non-zero and suppresses checks that need every call site to be processed (generic-failure-repeated and pack_no_contribution). `finalize.py --partial` threads through to the embedded `validate.py --bundle` call so deferred failure modes don't trip the FM↔grader bijection check, and writes `sites_completed` / `sites_total` / `deferred_failure_count` into `pipeline/meta.yaml`.
 
+**If this run has been published** (the user opted in at the site-1 gate, or `--publish` was passed), re-push the regenerated bundle after the viewer rebuild — silently, no re-prompt:
+
+```bash
+python3 "$PLUGIN/publish.py" upload --evals-dir tessary-evals
+```
+
+This upserts the new graders into the linked project. It's a no-op-safe call: if no link exists for this repo it prints a one-line "not linked" and exits without affecting the run.
+
 **Step C.6 — Status line.** Print exactly one line:
 
 ```
@@ -367,7 +376,7 @@ Mechanically:
 
 Gate boundaries (where you must stop):
 
-- **After site 1 completes** — always. Prompt: `Site 1 of <n> done. Continue to <next_id>? (y / pause)`.
+- **After site 1 completes** — always. Prompt: `Site 1 of <n> done. Continue to <next_id>? (y / pause) — or "publish" to push these graders to evals.tessary.ai and run them on real traces.`. If the user replies `publish`, run the publish flow below, then re-print this same prompt and wait again (publishing doesn't advance the gate).
 - **After site 2 completes** — always. Compute `mean_sec = (t1 + t2) / 2` and `K = min(remaining, max(1, floor(600 / mean_sec)))`. Prompt: `Sites 1 & 2 averaged ~<round(mean_sec)>s each. I can do the next K sites in ~<round(K * mean_sec / 60)> min before checking in again. Proceed? (y / pick N / pause)`.
 - **After each subsequent batch of K sites** — re-measure mean per-site wall time on the batch just finished, re-propose K, stop again.
 - `--pause-every N` overrides the adaptive batch: stop every N sites regardless.
@@ -375,6 +384,31 @@ Gate boundaries (where you must stop):
 The first two stops (sites 1 and 2) are non-negotiable even if the user earlier said "go fast" or "don't ask me" — the whole point is an early preview before committing the session. If the user wants zero gates, that is the `--complete all` flow on an already-previewed run, not the first sweep.
 
 Never process the entire `priorities.yaml` in one unattended turn. If you ever find yourself about to start site 2's work without having stopped after site 1, that is the bug — stop instead.
+
+### Publishing to the platform (opt-in, asked once)
+
+The local `tessary-evals/index.html` is the offline preview. To actually *run* these graders against real traces and share results with a team, the bundle goes to evals.tessary.ai. This is the **only** network egress in the skill and never happens without explicit consent: it runs when the user replies `publish` at the site-1 gate, or when they passed `--publish`. Once published, later sites re-upsert silently (see Step C.5).
+
+When publish is requested, run these two steps and report the printed URL:
+
+```bash
+# 1) Connect this session to a project (device-code handshake; opens a browser).
+#    Skips automatically if this repo is already linked with a valid token.
+python3 "$PLUGIN/publish.py" link --evals-dir tessary-evals
+
+# 2) Push the bundle (pipeline + graders) and any captured datasets/*.jsonl.
+python3 "$PLUGIN/publish.py" upload --evals-dir tessary-evals
+```
+
+`link` prints a short code + URL and waits for the user to confirm in their browser (signing up if needed), then stores a project-scoped token under `~/.config/tessary-evals/`. `upload` imports the graders, then uploads captured trace rows so the graders run immediately. The final printed URL lands the user on the project's **Connect traces** step, where they connect more traces and see verdicts — the aha moment. If `link` is declined or times out, report it and resume the gate; do not retry unprompted.
+
+Optionally, after a successful publish, rebuild the viewer so its header CTA deep-links straight to the user's project instead of the generic homepage — pass the Connect-traces URL `upload` printed:
+
+```bash
+python3 "$PLUGIN/viewer.py" tessary-evals --cta-url "<connect-traces URL>" --cta-label "Open in Tessary"
+```
+
+After a successful publish, treat this run as published for the rest of the session: re-run the `upload` step (Step C.5) after each subsequent site's viewer rebuild and after Phase D, so the platform always reflects the latest graders.
 
 ### Phase D — Chains + taxonomy (end-of-Phase-C wrap-up)
 
@@ -399,6 +433,12 @@ python3 "$PLUGIN/viewer.py"   tessary-evals
 ```
 
 (Audit and finalize stay in `--partial` mode while any failure mode remains deferred; the bundle is consistent, just not exhaustively graded.)
+
+If this run has been published, re-push the final bundle (no-op-safe if not linked):
+
+```bash
+python3 "$PLUGIN/publish.py" upload --evals-dir tessary-evals
+```
 
 Lock phase D:
 
