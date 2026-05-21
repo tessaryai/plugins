@@ -65,9 +65,11 @@ import pipeline_io  # noqa: E402
 # Constants — frozen so they can't be mutated by callers importing this module.
 # ----------------------------------------------------------------------------
 
-VALID_KINDS: Final[frozenset[str]] = frozenset({"llm_judge", "deterministic", "execution", "score"})
-FAILURE_KINDS: Final[frozenset[str]] = frozenset({"llm_judge", "deterministic", "execution"})
-VALID_SCOPES: Final[frozenset[str]] = frozenset({"single_call", "chain"})
+VALID_KINDS: Final[frozenset[str]] = frozenset({"llm_judge", "deterministic", "execution", "score", "agentic"})
+FAILURE_KINDS: Final[frozenset[str]] = frozenset({"llm_judge", "deterministic", "execution", "agentic"})
+VALID_SCOPES: Final[frozenset[str]] = frozenset({"single_call", "chain", "trace"})
+# scope=trace anchors to a single call site (like single_call); only the self-test input shape differs.
+CALL_SITE_SCOPES: Final[frozenset[str]] = frozenset({"single_call", "trace"})
 VALID_VERDICTS: Final[frozenset[str]] = frozenset({"pass", "fail", "not_applicable"})
 VALID_CONFIDENCE: Final[frozenset[str]] = frozenset({"high", "medium", "low"})
 VALID_SELF_TEST_CATEGORIES: Final[frozenset[str]] = frozenset({
@@ -139,11 +141,11 @@ def _check_enums(g: Grader) -> list[str]:
 
 def _check_scope_routing(g: Grader, scope: str | None) -> list[str]:
     errors: list[str] = []
-    if scope == "single_call":
+    if scope in CALL_SITE_SCOPES:
         if not _is_nonempty_str(g.get("call_site_id")):
-            errors.append("scope=single_call requires non-empty call_site_id")
+            errors.append(f"scope={scope} requires non-empty call_site_id")
         if g.get("chain_id") not in (None, ""):
-            errors.append("scope=single_call must not set chain_id")
+            errors.append(f"scope={scope} must not set chain_id")
     elif scope == "chain":
         if not _is_nonempty_str(g.get("chain_id")):
             errors.append("scope=chain requires non-empty chain_id")
@@ -165,6 +167,31 @@ def _check_kind_body(g: Grader, kind: str | None) -> list[str]:
     elif kind == "execution":
         if not _is_nonempty_str(g.get("execution_spec")):
             errors.append("kind=execution requires non-empty execution_spec")
+    elif kind == "agentic":
+        errors += _check_agentic_body(g)
+    return errors
+
+
+def _check_agentic_body(g: Grader) -> list[str]:
+    """kind=agentic carries an agent_spec the runner executes (sandbox + opencode).
+    The plugin only validates the spec's shape — it never runs it."""
+    errors: list[str] = []
+    spec = g.get("agent_spec")
+    if not isinstance(spec, dict) or not spec:
+        errors.append("kind=agentic requires a non-empty agent_spec mapping")
+        return errors
+    if spec.get("harness") != "opencode":
+        errors.append(f"agent_spec.harness must be 'opencode', got {spec.get('harness')!r}")
+    sandbox = spec.get("sandbox")
+    if not isinstance(sandbox, dict) or not _is_nonempty_str(sandbox.get("image")):
+        errors.append("agent_spec.sandbox must be a mapping with a non-empty image")
+    if not _is_nonempty_str(spec.get("task_prompt")):
+        errors.append("agent_spec.task_prompt must be a non-empty string")
+    if not _is_nonempty_str(spec.get("verdict_contract")):
+        errors.append("agent_spec.verdict_contract must be a non-empty string")
+    tools = spec.get("allowed_tools")
+    if tools is not None and not isinstance(tools, list):
+        errors.append("agent_spec.allowed_tools must be a list when present")
     return errors
 
 
@@ -241,7 +268,8 @@ def _check_self_tests(
 
 
 def _check_self_test_body(st: Mapping[str, Any], scope: str | None, i: int) -> list[str]:
-    """Per-entry shape: single_call uses sample_output; chain uses call_site_outputs."""
+    """Per-entry shape: single_call uses sample_output; chain uses call_site_outputs;
+    trace uses input_messages (prior n-1 turns) + final_output (the graded turn)."""
     errors: list[str] = []
     if scope == "single_call":
         if "call_site_outputs" in st:
@@ -261,6 +289,23 @@ def _check_self_test_body(st: Mapping[str, Any], scope: str | None, i: int) -> l
                 if not _is_nonempty_str(v):
                     errors.append(f"self_tests[{i}].call_site_outputs[{k!r}] "
                                   f"must be a non-empty string")
+    elif scope == "trace":
+        for forbidden in ("sample_output", "call_site_outputs"):
+            if forbidden in st:
+                errors.append(f"self_tests[{i}]: scope=trace must use "
+                              f"input_messages + final_output, not {forbidden}")
+        msgs = st.get("input_messages")
+        if not isinstance(msgs, list) or not msgs:
+            errors.append(f"self_tests[{i}].input_messages must be a non-empty list "
+                          f"(the prior n-1 conversation turns)")
+        else:
+            for j, m in enumerate(msgs):
+                if not isinstance(m, dict) or not _is_nonempty_str(m.get("role")):
+                    errors.append(f"self_tests[{i}].input_messages[{j}] must be a "
+                                  f"mapping with a non-empty role")
+        if not _is_nonempty_str(st.get("final_output")):
+            errors.append(f"self_tests[{i}].final_output must be a non-empty string "
+                          f"(the final turn the grader judges)")
     return errors
 
 
@@ -313,8 +358,8 @@ def _check_id_shape(g: Grader, scope: str | None) -> list[str]:
     gid, fmid = g.get("id"), g.get("failure_mode_id")
     if not (_is_nonempty_str(gid) and _is_nonempty_str(fmid)):
         return []
-    if scope == "single_call" and gid != f"{fmid}::grader":
-        return [f"id should be '{fmid}::grader' for scope=single_call; got {gid!r}"]
+    if scope in CALL_SITE_SCOPES and gid != f"{fmid}::grader":
+        return [f"id should be '{fmid}::grader' for scope={scope}; got {gid!r}"]
     if scope == "chain":
         cid = g.get("chain_id")
         if _is_nonempty_str(cid) and not (gid.startswith(f"{cid}::") and gid.endswith("::grader")):
@@ -371,7 +416,7 @@ def _check_pipeline_refs(
         if fmid not in fm_ids:
             errors.append(f"failure_mode_id {fmid!r} not found in pipeline.failure_modes")
 
-    if scope == "single_call" and g.get("call_site_id") not in cs_ids:
+    if scope in CALL_SITE_SCOPES and g.get("call_site_id") not in cs_ids:
         errors.append(f"call_site_id {g.get('call_site_id')!r} "
                       f"not found in pipeline.call_sites")
 

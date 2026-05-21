@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://evals.tessary.ai/schemas/grader.v2.json",
   "title": "Grader (on-disk form)",
-  "description": "Schema for one grader YAML file under tessary-evals/graders/. The authoritative validator is validate.py (at the plugin root), which enforces these structural rules plus cross-field invariants and optional pipeline.yaml / bundle cross-references. This schema is the contract any grader author must satisfy; validate.py is the enforcer. v2 adds: self_tests[].category, applies_when_check (deterministic graders), per-grader runtime fields (owner, block_on_fail, cost/latency budgets, dataset_refs), and a _meta provenance block for survivable re-runs.",
+  "description": "Schema for one grader YAML file under tessary-evals/graders/. The authoritative validator is validate.py (at the plugin root), which enforces these structural rules plus cross-field invariants and optional pipeline.yaml / bundle cross-references. This schema is the contract any grader author must satisfy; validate.py is the enforcer. v2 adds: self_tests[].category, applies_when_check (deterministic graders), per-grader runtime fields (owner, block_on_fail, cost/latency budgets, dataset_refs), and a _meta provenance block for survivable re-runs. v3 adds kind=score (continuous 1-5 quality scoring). v4 adds scope=trace (multi-turn: grade the final turn given prior n-1 messages, self-tests carry input_messages + final_output) and kind=agentic (binary verdict produced by an agent running in a sandbox via agent_spec; emitted here, executed by the runner).",
   "type": "object",
   "required": [
     "id",
@@ -17,10 +17,11 @@
     "id": {
       "type": "string",
       "minLength": 1,
-      "description": "Stable grader ID. For single_call: `<failure_mode_id>::grader`. For chain: `<chain_id>::<failure_name>::grader`. Attached by orchestrator, not author."
+      "description": "Stable grader ID. For single_call and trace: `<failure_mode_id>::grader`. For chain: `<chain_id>::<failure_name>::grader`. Attached by orchestrator, not author."
     },
     "scope": {
-      "enum": ["single_call", "chain"]
+      "enum": ["single_call", "chain", "trace"],
+      "description": "single_call: grades one call's output. chain: grades a relationship across N distinct call-site outputs in a session. trace: grades the final turn of a multi-turn session given the prior n-1 messages as context — anchored to one call_site_id like single_call, but the self-test carries input_messages + final_output."
     },
     "failure_mode_id": {
       "type": "string",
@@ -34,7 +35,7 @@
     },
     "call_site_id": {
       "type": ["string", "null"],
-      "description": "Required and non-empty when scope=single_call; must be null/absent when scope=chain."
+      "description": "Required and non-empty when scope=single_call or scope=trace; must be null/absent when scope=chain."
     },
     "chain_id": {
       "type": ["string", "null"],
@@ -51,7 +52,51 @@
     },
 
     "kind": {
-      "enum": ["llm_judge", "deterministic", "execution", "score"]
+      "enum": ["llm_judge", "deterministic", "execution", "score", "agentic"]
+    },
+    "agent_spec": {
+      "type": "object",
+      "description": "Required for kind=agentic. Declares an agent that produces the verdict by multi-turn analysis in a sandbox (e.g. running `git diff` / tests / file exploration) rather than a single judge call. This plugin only emits the spec; the runner (evals-platform) executes it — validate.py never runs it.",
+      "required": ["harness", "sandbox", "task_prompt", "verdict_contract"],
+      "properties": {
+        "harness": {
+          "enum": ["opencode"],
+          "description": "The agent harness the runner launches. Extensible enum; opencode is the only value today."
+        },
+        "sandbox": {
+          "type": "object",
+          "description": "The sandbox the runner provisions for the agent.",
+          "required": ["image"],
+          "properties": {
+            "image": { "type": "string", "minLength": 1, "description": "Container/sandbox image, e.g. 'opencode/base:latest'." },
+            "network": { "enum": ["none", "egress", "full"], "description": "Network policy. Default to the most restrictive the task allows." }
+          }
+        },
+        "allowed_tools": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "description": "Tools the grading agent may use, e.g. ['bash', 'read', 'git']."
+        },
+        "task_prompt": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The grading task the agent performs. Self-contained instructions ending in a single decision, e.g. 'Run `git diff HEAD~1 HEAD` and decide whether it correctly implements the requested change.'"
+        },
+        "verdict_contract": {
+          "type": "string",
+          "minLength": 1,
+          "description": "How the agent must emit its result so the runner can parse it, e.g. 'print PASS or FAIL on the final line'. v1 verdicts are binary (pass/fail)."
+        },
+        "budgets": {
+          "type": "object",
+          "description": "Soft caps the runner enforces.",
+          "properties": {
+            "max_turns": { "type": "integer", "minimum": 1 },
+            "max_cost_usd": { "type": "number", "minimum": 0 },
+            "timeout_s": { "type": "integer", "minimum": 1 }
+          }
+        }
+      }
     },
     "score_scale": {
       "type": "object",
@@ -191,6 +236,17 @@
       }
     },
     {
+      "comment": "trace grades the final turn of a multi-turn session at one call site; routes like single_call.",
+      "if": { "properties": { "scope": { "const": "trace" } } },
+      "then": {
+        "required": ["call_site_id"],
+        "properties": {
+          "call_site_id": { "type": "string", "minLength": 1 },
+          "chain_id": { "type": "null" }
+        }
+      }
+    },
+    {
       "if": { "properties": { "kind": { "const": "llm_judge" } } },
       "then": { "required": ["judge_prompt", "rubric"] }
     },
@@ -203,8 +259,13 @@
       "then": { "required": ["execution_spec"] }
     },
     {
+      "comment": "agentic produces a binary verdict via an agent running in a sandbox; the spec is emitted here, executed by the runner.",
+      "if": { "properties": { "kind": { "const": "agentic" } } },
+      "then": { "required": ["agent_spec"] }
+    },
+    {
       "comment": "Failure-catching kinds carry a failure_mode_id and a taxonomy_node_id.",
-      "if": { "properties": { "kind": { "enum": ["llm_judge", "deterministic", "execution"] } } },
+      "if": { "properties": { "kind": { "enum": ["llm_judge", "deterministic", "execution", "agentic"] } } },
       "then": { "required": ["failure_mode_id", "taxonomy_node_id"] }
     },
     {
@@ -264,13 +325,33 @@
         "sample_output": {
           "type": "string",
           "minLength": 1,
-          "description": "Required for scope=single_call; must be absent for scope=chain."
+          "description": "Required for scope=single_call; must be absent for scope=chain and scope=trace."
         },
         "call_site_outputs": {
           "type": "object",
           "minProperties": 1,
           "additionalProperties": { "type": "string", "minLength": 1 },
           "description": "Required for scope=chain. Keys must equal the chain's call_site_ids set (cross-checked by validate.py against pipeline.yaml). Values are the per-call outputs."
+        },
+        "input_messages": {
+          "type": "array",
+          "minItems": 1,
+          "description": "Required for scope=trace. The first n-1 conversation turns supplied as context to the grader. Each item is a message with a role and content; tool calls/results from an agent session may be carried verbatim.",
+          "items": {
+            "type": "object",
+            "required": ["role"],
+            "properties": {
+              "role": { "enum": ["system", "user", "assistant", "tool"] },
+              "content": { "type": "string" },
+              "tool_calls": { "type": "array" },
+              "tool_results": { "type": "array" }
+            }
+          }
+        },
+        "final_output": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Required for scope=trace. The final turn (turn n) — the artifact the grader judges, given input_messages as context."
         }
       }
     },

@@ -24,6 +24,8 @@ Two ≤ N ≤ 5 call sites that participate in one logical flow. Detection metho
 
 Skip pairs that are clearly not coupled (e.g. two summarizers in different request handlers that never share data). Better to detect five strong chains than twenty speculative ones.
 
+**Chain vs. trace — don't conflate them.** A chain links **distinct call sites** (different prompts/schemas/intents) whose outputs compose. A *multi-turn conversation* — the **same** call site invoked repeatedly across turns (typically a `conversational_turn` or `agent_step` site) — is **not** a chain: its `call_site_ids` would be one id repeated, and what matters is the final turn given the prior turns, not a cross-site relationship. Those are graded per-site with **`scope: trace`** (see `prompts/per_site_kit.md`), not here. Only emit a chain when two or more *different* call sites are coupled. (The `ensemble` method is the one allowed same-id-repeated case, and it is a parallel vote, not a conversation.)
+
 ## What you produce
 
 ### `chains`

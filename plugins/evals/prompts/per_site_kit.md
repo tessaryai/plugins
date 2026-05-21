@@ -141,7 +141,7 @@ These require reading the output for **meaning**.
 3. **Calibration** — confidently wrong; over-refuses benign requests; false specificity ($ amounts with no source); false hedging on well-known facts.
 4. **Tone / brand fit** — wrong voice for the product (marketing superlatives in a sales-rep email; chipper response to a complaint).
 5. **Edge-case drift** — empty input, single-item input, very long input, multilingual, inputs that *look* like one shape but are another.
-6. **Cross-turn / stateful coherence** — only for `conversational_turn`, `agent_step`, `tool_call`. Tool args inconsistent with prior turns; refusal contradicting earlier commitment.
+6. **Cross-turn / stateful coherence** — only for `conversational_turn`, `agent_step`, `tool_call`. Tool args inconsistent with prior turns; refusal contradicting earlier commitment; a constraint set earlier in the session silently dropped. These can only be judged with the conversation history in hand, so their graders are emitted with **`scope: trace`** (input = the prior n-1 turns, graded artifact = the final turn) instead of `single_call`. Say so in the failure `description` ("requires prior turns to judge") so the grader author picks the trace scope.
 
 Each Layer B failure typically becomes a `kind: llm_judge` grader.
 
@@ -171,6 +171,8 @@ If the call-site `invocation` is `cli_agent`, `http`, or `sandbox_agent`, the mo
 - **Argument / prompt injection into the spawn (Layer C, `high`)** — user-controlled data is interpolated into the argv, stdin, URL, or sandbox command. Failure: shell-arg injection, prompt override via the passed task, or SSRF for `http`.
 
 For `http` specifically, also check auth/endpoint failures the SDK would normally handle (missing retry/backoff, leaking the API key in logs, no timeout). Mark these failures `high` when they touch safety, security, or downstream execution — per the severity test above.
+
+Several of these can only be judged by *inspecting the result the agent produced* — did the repo end up correct, does the git diff actually implement the request, do the tests pass? A static judge reading text can't answer that. Flag such failures (output-contract drift on a real edit, untrusted-output trust, "agent loop produced a wrong diff") in the `description` as **candidates for a `kind: agentic` grader** — a grader that runs as an agent in a sandbox (e.g. via opencode) to run `git diff` / tests and decide. The grader author chooses the kind; you just surface that judging needs an environment, not just the output text.
 
 ### Per-shape priorities
 

@@ -13,7 +13,7 @@ under tessary-evals/graders/, then:
 
 Usage:
     python3 finalize.py tessary-evals/ \
-        [--version 0.9.0] \
+        [--version 0.10.0] \
         [--product-hint "<string>"] \
         [--runtime-yaml runtime.yaml] \
         [--inputs-digest <hex>] \
@@ -403,7 +403,7 @@ def main() -> int:
         description="Assemble final tessary-evals/ artifacts at step 7.",
     )
     ap.add_argument("evals_dir", help="Path to the tessary-evals/ directory.")
-    ap.add_argument("--version", default="0.9.0",
+    ap.add_argument("--version", default="0.10.0",
                     help="On-disk schema version written into meta.yaml.")
     ap.add_argument("--product-hint", default=None)
     ap.add_argument("--runtime-yaml", default=None,
