@@ -21,6 +21,16 @@ Have OpenTelemetry GenAI traces from production? Pass them in for graders calibr
 /evals:synthesize-graders --traces path/to/traces.jsonl
 ```
 
+## Run on real traces (evals.tessary.ai)
+
+The local `index.html` is an offline preview. To actually *run* these graders against real traces and see verdicts, publish to [evals.tessary.ai](https://evals.tessary.ai). At the first gate (after site 1), reply `publish` — or pass `--publish` up front:
+
+```
+/evals:synthesize-graders --publish
+```
+
+This opens a browser to connect the session to a project (signing up if needed), uploads the graders, and uploads any captured `datasets/*.jsonl` so the graders run immediately. You land on the project's **Connect traces** step to wire up more traces and watch verdicts. Subsequent sites re-upsert silently. Your link is stored at `~/.config/tessary-evals/credentials.json` and reused on later runs.
+
 ## What you get
 
 Everything lands in `tessary-evals/` in your repo:

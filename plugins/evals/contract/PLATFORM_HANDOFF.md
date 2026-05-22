@@ -34,7 +34,7 @@ TEXT (no DB enum constraint), so no migration is required unless the platform ch
 are parsed and stored but not executed** — the same status `deterministic` / `execution` have today.
 
 The authoritative schema is `contract/grader.schema.json` in this plugin; the authoritative grader
-rules are `contract/AUTHORING_CONTRACT.md` (v4). The platform's vendored copy is refreshed via its
+rules are `contract/AUTHORING_CONTRACT.md` (v5). The platform's vendored copy is refreshed via its
 own `scripts/sync-evals-contract.sh` (see `docs/upgrade-evals-contract.md`).
 
 > File/line references below point at evals-platform as surveyed for this handoff. Treat them as
@@ -72,7 +72,9 @@ hardcoded enum list (`backend/.../mcp/McpToolRegistry.java`, the `kind` list ≈
 git_diff}}`. These reconstruct a Claude Code / opencode session as an ordered turn+tool sequence, with
 the per-turn git diff captured as text.
 
-**Platform work:**
+**Platform work** (needed for `kind: agentic` and for instrumentation that does *not* carry the whole
+transcript on the final turn — **not** for trace `llm_judge` graders, which use the v0.11 last-turn
+sourcing above):
 - Add a `SourceFactory` / import adapter (alongside the existing Braintrust / Langfuse sources under
   `backend/.../ingest/`) that parses agent-session JSONL into multi-message `RawEntry`s.
 - Surface `repo_state.git_diff` to graders that read it (trace `llm_judge`) and to the agentic runner
@@ -110,7 +112,6 @@ it.
 - [ ] Re-sync `grader.schema.json`; update `Grader.java`.
 - [ ] `McpToolRegistry` kind list += `agentic`; scope handling accepts `trace`.
 - [ ] `RunExecutor` executable-kind filter += `agentic`, and runs `trace`-scope graders.
-- [ ] `RawEntry` gains multi-message support; `ContentExtractor` / `ChatJudgeRunner` use history.
-- [ ] New agent-session `SourceFactory`.
+- [ ] (`kind: agentic` / non-self-contained instrumentation only) `RawEntry` multi-message support + agent-session `SourceFactory`. Trace `llm_judge` grading uses the v0.11 last-turn sourcing — no multi-message source needed.
 - [ ] Sandbox + opencode execution backend for `kind: agentic`.
 - [ ] (Optional) typed `agent_spec` column + migration.
