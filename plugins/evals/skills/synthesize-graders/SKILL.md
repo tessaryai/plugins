@@ -40,8 +40,10 @@ One grader per file is deliberate: emission failures are isolated (re-run one gr
 
 The pipeline produces two complementary kinds of eval, and they must not be conflated:
 
-- **Failure-mode graders** — binary `pass | fail` checks for a specific defect (`kind: llm_judge | deterministic | execution`). Hypothesized as **failure modes**. Subject to the deferral rule below.
+- **Failure-mode graders** — binary `pass | fail` checks for a specific defect (`kind: llm_judge | deterministic | execution | agentic`). Hypothesized as **failure modes**. Subject to the deferral rule below.
 - **Quality-dimension graders** — `kind: score` LLM-judges that assign a 1–5 level on an anchored rubric, tracked as a trend over time (never a gate). Hypothesized as **quality dimensions** (see `prompts/per_site_kit.md` § 4), required for judgment call sites. **Always graded in the first sweep — never deferred.** This is the grey-area "how good is the output" eval that black-and-white failure checks miss.
+
+`kind: agentic` is a failure-mode grader whose verdict is produced by an agent running in a sandbox (via opencode) doing multi-turn analysis — running `git diff`, tests, or file exploration — rather than a single judge call. The plugin only **emits the `agent_spec`**; the runner (evals-platform) executes it. Use it for failures that can only be judged by inspecting the result the agent produced (did the repo end up correct?), typically on `sandbox_agent` / `cli_agent` call sites.
 
 ## Deferred failure modes
 
@@ -71,7 +73,8 @@ Cache the result as `$PLUGIN`. **Never hardcode `.claude/skills/synthesize-grade
 The pipeline produces graders in two distinct scopes that must remain cleanly separated:
 
 - **`scope: single_call`** — grades one LLM call's output. Layer A (mechanical) and Layer B (judgmental) failures live here.
-- **`scope: chain`** — grades a relationship across N call-site outputs in the same logical session. Produced by Phase D; requires a runner that can fetch multiple outputs from one trace.
+- **`scope: chain`** — grades a relationship across N **distinct** call-site outputs in the same logical session. Produced by Phase D; requires a runner that can fetch multiple outputs from one trace.
+- **`scope: trace`** — grades the **final turn** of a multi-turn session at **one** call site, given the prior n-1 turns as context. Anchored to a `call_site_id` exactly like `single_call` (same id shape, same failure mode), but the self-test carries `input_messages` (the prior turns) + `final_output` (the graded turn) instead of `sample_output`. Used for cross-turn coherence failures on `conversational_turn` / `agent_step` sites the orchestrator marked `default_grade_mode: per_conversation`. A repeated same-site conversation is a trace, **not** a chain. **Sourcing (v5):** the runner grades the latest turn per trace and reads the whole transcript from that turn's self-contained `input` — it does not stitch per-turn rows; the `input_messages`/`final_output` self-test shape is unchanged.
 
 ## Inputs
 
@@ -196,7 +199,8 @@ Send **one message with two Agent tool calls** so they run in parallel.
 1. **Product profile subagent** (`subagent_type: Explore`) — pass `$PLUGIN/prompts/analyze_product.md`, the target repo path, and the absolute `tessary-evals/` path. Writes `tessary-evals/pipeline/product_profile.yaml` and `tessary-evals/pipeline/invariants.yaml`. Returns a manifest with domain, regulatory regimes, data sensitivity kinds, invariant counts, and `coverage_deferred: true` (because call-site discovery may still be running).
 
 2. **Call-site discovery subagent** — choose:
-   - **Path A — traces provided**: `subagent_type: general-purpose`. Parse the JSONL (OTLP/JSON or flat Python SDK exporter shape), normalize spans, group by normalized system-prompt hash, write one `tessary-evals/pipeline/call_sites/<id>.yaml` per group and `tessary-evals/datasets/<id>.jsonl` per group. Span taxonomy and observability stats (`observed.*` p50/p95/error_rate/refusal_rate/cost) are required. Stratified sampling at up to 10 representative spans per site. Set `invocation: sdk` by default; if span attributes show the model was reached via a shelled-out agent CLI, a raw HTTP gateway, or a sandbox runner (e.g. a `gen_ai.system` / command attribute naming `claude`, `ollama`, an `http.url` to a model host, or a sandbox span parent), set the matching `invocation` instead.
+   - **Path A — traces provided**: `subagent_type: general-purpose`. Parse the JSONL (OTLP/JSON or flat Python SDK exporter shape), normalize spans, group by normalized system-prompt hash, write one `tessary-evals/pipeline/call_sites/<id>.yaml` per group and `tessary-evals/datasets/<id>.jsonl` per group. Span taxonomy and observability stats (`observed.*` p50/p95/error_rate/refusal_rate/cost) are required. Stratified sampling at up to 10 representative spans per site. Set `invocation: sdk` by default; if span attributes show the model was reached via a shelled-out agent CLI, a raw HTTP gateway, or a sandbox runner (e.g. a `gen_ai.system` / command attribute naming `claude`, `ollama`, an `http.url` to a model host, or a sandbox span parent), set the matching `invocation` instead. Also set `default_grade_mode: per_conversation` when the group is **multi-turn** — ≥ 2 spans for this site share a `trace_id` (or session id) — so its cross-turn graders default to `scope: trace`; otherwise leave it `per_turn` (omit).
+   - **Path A-agent — agent-session transcripts provided**: a variant of Path A for Claude Code / opencode session JSONL (and similar agent runners). These are conversation transcripts, not OTLP spans: each line is a turn carrying `tool_use`/`tool_result` blocks, file edits, and bash commands. `subagent_type: general-purpose`. Reconstruct the ordered turn+tool sequence per session and group sessions by the agent's task/system identity into call sites (`invocation: cli_agent` or `sandbox_agent`). Write the captured turns to `tessary-evals/datasets/<id>.jsonl` using the **agent-session row shape** (see `output_format.md`): a `messages` array of `{role, content, tool_calls?, tool_results?}`, plus an optional per-turn `repo_state: {commit?, git_diff?}` so the **git diff between two turns** is captured as text and becomes a gradeable artifact. Sessions reconstructed this way are the natural input for `scope: trace` graders (prior turns → final turn) and `kind: agentic` graders (which re-inspect the repo state). A site reconstructed from multi-turn sessions (≥ 2 turns) is multi-turn by definition — set `default_grade_mode: per_conversation` on its shard.
    - **Path B — static repo**: `subagent_type: Explore`. Grep for LLM-call patterns; write one shard per discovered call site.
 
      **An LLM call is not always an in-process SDK call.** A call site is any place this repo causes a model to run, however the request leaves the process. Search all four invocation classes and tag each discovered site with `invocation`:
@@ -500,11 +504,23 @@ PART 1 — FAILURE-MODE GRADERS. For each failure mode where grader_deferred is 
 1. If a grader file already exists, load it; pass _meta.locked_fields to the author
    as existing_grader.
 2. Author body via the selected author (pass the failure_mode block). Author-owned
-   output shape: $PLUGIN/contract/AUTHORING_CONTRACT.md.
+   output shape: $PLUGIN/contract/AUTHORING_CONTRACT.md. Pick scope and kind from the
+   failure mode:
+   - **scope** — `single_call` by default; **`trace`** when the failure can only be judged
+     with conversation history (the failure description says so — cross-turn coherence on
+     `conversational_turn`/`agent_step` sites). A trace grader carries `input_messages`
+     (prior n-1 turns) + `final_output` self-tests instead of `sample_output`. The site that
+     gets trace graders is the one step 1 marked `default_grade_mode: per_conversation`
+     (multi-turn — turns share a trace); a site left `per_turn` stays `single_call`.
+   - **kind** — `llm_judge`/`deterministic` as usual; **`agentic`** when judging requires
+     inspecting the result the agent produced (run `git diff`/tests in a sandbox), typically
+     on `sandbox_agent`/`cli_agent` sites. An agentic grader carries an `agent_spec`
+     (harness=opencode, sandbox, allowed_tools, task_prompt, verdict_contract, budgets);
+     it is binary pass/fail and needs no judge_prompt/rubric.
 3. Splice orchestrator-owned fields onto the body (id, scope, failure_mode_id,
    call_site_id|chain_id, name, taxonomy_node_id; owner=null; block_on_fail=null;
    cost/latency budgets from observed.*; dataset_refs; _meta provenance with
-   author_contract_version=3).
+   author_contract_version=4).
 4. Write to tessary-evals/graders/<grader_id_safe>.yaml.
 5. Validate: python3 "$PLUGIN/validate.py" tessary-evals/graders/<file>.yaml --pipeline tessary-evals/
    On failure, retry author up to 3x with validator_feedback; after 3 failures,
@@ -521,7 +537,7 @@ quality-dimensions shard (none are deferred):
 2. Splice orchestrator-owned fields (id = <quality_dimension_id>::grader, scope,
    quality_dimension_id, call_site_id|chain_id, name, eval propagation; owner=null;
    block_on_fail=FALSE — score graders are report-only trends; dataset_refs;
-   _meta provenance with author_contract_version=3). Do NOT set failure_mode_id or
+   _meta provenance with author_contract_version=4). Do NOT set failure_mode_id or
    taxonomy_node_id on score graders.
 3. Write, validate (same retry loop), and calibrate self-tests (level agreement +
    order-reversed pass; confidence high if levels stable, else medium/low).

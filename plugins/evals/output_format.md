@@ -52,7 +52,7 @@ the assembled view is never written back to disk during synthesis.
 ## `tessary-evals/pipeline/meta.yaml`
 
 ```yaml
-version: "0.9.0"
+version: "0.11.0"
 product_hint: <string | null>
 
 runtime:
@@ -74,11 +74,16 @@ progress:                                 # added in schema 0.7.0 (phased synthe
 
 `version` is the synthesizer's on-disk schema version, not the plugin version.
 Bump only when the shard layout or shard schemas change. Current schema is
-`0.9.0` (0.7.0 added the `progress` block here, the `priorities.yaml` shard, and
+`0.11.0` (0.7.0 added the `progress` block here, the `priorities.yaml` shard, and
 the `grader_deferred` field on failure modes; 0.8.0 added the `quality_dimensions/`
 shard and the `kind: score` grader for continuous 1–5 quality scoring; 0.9.0 added
 the `invocation` field on call sites so indirect LLM calls — agent CLIs, raw HTTP,
-sandbox runners — are discovered and tracked alongside in-process SDK calls).
+sandbox runners — are discovered and tracked alongside in-process SDK calls; 0.10.0
+added `scope: trace` graders (grade the final turn of a multi-turn session given the
+prior n-1 messages), the `kind: agentic` grader (binary verdict from an agent in a
+sandbox via `agent_spec`), and the agent-session dataset row shape; 0.11.0 added the
+`default_grade_mode` field on call sites so multi-turn sites are flagged at discovery
+and their graders default to `scope: trace`).
 
 ## `tessary-evals/pipeline/priorities.yaml`
 
@@ -165,6 +170,12 @@ model: <string | null>
 system_prompt: <string | null>     # often null for cli_agent/sandbox_agent (prompt lives in the external tool)
 shape: <enum>                      # see prompts/per_site_kit.md
 shape_confidence: <high | medium | low>
+default_grade_mode: <per_turn | per_conversation>  # schema 0.11.0; default per_turn.
+                                   # per_conversation marks a multi-turn site (agents, chat) whose
+                                   # turns share a trace and are graded once over the whole session;
+                                   # the orchestrator then authors this site's graders as scope: trace.
+                                   # The platform treats this as the default; its per-call-site
+                                   # curation toggle overrides it.
 intent: <string>
 constraints:
   - kind: <schema | length | format | refusal | citation | other>
@@ -325,13 +336,13 @@ full schema):
 
 ```yaml
 id: <string>                         # canonical, with `::`
-scope: <single_call | chain>
+scope: <single_call | chain | trace>
 failure_mode_id: <string>
-call_site_id: <string | null>        # required when scope == single_call
+call_site_id: <string | null>        # required when scope == single_call or trace
 chain_id: <string | null>            # required when scope == chain
 name: <string>
 
-kind: <llm_judge | deterministic | execution>
+kind: <llm_judge | deterministic | execution | agentic>
 applies_when: <string | null>
 applies_when_check: <string | null>  # required when kind=deterministic AND applies_when set
 
@@ -345,6 +356,15 @@ deterministic_check: <string>
 # kind == execution:
 execution_spec: <string>
 
+# kind == agentic (verdict produced by an agent in a sandbox; emitted here, run by the platform):
+agent_spec:
+  harness: opencode
+  sandbox: {image: <string>, network: <none | egress | full>}
+  allowed_tools: [<string>, ...]
+  task_prompt: <string>              # grading task; ends in one binary decision
+  verdict_contract: <string>         # how the agent emits PASS/FAIL
+  budgets: {max_turns: <int>, max_cost_usd: <float>, timeout_s: <int>}   # optional
+
 self_tests:
   - sample_output: <string>          # single_call form
     expected_verdict: <pass | fail | not_applicable>
@@ -354,6 +374,13 @@ self_tests:
   - call_site_outputs:
       <call_site_id_a>: <synthetic output A>
       <call_site_id_b>: <synthetic output B>
+    expected_verdict: <pass | fail | not_applicable>
+    category: <enum>
+    rationale: <string>
+  # or trace form (scope == trace): prior n-1 turns as context + the final turn judged:
+  - input_messages:
+      - {role: <system | user | assistant | tool>, content: <string>}
+    final_output: <string>
     expected_verdict: <pass | fail | not_applicable>
     category: <enum>
     rationale: <string>
@@ -412,6 +439,35 @@ for that call site).
 
 Spans with `redaction_state: redacted` should be filtered out by the runner
 unless it has a re-hydration pathway.
+
+### Agent-session rows (schema 0.10.0)
+
+When the input is an agent-session transcript (Claude Code / opencode and similar
+agent runners — see SKILL.md "Path A-agent"), each row captures one **session** as a
+turn sequence rather than one span. This is the natural input for `scope: trace`
+graders (prior turns → final turn) and `kind: agentic` graders (which re-inspect the
+repo). Fields beyond the span shape above:
+
+```jsonl
+{"session_id": "<string>", "call_site_id": "<string>", "invocation": "<cli_agent|sandbox_agent>", "messages": [{"role": "<user|assistant|tool>", "content": "<string>", "tool_calls": [<obj>, ...], "tool_results": [<obj>, ...]}], "repo_state": {"commit": "<sha|null>", "git_diff": "<unified diff text|null>"}, "redaction_state": "<none|partial|redacted>"}
+```
+
+`messages` is the ordered turn+tool sequence. `repo_state` is optional and captured
+**per turn or per session boundary** so the git diff between two turns is available as
+text — a normal `llm_judge`/`trace` grader can read it directly, or a `kind: agentic`
+grader can recompute it in the sandbox. Omit `repo_state` when the session did not
+mutate a repo.
+
+**Sourcing a `scope: trace` grader's history (schema 0.11.0).** The canonical source is
+**the final turn's self-contained input**: in practice (Langfuse / Claude-Code-style
+instrumentation) each turn's logged `input` already contains the full prior transcript,
+so the runner grades a multi-turn site by taking the **latest turn per trace** and
+judging its transcript-bearing input + final output — no per-turn stitching. The
+agent-session `messages[]` shape above is therefore **not required** for trace
+`llm_judge` graders; it is retained for `kind: agentic` graders (which re-inspect the
+repo) and for instrumentation that does *not* carry the whole transcript on the final
+turn. Self-tests still express history as `input_messages` + `final_output` regardless
+of how production traces are sourced.
 
 ## `tessary-evals/.synth-lock.yaml`
 

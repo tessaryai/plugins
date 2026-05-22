@@ -144,10 +144,20 @@
       default: return '';
     }
   }
+  function scopeChip(scope) {
+    if (!scope) return '';
+    const label = scope === 'trace' ? 'multi-turn (trace)' : humanize(scope);
+    return `<span class="chip scope" title="Grader scope: ${escapeHtml(scope)}">${escapeHtml(label)}</span>`;
+  }
   // Only indirect invocations get a chip — SDK is the default and stays unmarked.
   function invocationChip(inv) {
     if (!inv || inv === 'sdk') return '';
     return `<span class="chip invocation" title="Indirect LLM call (${escapeHtml(inv)}) — reached outside an in-process SDK">${escapeHtml(invocationLabel(inv))}</span>`;
+  }
+  // Multi-turn sites graded once per conversation get a chip — per_turn is the default and stays unmarked.
+  function gradeModeChip(mode) {
+    if (mode !== 'per_conversation') return '';
+    return `<span class="chip scope" title="Multi-turn site — graded once per conversation (its cross-turn graders use scope: trace)">per conversation</span>`;
   }
   function dot(cls) { return `<span class="dot ${cls}"></span>`; }
   function jumpLink(viewId, anchorId, label) {
@@ -359,7 +369,7 @@
     const fms = fmsByCallSite.get(cs.id) || [];
     return `<tr id="cs-${escapeHtml(cs.id)}" data-modal-open="cs:${escapeHtml(cs.id)}" data-search="${escapeHtml(searchText)}">
       <td class="cell-num">${pad2(n)}</td>
-      <td class="cell-title">${escapeHtml(title)}${invocationChip(cs.invocation)}</td>
+      <td class="cell-title">${escapeHtml(title)}${invocationChip(cs.invocation)}${gradeModeChip(cs.default_grade_mode)}</td>
       <td class="cell-file" title="${escapeHtml(fileLoc)}">${escapeHtml(fileLoc || '—')}</td>
       <td class="cell-mono">${escapeHtml(cs.provider || '—')}${cs.model ? ` <span style="color:var(--muted-2)">·</span> ${escapeHtml(cs.model)}` : ''}</td>
       <td class="cell-count">${fms.length}</td>
@@ -377,6 +387,7 @@
     const chips = [
       chip(cs.shape, 'kind'),
       invocationChip(cs.invocation),
+      gradeModeChip(cs.default_grade_mode),
       cs.provider ? rawChip(cs.provider, 'muted') : '',
       cs.model ? rawChip(cs.model, 'muted') : '',
     ].filter(Boolean).join('');
@@ -621,6 +632,7 @@
     // — this HTML is a gist of the run, not a curation UI.
     const chips = [
       chip(g.kind, 'kind'),
+      (g.scope && g.scope !== 'single_call') ? scopeChip(g.scope) : '',
       conf ? chip(conf + ' confidence', 'conf-' + conf) : '',
       g._validation_error ? rawChip('validation error', 'warn') : '',
       g._load_error ? rawChip('load error', 'warn') : '',
@@ -656,6 +668,7 @@
       </div>` : ''}
       ${collapsibleField('Deterministic check', g.deterministic_check, charHint(g.deterministic_check))}
       ${collapsibleField('Execution spec', g.execution_spec, charHint(g.execution_spec))}
+      ${renderAgentSpec(g.agent_spec)}
       ${Array.isArray(g.self_tests) && g.self_tests.length ? `<div class="field"><details>
         <summary><span class="field-label-inline">Self-tests <span style="color:var(--muted-2);font-weight:400">· ${g.self_tests.length} ${g.self_tests.length === 1 ? 'test' : 'tests'}${g.self_test_pass_rate != null ? ` · pass rate ${Math.round(g.self_test_pass_rate * 100)}%` : ''}${g.self_test_variance != null ? ` · variance ${Math.round(g.self_test_variance * 100)}%` : ''}</span></span></summary>
         ${renderSelfTests(g.self_tests)}
@@ -732,15 +745,48 @@
     openModal({ kicker: 'Global grader', title, chips, body });
   }
 
+  function renderAgentSpec(spec) {
+    if (!spec || typeof spec !== 'object') return '';
+    const sandbox = spec.sandbox && typeof spec.sandbox === 'object' ? spec.sandbox : {};
+    const tools = Array.isArray(spec.allowed_tools) ? spec.allowed_tools : [];
+    const budgets = spec.budgets && typeof spec.budgets === 'object' ? spec.budgets : null;
+    const metaRow = [
+      spec.harness ? `<span><span class="cs-meta-label">harness</span><code>${escapeHtml(spec.harness)}</code></span>` : '',
+      sandbox.image ? `<span><span class="cs-meta-label">image</span><code>${escapeHtml(sandbox.image)}</code></span>` : '',
+      sandbox.network ? `<span><span class="cs-meta-label">network</span><code>${escapeHtml(sandbox.network)}</code></span>` : '',
+      tools.length ? `<span><span class="cs-meta-label">tools</span>${tools.map(x => rawChip(x, 'muted')).join('')}</span>` : '',
+      budgets ? `<span><span class="cs-meta-label">budgets</span><code>${escapeHtml(JSON.stringify(budgets))}</code></span>` : '',
+    ].filter(Boolean).join('');
+    return `<div class="field">
+      <div class="field-label">Agent grader (runs in a sandbox)</div>
+      <div class="cs-meta">${metaRow}</div>
+      ${collapsibleField('Task prompt', spec.task_prompt, charHint(spec.task_prompt))}
+      ${collapsibleField('Verdict contract', spec.verdict_contract, charHint(spec.verdict_contract))}
+    </div>`;
+  }
+
   function renderSelfTests(tests) {
     return tests.map(t => {
       const isScore = t.expected_level != null;
       const v = isScore ? String(t.expected_level) : (t.expected_verdict || 'unknown');
       const cls = isScore ? '' : (v === 'pass' ? 'conf-high' : v === 'fail' ? 'conf-low' : '');
       const label = isScore ? `Expected level ${escapeHtml(v)}` : `Expected ${escapeHtml(v)}`;
-      const body = t.sample_output != null
-        ? `<pre style="margin:6px 0 0">${escapeHtml(t.sample_output)}</pre>`
-        : `<pre style="margin:6px 0 0">${escapeHtml(JSON.stringify(t.call_site_outputs || {}, null, 2))}</pre>`;
+      let body;
+      if (Array.isArray(t.input_messages)) {
+        const convo = t.input_messages.map(m => {
+          const role = escapeHtml(m && m.role ? m.role : '?');
+          const content = escapeHtml(m && m.content != null ? String(m.content)
+            : JSON.stringify({ tool_calls: m && m.tool_calls, tool_results: m && m.tool_results }));
+          return `<div class="st-turn"><span class="st-role">${role}</span><span class="st-content">${content}</span></div>`;
+        }).join('');
+        body = `<div class="st-convo">${convo}</div>` +
+          `<div class="st-final"><span class="st-final-label">final turn</span>` +
+          `<pre style="margin:4px 0 0">${escapeHtml(t.final_output != null ? String(t.final_output) : '')}</pre></div>`;
+      } else if (t.sample_output != null) {
+        body = `<pre style="margin:6px 0 0">${escapeHtml(t.sample_output)}</pre>`;
+      } else {
+        body = `<pre style="margin:6px 0 0">${escapeHtml(JSON.stringify(t.call_site_outputs || {}, null, 2))}</pre>`;
+      }
       return `<div style="border:1px solid var(--border-soft);border-radius:3px;padding:10px 12px;margin-top:6px">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
           ${dot(cls)}

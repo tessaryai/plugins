@@ -1,6 +1,6 @@
-# default — bundled grader author for synthesize-graders (v3)
+# default — bundled grader author for synthesize-graders (v4)
 
-This is the OSS fallback grader-author. It implements the contract in `../../contract/AUTHORING_CONTRACT.md` (v3) and is selected when no higher-priority author skill (e.g. `evals-prompt`) is available in the session.
+This is the OSS fallback grader-author. It implements the contract in `../../contract/AUTHORING_CONTRACT.md` (v4) and is selected when no higher-priority author skill (e.g. `evals-prompt`) is available in the session.
 
 It is **deliberately minimal**. It produces graders that pass `validate.py` and are readable for review, but the rubrics are generic and the judge prompts skip the craft details a dedicated authoring skill brings.
 
@@ -25,7 +25,10 @@ The author-owned YAML body documented in the contract — **no surrounding prose
 - `deterministic` — the failure can be checked by a regex, JSON-schema validator, parser, or simple Boolean predicate on the output. Layer A failures (format, structural invariants, refusal-condition breaches) are usually this kind. Many Layer C failures (token-count budgets, latency timers, PII regex matches) also land here.
 - `llm_judge` — the failure requires reading the output for meaning. Layer B failures (faithfulness, helpfulness, calibration, tone, edge-case judgment) and Layer C judgment failures (jailbreak resistance, prompt-injection resistance) are usually this kind. Default to `llm_judge` when in doubt.
 - `execution` — the output is code or a tool call that can be executed and checked mechanically. Use only when this is obvious from the call-site shape.
+- `agentic` — the verdict requires **inspecting the result the agent produced** (run `git diff` / tests / explore files), not just reading the output text. Typical on `sandbox_agent` / `cli_agent` call sites and failures flagged as needing environment inspection. Produces a binary pass/fail via an `agent_spec` the runner executes — follow § "Agentic graders" below for the `agent_spec` (steps 3–4 about judge_prompt/rubric do not apply).
 - `score` — **only when the input is a `quality_dimension` block, not a `failure_mode`.** The grader assigns a 1–5 level on an anchored rubric instead of a pass/fail verdict. Follow § "Score graders" below instead of steps 2–9.
+
+If the input's `scope` is `trace`, author exactly as for `single_call` but write the self-tests with `input_messages` + `final_output` (see § "Trace graders") — the `kind` choice above is unchanged.
 
 When the input is a `quality_dimension` (not a `failure_mode`), always use `kind: score` and follow the Score graders section. Everything in steps 2–9 is for failure-mode graders.
 
@@ -116,6 +119,7 @@ Each self-test:
 
 - For `single_call`: a non-empty `sample_output` string.
 - For `chain`: a `call_site_outputs` mapping whose keys equal the chain's `call_site_ids` (every key gets a non-empty string).
+- For `trace`: a non-empty `input_messages` list (the prior n-1 turns) + a non-empty `final_output` string (see § "Trace graders").
 - An `expected_verdict` of `pass`, `fail`, or `not_applicable`.
 - A `category` of `clear_pass`, `clear_fail`, `near_miss`, `adversarial`, or `not_applicable`.
 - A one-sentence `rationale`.
@@ -129,6 +133,37 @@ A single precise sentence a developer can implement as a function returning `pas
 ### 7. Author `execution_spec` (only when `kind=execution`)
 
 A single precise sentence describing how to execute the output and what counts as pass/fail. Example: "Run the emitted SQL against the read-only fixture DB; pass if it returns at least one row and does not error; fail otherwise."
+
+### 7b. Author `agent_spec` (only when `kind=agentic`)
+
+Emit an `agent_spec` instead of `judge_prompt`/`rubric`. The runner launches an agent in a sandbox to reach a binary verdict. Required fields:
+
+- `harness: opencode`.
+- `sandbox`: `{ image: <string>, network: none | egress | full }`. Pick the project's CI image when known, else a sensible base. Choose the most restrictive `network` the task allows — `none` unless the task genuinely needs to fetch something.
+- `allowed_tools`: the minimal list, e.g. `[bash, read, git]`.
+- `task_prompt`: self-contained grading instructions that end in **one binary decision**, e.g. "Check out the repo at the session's final turn, run `git diff <base> <head>`, and decide whether the change correctly implements the user's request from the conversation. Run the test suite if present."
+- `verdict_contract`: how the agent signals its result so the runner can parse it, e.g. "Print exactly `VERDICT: PASS` or `VERDICT: FAIL` as the final line."
+- `budgets` (optional): `{ max_turns, max_cost_usd, timeout_s }` — set conservative caps.
+
+Do **not** emit `judge_prompt`, `rubric`, `deterministic_check`, or `execution_spec` for an agentic grader. Self-tests follow the grader's scope (single_call / trace / chain) and use `expected_verdict` (binary) exactly as in § 5.
+
+### 7c. Trace graders (`scope: trace`)
+
+When the input `scope` is `trace`, author exactly as for `single_call` (any failure-catching kind), but every self-test carries the conversation instead of one output:
+
+```yaml
+self_tests:
+  - input_messages:
+      - { role: user, content: <string> }
+      - { role: assistant, content: <string> }
+      - { role: user, content: <string> }
+    final_output: <string>       # the final turn being judged
+    expected_verdict: pass | fail | not_applicable
+    category: clear_pass | clear_fail | near_miss | adversarial | not_applicable
+    rationale: <string>
+```
+
+Write the `judge_prompt` (when `kind=llm_judge`) so it judges `final_output` **in the context of** `input_messages`. Include at least one self-test where the final turn looks fine alone but is wrong given the history (e.g. it contradicts a constraint the user set three turns earlier) — that case is the reason the scope exists.
 
 ### 8. Set `confidence`
 
@@ -178,6 +213,10 @@ On retry, the input carries `validator_feedback.errors`. Read every error, ident
 | `kind=deterministic with applies_when requires applies_when_check` | Add `applies_when_check` per § 2b. |
 | `scope=single_call must use sample_output` | Replace `call_site_outputs` with a `sample_output` string. |
 | `scope=chain must use call_site_outputs` | Replace `sample_output` with a `call_site_outputs` mapping whose keys equal the chain's `call_site_ids`. |
+| `scope=trace must use input_messages + final_output` | Replace `sample_output`/`call_site_outputs` with an `input_messages` list + a `final_output` string per § 7c. |
+| `self_tests[i].input_messages must be a non-empty list` / `final_output must be a non-empty string` | Add the missing trace self-test field. |
+| `kind=agentic requires a non-empty agent_spec mapping` | Emit `agent_spec` per § 7b; remove any `judge_prompt`/`rubric`. |
+| `agent_spec.harness must be 'opencode'` / `sandbox` / `task_prompt` / `verdict_contract` ... | Fill the missing/invalid `agent_spec` field per § 7b. |
 | `locked field <X> was mutated from existing_grader` | Restore `<X>` verbatim from `existing_grader.<X>`. |
 
 If after fixes the validator still complains about something you cannot satisfy in this attempt, return your best-effort YAML — the orchestrator will write it with `_validation_error` and surface it to the operator.

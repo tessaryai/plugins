@@ -22,7 +22,7 @@ Failure modes and quality dimensions are two different axes and must not be conf
 
 ## Outputs you produce
 
-**A. Patch the call-site shard in place** (Read + Edit, *not* Write — preserve the static fields step 1 wrote). Add four fields: `shape`, `shape_confidence`, `intent`, `constraints`.
+**A. Patch the call-site shard in place** (Read + Edit, *not* Write — preserve the static fields step 1 wrote). Add four fields: `shape`, `shape_confidence`, `intent`, `constraints` — plus `default_grade_mode` when the site is multi-turn (see § 1.5).
 
 **B. Write `tessary-evals/pipeline/failure_modes/<call_site_id_safe>.yaml`** with top-level key `failure_modes:` and a canonical-sorted list. Leave `taxonomy_node_id` empty — step 5 patches it back.
 
@@ -73,6 +73,23 @@ Choose exactly one shape:
 5. A safety classifier that gates a primary call is `guardrail`.
 6. Multiple identical sibling spans (same prompt, same parent_id) are `ensemble_vote`.
 7. A vendor moderation API call is `moderation`.
+
+## 1.5 Grade mode (multi-turn detection)
+
+Set `default_grade_mode` on the shard when this site is **multi-turn** — i.e. the same site is
+invoked repeatedly within one session and what matters is the final turn given the prior ones:
+
+- **`per_conversation`** — set this when the evidence shows multiple turns sharing one trace/session
+  for this site. The strongest signal is **structural**: in Path A traces, ≥ 2 spans for this site
+  share a `trace_id` (or session id); in Path A-agent transcripts, the session has ≥ 2 turns. Shape
+  `conversational_turn` or `agent_step` is a strong secondary signal. When set, the site's cross-turn
+  failure modes (§ 2, item 6) are graded once per conversation with `scope: trace`.
+- **`per_turn`** (default; may be omitted) — single-shot sites, or multi-turn sites where each turn is
+  independently judgeable with no cross-turn dependency.
+
+This is the site-level default; the platform lets a human override it per call site. Setting
+`per_conversation` is what tells the orchestrator to author this site's cross-turn graders as
+`scope: trace` rather than `single_call`.
 
 ---
 
@@ -141,7 +158,7 @@ These require reading the output for **meaning**.
 3. **Calibration** — confidently wrong; over-refuses benign requests; false specificity ($ amounts with no source); false hedging on well-known facts.
 4. **Tone / brand fit** — wrong voice for the product (marketing superlatives in a sales-rep email; chipper response to a complaint).
 5. **Edge-case drift** — empty input, single-item input, very long input, multilingual, inputs that *look* like one shape but are another.
-6. **Cross-turn / stateful coherence** — only for `conversational_turn`, `agent_step`, `tool_call`. Tool args inconsistent with prior turns; refusal contradicting earlier commitment.
+6. **Cross-turn / stateful coherence** — only for `conversational_turn`, `agent_step`, `tool_call`, and only when the site is multi-turn (`default_grade_mode: per_conversation`, see § 1.5). Tool args inconsistent with prior turns; refusal contradicting earlier commitment; a constraint set earlier in the session silently dropped. These can only be judged with the conversation history in hand, so their graders are emitted with **`scope: trace`** (input = the prior n-1 turns, graded artifact = the final turn) instead of `single_call`. Say so in the failure `description` ("requires prior turns to judge") so the grader author picks the trace scope.
 
 Each Layer B failure typically becomes a `kind: llm_judge` grader.
 
@@ -171,6 +188,8 @@ If the call-site `invocation` is `cli_agent`, `http`, or `sandbox_agent`, the mo
 - **Argument / prompt injection into the spawn (Layer C, `high`)** — user-controlled data is interpolated into the argv, stdin, URL, or sandbox command. Failure: shell-arg injection, prompt override via the passed task, or SSRF for `http`.
 
 For `http` specifically, also check auth/endpoint failures the SDK would normally handle (missing retry/backoff, leaking the API key in logs, no timeout). Mark these failures `high` when they touch safety, security, or downstream execution — per the severity test above.
+
+Several of these can only be judged by *inspecting the result the agent produced* — did the repo end up correct, does the git diff actually implement the request, do the tests pass? A static judge reading text can't answer that. Flag such failures (output-contract drift on a real edit, untrusted-output trust, "agent loop produced a wrong diff") in the `description` as **candidates for a `kind: agentic` grader** — a grader that runs as an agent in a sandbox (e.g. via opencode) to run `git diff` / tests and decide. The grader author chooses the kind; you just surface that judging needs an environment, not just the output text.
 
 ### Per-shape priorities
 
