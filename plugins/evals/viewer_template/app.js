@@ -154,6 +154,11 @@
     if (!inv || inv === 'sdk') return '';
     return `<span class="chip invocation" title="Indirect LLM call (${escapeHtml(inv)}) — reached outside an in-process SDK">${escapeHtml(invocationLabel(inv))}</span>`;
   }
+  // Multi-turn sites graded once per conversation get a chip — per_turn is the default and stays unmarked.
+  function gradeModeChip(mode) {
+    if (mode !== 'per_conversation') return '';
+    return `<span class="chip scope" title="Multi-turn site — graded once per conversation (its cross-turn graders use scope: trace)">per conversation</span>`;
+  }
   function dot(cls) { return `<span class="dot ${cls}"></span>`; }
   function jumpLink(viewId, anchorId, label) {
     return `<a href="#${escapeHtml(viewId)}" data-jump="${escapeHtml(viewId)}|${escapeHtml(anchorId)}">${escapeHtml(label)}</a>`;
@@ -364,7 +369,7 @@
     const fms = fmsByCallSite.get(cs.id) || [];
     return `<tr id="cs-${escapeHtml(cs.id)}" data-modal-open="cs:${escapeHtml(cs.id)}" data-search="${escapeHtml(searchText)}">
       <td class="cell-num">${pad2(n)}</td>
-      <td class="cell-title">${escapeHtml(title)}${invocationChip(cs.invocation)}</td>
+      <td class="cell-title">${escapeHtml(title)}${invocationChip(cs.invocation)}${gradeModeChip(cs.default_grade_mode)}</td>
       <td class="cell-file" title="${escapeHtml(fileLoc)}">${escapeHtml(fileLoc || '—')}</td>
       <td class="cell-mono">${escapeHtml(cs.provider || '—')}${cs.model ? ` <span style="color:var(--muted-2)">·</span> ${escapeHtml(cs.model)}` : ''}</td>
       <td class="cell-count">${fms.length}</td>
@@ -382,6 +387,7 @@
     const chips = [
       chip(cs.shape, 'kind'),
       invocationChip(cs.invocation),
+      gradeModeChip(cs.default_grade_mode),
       cs.provider ? rawChip(cs.provider, 'muted') : '',
       cs.model ? rawChip(cs.model, 'muted') : '',
     ].filter(Boolean).join('');

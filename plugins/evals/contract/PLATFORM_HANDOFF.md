@@ -1,12 +1,32 @@
-# Platform handoff — v0.10 grader contract additions
+# Platform handoff — v0.10 / v0.11 grader contract additions
 
 This document is for the **evals-platform** team (the runner that executes graders this plugin
-synthesizes). It lists exactly what the platform must implement to consume the three additive
-contract changes introduced in plugin v0.10 / on-disk schema `0.10.0`:
+synthesizes). It lists exactly what the platform must implement to consume the additive
+contract changes introduced in plugin v0.10–v0.11 / on-disk schema `0.10.0`–`0.11.0`:
 
 1. `scope: trace` — multi-turn graders (final turn judged given the prior n-1 turns).
 2. Agent-session ingestion — Claude Code / opencode JSONL transcripts as a dataset source.
 3. `kind: agentic` — a binary verdict produced by an agent running in a sandbox.
+4. `default_grade_mode` (v0.11) — a per-call-site flag marking a multi-turn site.
+
+## What changed in v0.11 (read first if you already shipped v0.10)
+
+v0.11 **pins how a `scope: trace` grader's history is sourced** and makes it cheaper to implement:
+
+- **Sourcing = the final turn's self-contained `input`.** With Langfuse / Claude-Code-style
+  instrumentation, each turn's logged `input` already contains the whole prior transcript. So the
+  runner grades a multi-turn site by **grouping observations by trace, taking the latest turn, and
+  judging its `input` (the transcript) + final output** — one verdict per conversation. **This means
+  §1's "multi-message `RawEntry`" and §2's "agent-session `SourceFactory`" are NOT required for trace
+  `llm_judge` graders** — only group-by-trace + last-turn selection (which evals-platform already has
+  as its internal `TraceTransform` / `grade_mode` mechanism). Agent-session ingestion (§2) and the
+  multi-message path remain relevant only for `kind: agentic` and for instrumentation that does not
+  carry the whole transcript on the final turn.
+- **New call-site field `default_grade_mode: per_turn | per_conversation`** (default `per_turn`). The
+  orchestrator sets `per_conversation` on multi-turn sites and authors their cross-turn graders as
+  `scope: trace`. The platform should treat `scope: trace` as the canonical signal that a site is
+  graded per conversation (its per-call-site curation toggle is the user override), and may read
+  `default_grade_mode` for display / pre-fill. The field is plain TEXT; no migration is required.
 
 All three are **additive**. Existing graders are unchanged. `scope` / `kind` are stored as plain
 TEXT (no DB enum constraint), so no migration is required unless the platform chooses to persist
@@ -33,12 +53,16 @@ hardcoded enum list (`backend/.../mcp/McpToolRegistry.java`, the `kind` list ≈
 `input_messages: [{role, content, tool_calls?, tool_results?}]` (the prior n-1 turns) + `final_output`
 (the graded turn). The grader judges `final_output` *in the context of* `input_messages`.
 
-**Platform work:**
-- `RawEntry` (`backend/.../ingest/RawEntry.java`) is single-turn (`input` → `output`). Add a
-  `messages: List<Message>` (+ session id) variant so a run can carry conversation history.
-- `ContentExtractor` (used in `RunExecutor`, ≈ line 193) and `ChatJudgeRunner`
-  (`backend/.../judge/ChatJudgeRunner.java`) must feed the prior turns as judge context and grade the
-  final turn.
+**Platform work (v0.11 sourcing — much smaller than the original v0.10 plan):**
+- Group a multi-turn site's observations by `trace_id`, take the **latest turn**, and feed its
+  `input` (the transcript) + final output to the judge. evals-platform already has this as its
+  internal `TraceTransform`/`TraceTransformer` (`select: last_turn`); a `scope: trace` grader on a
+  call site is the signal to apply it (its per-call-site `grade_mode` curation toggle overrides).
+- Run `scope: trace` self-tests by flattening the case's `input_messages` into that transcript +
+  `final_output` (reuse the judge's pre-framed transcript path).
+- ~~Add a `messages: List<Message>` variant to `RawEntry`~~ and ~~feed prior turns via
+  `ContentExtractor`~~ are **no longer required** for trace `llm_judge` graders under v0.11 sourcing
+  (still needed for `kind: agentic` / non-self-contained instrumentation).
 - Add `trace` to the executable-kind filter (next section) so trace+llm_judge graders actually run.
 
 ## 2. Agent-session ingestion

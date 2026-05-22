@@ -663,6 +663,12 @@ VALID_INVOCATIONS: Final[frozenset[str]] = frozenset({
     "sdk", "cli_agent", "http", "sandbox_agent",
 })
 
+# How a call site's turns are grouped for grading (call-site `default_grade_mode`,
+# schema 0.11.0); absent means per_turn.
+VALID_GRADE_MODES: Final[frozenset[str]] = frozenset({
+    "per_turn", "per_conversation",
+})
+
 
 def _bundle_invocation_enum(pipeline: Pipeline) -> list[str]:
     """If a call site declares `invocation`, it must be a known kind.
@@ -676,6 +682,22 @@ def _bundle_invocation_enum(pipeline: Pipeline) -> list[str]:
         if inv is not None and inv not in VALID_INVOCATIONS:
             errors.append(f"call_site {cs.get('id')!r} has invalid invocation "
                           f"{inv!r}; expected one of {sorted(VALID_INVOCATIONS)}")
+    return errors
+
+
+def _bundle_grade_mode_enum(pipeline: Pipeline) -> list[str]:
+    """If a call site declares `default_grade_mode`, it must be a known value.
+
+    Absent is allowed and treated as `per_turn` (the pre-0.11.0 behavior).
+    `per_conversation` marks a multi-turn site whose graders should be `scope: trace`."""
+    errors: list[str] = []
+    for cs in pipeline.get("call_sites") or []:
+        if not isinstance(cs, dict):
+            continue
+        mode = cs.get("default_grade_mode")
+        if mode is not None and mode not in VALID_GRADE_MODES:
+            errors.append(f"call_site {cs.get('id')!r} has invalid default_grade_mode "
+                          f"{mode!r}; expected one of {sorted(VALID_GRADE_MODES)}")
     return errors
 
 
@@ -1112,6 +1134,7 @@ def _run_bundle(evals_dir: Path, calibration_csv: Path | None,
     bundle_errors += _bundle_qd_grader_bijection(pipeline, graders_by_id)
     bundle_errors += _bundle_quality_coverage(pipeline)
     bundle_errors += _bundle_invocation_enum(pipeline)
+    bundle_errors += _bundle_grade_mode_enum(pipeline)
     bundle_errors += _bundle_duplicate_ids(graders)
     bundle_errors += _bundle_taxonomy_reachability(pipeline)
     bundle_errors += _bundle_chain_acyclic(pipeline)

@@ -1,10 +1,15 @@
-# Grader-author contract (v4)
+# Grader-author contract (v5)
 
 This document defines the interface between **synthesize-graders** (the orchestrator) and any **grader author** invoked during the grader-synthesis phase. It exists so that the author is swappable: the bundled `authors/default/` is the OSS fallback; closed-source or third-party authors (e.g. `evals-prompt`) declare conformance to this contract and become drop-in replacements.
 
 - **Authoritative schema**: [`grader.schema.json`](./grader.schema.json) — the on-disk grader YAML.
 - **Authoritative enforcer**: `validate.py` (at the plugin root) — runs the schema rules plus cross-field invariants, per-file and `--bundle` cross-references.
-- **Contract version**: 4. Author skills should declare `contract_version: 4` in their SKILL.md frontmatter (or equivalent). v4 is **additive over v3**: an author that only produces the older grader shapes stays fully conformant. The new `scope: trace` and `kind: agentic` capabilities (§ "Trace graders" and § "Agentic graders") are the only v4-exclusive additions.
+- **Contract version**: 5. v5 is **additive over v4 and author-transparent**: it changes only how the *orchestrator* discovers multi-turn sites and how the platform *sources* a trace grader's history (§ "What changed in v5"). The author-owned fields of every grader (including `scope: trace`) are unchanged, so an author declaring `contract_version: 4` remains fully conformant; no author change is required.
+
+## What changed in v5
+
+- Call sites carry a new orchestrator-owned field **`default_grade_mode: per_turn | per_conversation`** (default `per_turn`). The orchestrator sets `per_conversation` when it detects a multi-turn site (turns sharing a trace at a `conversational_turn` / `agent_step` site) and then authors that site's failure-mode graders as `scope: trace`. Authors do not set this field.
+- **Trace-grader history sourcing is pinned to the final turn's self-contained input** (the whole transcript lives in the last turn's `input`; the runner grades the latest turn per trace). This is a runner/contract clarification — it does not change the author-facing self-test shape (`input_messages` + `final_output`). See § "Trace graders".
 
 ## What changed in v4
 
@@ -187,6 +192,13 @@ Write the `judge_prompt` so it judges `final_output` **in the context of** `inpu
 constraints established earlier?" Self-tests should include at least one case where the final turn is
 fine in isolation but wrong given the history (that's the whole point of the scope). All other
 invariants (length, pass/fail balance, adversarial coverage, `applies_when`) are unchanged.
+
+**History sourcing (v5).** In production the runner does not stitch per-turn rows: it groups a
+multi-turn site's observations by trace, takes the **latest turn**, and judges its `input` (which
+already carries the whole transcript) plus its final output. The author is unaffected — keep writing
+self-tests as `input_messages` + `final_output`; the runner maps `input_messages` to the transcript it
+sees in production. The call site that gets these graders is the one the orchestrator marked
+`default_grade_mode: per_conversation`.
 
 ## Agentic graders (v4)
 

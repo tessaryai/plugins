@@ -52,7 +52,7 @@ the assembled view is never written back to disk during synthesis.
 ## `tessary-evals/pipeline/meta.yaml`
 
 ```yaml
-version: "0.10.0"
+version: "0.11.0"
 product_hint: <string | null>
 
 runtime:
@@ -74,14 +74,16 @@ progress:                                 # added in schema 0.7.0 (phased synthe
 
 `version` is the synthesizer's on-disk schema version, not the plugin version.
 Bump only when the shard layout or shard schemas change. Current schema is
-`0.10.0` (0.7.0 added the `progress` block here, the `priorities.yaml` shard, and
+`0.11.0` (0.7.0 added the `progress` block here, the `priorities.yaml` shard, and
 the `grader_deferred` field on failure modes; 0.8.0 added the `quality_dimensions/`
 shard and the `kind: score` grader for continuous 1–5 quality scoring; 0.9.0 added
 the `invocation` field on call sites so indirect LLM calls — agent CLIs, raw HTTP,
 sandbox runners — are discovered and tracked alongside in-process SDK calls; 0.10.0
 added `scope: trace` graders (grade the final turn of a multi-turn session given the
 prior n-1 messages), the `kind: agentic` grader (binary verdict from an agent in a
-sandbox via `agent_spec`), and the agent-session dataset row shape).
+sandbox via `agent_spec`), and the agent-session dataset row shape; 0.11.0 added the
+`default_grade_mode` field on call sites so multi-turn sites are flagged at discovery
+and their graders default to `scope: trace`).
 
 ## `tessary-evals/pipeline/priorities.yaml`
 
@@ -168,6 +170,12 @@ model: <string | null>
 system_prompt: <string | null>     # often null for cli_agent/sandbox_agent (prompt lives in the external tool)
 shape: <enum>                      # see prompts/per_site_kit.md
 shape_confidence: <high | medium | low>
+default_grade_mode: <per_turn | per_conversation>  # schema 0.11.0; default per_turn.
+                                   # per_conversation marks a multi-turn site (agents, chat) whose
+                                   # turns share a trace and are graded once over the whole session;
+                                   # the orchestrator then authors this site's graders as scope: trace.
+                                   # The platform treats this as the default; its per-call-site
+                                   # curation toggle overrides it.
 intent: <string>
 constraints:
   - kind: <schema | length | format | refusal | citation | other>
@@ -449,6 +457,17 @@ repo). Fields beyond the span shape above:
 text — a normal `llm_judge`/`trace` grader can read it directly, or a `kind: agentic`
 grader can recompute it in the sandbox. Omit `repo_state` when the session did not
 mutate a repo.
+
+**Sourcing a `scope: trace` grader's history (schema 0.11.0).** The canonical source is
+**the final turn's self-contained input**: in practice (Langfuse / Claude-Code-style
+instrumentation) each turn's logged `input` already contains the full prior transcript,
+so the runner grades a multi-turn site by taking the **latest turn per trace** and
+judging its transcript-bearing input + final output — no per-turn stitching. The
+agent-session `messages[]` shape above is therefore **not required** for trace
+`llm_judge` graders; it is retained for `kind: agentic` graders (which re-inspect the
+repo) and for instrumentation that does *not* carry the whole transcript on the final
+turn. Self-tests still express history as `input_messages` + `final_output` regardless
+of how production traces are sourced.
 
 ## `tessary-evals/.synth-lock.yaml`
 
