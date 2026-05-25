@@ -33,6 +33,29 @@ from typing import Any
 DEFAULT_BASE_URL = "https://evals.tessary.ai"
 
 
+def _client_version() -> str:
+    """Plugin version, read from .claude-plugin/plugin.json next to this script.
+    Surfaced in the User-Agent so the platform — and the zone's Cloudflare WAF —
+    can recognise the official CLI instead of a bare `Python-urllib/X.Y` agent,
+    which Cloudflare's bot rules block."""
+    try:
+        manifest = Path(__file__).resolve().parent / ".claude-plugin" / "plugin.json"
+        return str(json.loads(manifest.read_text()).get("version", "0"))
+    except Exception:
+        return "0"
+
+
+# Default headers on every request. USER_AGENT replaces urllib's `Python-urllib/X.Y`
+# (the string Cloudflare blocks); X-Tessary-Client is the stable marker the zone's
+# WAF skip rule matches on to bypass Super Bot Fight Mode for this client. Neither
+# is a secret — they *identify* the client, they do not *authenticate* it. The
+# project-scoped bearer token remains the only authorization boundary, so a spoofed
+# header buys an attacker nothing beyond skipping bot heuristics on these paths.
+USER_AGENT = f"tessary-evals/{_client_version()} (+https://evals.tessary.ai)"
+CLIENT_HEADER_NAME = "X-Tessary-Client"
+CLIENT_HEADER_VALUE = "evals-cli"
+
+
 # --------------------------------------------------------------------- config
 
 def base_url(arg: str | None) -> str:
@@ -86,7 +109,10 @@ def linked_project(evals_dir: Path) -> dict[str, Any] | None:
 
 def _request(method: str, url: str, *, body: bytes | None = None,
              headers: dict[str, str] | None = None) -> tuple[int, bytes]:
-    req = urllib.request.Request(url, data=body, method=method, headers=headers or {})
+    merged = {"User-Agent": USER_AGENT, CLIENT_HEADER_NAME: CLIENT_HEADER_VALUE}
+    if headers:
+        merged.update(headers)
+    req = urllib.request.Request(url, data=body, method=method, headers=merged)
     try:
         with urllib.request.urlopen(req, timeout=30) as resp:
             return resp.getcode(), resp.read()
