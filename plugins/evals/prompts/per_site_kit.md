@@ -13,9 +13,9 @@ Failure modes and quality dimensions are two different axes and must not be conf
 
 ## Inputs the orchestrator passes you
 
-- The call-site shard at `tessary-evals/pipeline/call_sites/<id>.yaml` — read; step 1 already wrote the static fields.
-- `tessary-evals/pipeline/product_profile.yaml` and `invariants.yaml`.
-- `tessary-evals/pipeline/packs.yaml` — the engaged packs and their interview answers.
+- The call-site shard at `.tessary/pipeline/call_sites/<id>.yaml` — read; step 1 already wrote the static fields.
+- `.tessary/pipeline/product_profile.yaml` and `invariants.yaml`.
+- `.tessary/pipeline/packs.yaml` — the engaged packs and their interview answers.
 - One absolute path per engaged pack to its `failures.md`.
 
 ---
@@ -24,9 +24,9 @@ Failure modes and quality dimensions are two different axes and must not be conf
 
 **A. Patch the call-site shard in place** (Read + Edit, *not* Write — preserve the static fields step 1 wrote). Add four fields: `shape`, `shape_confidence`, `intent`, `constraints` — plus `default_grade_mode` when the site is multi-turn (see § 1.5).
 
-**B. Write `tessary-evals/pipeline/failure_modes/<call_site_id_safe>.yaml`** with top-level key `failure_modes:` and a canonical-sorted list. Leave `taxonomy_node_id` empty — step 5 patches it back.
+**B. Write `.tessary/pipeline/failure_modes/<call_site_id_safe>.yaml`** with top-level key `failure_modes:` and a canonical-sorted list. Leave `taxonomy_node_id` empty — step 5 patches it back.
 
-**C. Write `tessary-evals/pipeline/quality_dimensions/<call_site_id_safe>.yaml`** with top-level key `quality_dimensions:` (see § 4) — **required for judgment call sites, omitted only for the exempt shapes listed there.**
+**C. Write `.tessary/pipeline/quality_dimensions/<call_site_id_safe>.yaml`** with top-level key `quality_dimensions:` (see § 4) — **required for judgment call sites, omitted only for the exempt shapes listed there.**
 
 Then **return only the manifest** described at the bottom of this file. No prose, no YAML body.
 
@@ -289,7 +289,7 @@ quality_dimensions:
     grader_id: <id>::grader                  # the kind: score grader synthesized downstream
 ```
 
-Write the canonical-sorted list to `tessary-evals/pipeline/quality_dimensions/<call_site_id_safe>.yaml`. Anchor every rubric level in concrete, observable terms — "cites the single most relevant memory and the justification names the specific prior event" beats "good basis selection." Vague rubric anchors produce a noisy, untrustworthy judge.
+Write the canonical-sorted list to `.tessary/pipeline/quality_dimensions/<call_site_id_safe>.yaml`. Anchor every rubric level in concrete, observable terms — "cites the single most relevant memory and the justification names the specific prior event" beats "good basis selection." Vague rubric anchors produce a noisy, untrustworthy judge.
 
 ---
 

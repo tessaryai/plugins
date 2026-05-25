@@ -131,7 +131,7 @@ to **write two YAML shards directly to disk** and return only a small manifest. 
 orchestrator never reads the full content of the shards — it relies on your manifest
 plus subsequent shard-reading scripts.
 
-Write these files (the orchestrator passes you the absolute tessary-evals/ path):
+Write these files (the orchestrator passes you the absolute .tessary/ path):
 
 - `<evals>/pipeline/product_profile.yaml` — top-level key `product_profile:` whose
   value is the structured snapshot from section 1 above.

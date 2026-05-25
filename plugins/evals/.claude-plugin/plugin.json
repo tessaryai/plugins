@@ -1,7 +1,7 @@
 {
   "name": "evals",
   "description": "Generate a calibrated eval suite for your LLM product — graders, datasets, and a visual report, straight from your repo.",
-  "version": "0.11.1",
+  "version": "0.12.0",
   "author": {
     "name": "Tessary AI"
   },

@@ -7,7 +7,7 @@ Two subcommands, both stdlib-only (urllib), no third-party deps:
           browser, polls until the user confirms in a signed-in browser, then
           stores a project-scoped token under ~/.config/tessary-evals/.
 
-  upload  Multipart-pushes the local tessary-evals/ bundle to the linked
+  upload  Multipart-pushes the local .tessary/ bundle to the linked
           project's import endpoint, then uploads any captured datasets/*.jsonl
           to the trace-upload endpoint so the graders run on real rows.
 
@@ -46,7 +46,7 @@ def config_path() -> Path:
 
 
 def repo_key(evals_dir: Path) -> str:
-    # Key by the repo (parent of tessary-evals/) so one machine can link many repos.
+    # Key by the repo (parent of .tessary/) so one machine can link many repos.
     return str(evals_dir.resolve().parent)
 
 
@@ -215,8 +215,8 @@ def cmd_link(args: argparse.Namespace) -> int:
 # ---------------------------------------------------------------- upload flow
 
 def collect_bundle_files(evals_dir: Path) -> list[tuple[str, Path]]:
-    """Every file under tessary-evals/, keyed by its path relative to the repo
-    (so the name carries the leading tessary-evals/ that the backend classifier
+    """Every file under .tessary/, keyed by its path relative to the repo
+    (so the name carries the leading .tessary/ that the backend classifier
     expects). datasets/*.jsonl and report/html are sent too but ignored by import."""
     parent = evals_dir.resolve().parent
     out: list[tuple[str, Path]] = []
@@ -277,13 +277,13 @@ def main(argv: list[str]) -> int:
     sub = p.add_subparsers(dest="cmd", required=True)
 
     pl = sub.add_parser("link", help="device-code link to a project")
-    pl.add_argument("--evals-dir", default="tessary-evals")
+    pl.add_argument("--evals-dir", default=".tessary")
     pl.add_argument("--label", default=None)
     pl.add_argument("--force", action="store_true", help="re-link even if a valid token exists")
     pl.set_defaults(func=cmd_link)
 
     pu = sub.add_parser("upload", help="push the bundle + datasets to the linked project")
-    pu.add_argument("--evals-dir", default="tessary-evals")
+    pu.add_argument("--evals-dir", default=".tessary")
     pu.add_argument("--mode", default="upsert", choices=["upsert", "replace"])
     pu.set_defaults(func=cmd_upload)
 
