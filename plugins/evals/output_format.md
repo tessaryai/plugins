@@ -9,7 +9,7 @@ Stick to these schemas exactly so re-running on the same inputs produces stable
 diffs and the per-grader / bundle validators pass.
 
 ```
-tessary-evals/
+.tessary/
   pipeline/
     meta.yaml                          # version, product_hint, runtime
     packs.yaml                         # engaged packs + interview answers
@@ -31,7 +31,7 @@ tessary-evals/
 
 `<grader_id_safe>` is the canonical grader ID with `::` replaced by `__`.
 Example: a grader with `id: persona::memory_citation::grader` is written to
-`tessary-evals/graders/persona__memory_citation__grader.yaml`. The canonical ID *inside*
+`.tessary/graders/persona__memory_citation__grader.yaml`. The canonical ID *inside*
 the file still uses `::`.
 
 The same filename transformation applies to call-site shards
@@ -49,7 +49,7 @@ v0.3 emitted (`version`, `product_hint`, `packs`, `product_profile`,
 `failure_modes`, `taxonomy`). The shard files on disk remain the source of truth;
 the assembled view is never written back to disk during synthesis.
 
-## `tessary-evals/pipeline/meta.yaml`
+## `.tessary/pipeline/meta.yaml`
 
 ```yaml
 version: "0.11.0"
@@ -85,7 +85,7 @@ sandbox via `agent_spec`), and the agent-session dataset row shape; 0.11.0 added
 `default_grade_mode` field on call sites so multi-turn sites are flagged at discovery
 and their graders default to `scope: trace`).
 
-## `tessary-evals/pipeline/priorities.yaml`
+## `.tessary/pipeline/priorities.yaml`
 
 The order in which phased synthesis processes call sites (added in schema 0.7.0).
 
@@ -94,7 +94,7 @@ call_site_ids: [<string>, ...]   # call_site ids, most-important first
 ranking_rationale: <string>      # optional; how the order was chosen
 ```
 
-## `tessary-evals/pipeline/packs.yaml`
+## `.tessary/pipeline/packs.yaml`
 
 ```yaml
 packs:
@@ -117,7 +117,7 @@ packs:
     conflicts:    [<pack_id>, ...]   # optional
 ```
 
-## `tessary-evals/pipeline/product_profile.yaml`
+## `.tessary/pipeline/product_profile.yaml`
 
 ```yaml
 product_profile:
@@ -139,7 +139,7 @@ product_profile:
   notable_dependencies: [<string>, ...]
 ```
 
-## `tessary-evals/pipeline/invariants.yaml`
+## `.tessary/pipeline/invariants.yaml`
 
 ```yaml
 implicit_invariants:
@@ -156,7 +156,7 @@ invariant_coverage:
     likely_gap_in: [<call_site_id>, ...]
 ```
 
-## `tessary-evals/pipeline/call_sites/<id>.yaml`
+## `.tessary/pipeline/call_sites/<id>.yaml`
 
 One file per call site. The orchestrator never reads these in bulk; per-step
 subagents read only the specific shard they're working on.
@@ -226,7 +226,7 @@ e2b/modal/daytona/docker). Absent is treated as `sdk`. Indirect sites usually ha
 `system_prompt: null` (the prompt lives in the external tool) and no enforced output
 schema, which shifts their failure surface (see `prompts/per_site_kit.md`).
 
-## `tessary-evals/pipeline/chains.yaml`
+## `.tessary/pipeline/chains.yaml`
 
 ```yaml
 chains:
@@ -239,7 +239,7 @@ chains:
     ensemble_span_ids: [<hex>, ...]  # optional; only when detection_method == ensemble
 ```
 
-## `tessary-evals/pipeline/failure_modes/<call_site_id>.yaml`
+## `.tessary/pipeline/failure_modes/<call_site_id>.yaml`
 
 One shard per call site, holding only that site's `scope: single_call` failures.
 
@@ -265,7 +265,7 @@ failures are graded (`grader_deferred: false`, `grader_id` set). Medium/low
 failures are recorded with `grader_deferred: true` and `grader_id: null` until
 the user runs `--complete <call_site_id>`.
 
-## `tessary-evals/pipeline/failure_modes/_chains.yaml`
+## `.tessary/pipeline/failure_modes/_chains.yaml`
 
 All chain failures live in one shard (small set, cross-chain visibility helps
 during dedup):
@@ -287,7 +287,7 @@ failure_modes:
     grader_deferred: <bool>          # 0.7.0; same semantics as single_call
 ```
 
-## `tessary-evals/pipeline/quality_dimensions/<call_site_id>.yaml`
+## `.tessary/pipeline/quality_dimensions/<call_site_id>.yaml`
 
 One shard per **judgment** call site (added in schema 0.8.0). Quality dimensions are
 the continuous "how good is the output" axes scored 1–5 — distinct from failure
@@ -317,7 +317,7 @@ least one, and each is graded in the first sweep. `validate.py --bundle` enforce
 both (a judgment-shape call site with zero quality dimensions is an error, in full
 and `--partial` mode alike).
 
-## `tessary-evals/pipeline/taxonomy.yaml`
+## `.tessary/pipeline/taxonomy.yaml`
 
 ```yaml
 taxonomy:
@@ -329,7 +329,7 @@ taxonomy:
     example_chain_ids: [<string>, ...]
 ```
 
-## `tessary-evals/graders/<grader_id_safe>.yaml`
+## `.tessary/graders/<grader_id_safe>.yaml`
 
 One file per grader. Required keys (see `contract/grader.schema.json` for the
 full schema):
@@ -425,10 +425,10 @@ shape**; refer to the contract for the rules.
 
 Bundle-level invariants (FM↔grader bijection, chain DAG acyclicity, duplicate
 IDs, taxonomy reachability, layer-A/B/C coverage gates) are enforced by
-`validate.py --bundle tessary-evals/`. The bundle validator assembles the logical
+`validate.py --bundle .tessary/`. The bundle validator assembles the logical
 pipeline view from the shards before running its checks.
 
-## `tessary-evals/datasets/<call_site_id>.jsonl`
+## `.tessary/datasets/<call_site_id>.jsonl`
 
 Optional. Written by Path A ingestion (one row per representative span captured
 for that call site).
@@ -469,7 +469,7 @@ repo) and for instrumentation that does *not* carry the whole transcript on the 
 turn. Self-tests still express history as `input_messages` + `final_output` regardless
 of how production traces are sourced.
 
-## `tessary-evals/.synth-lock.yaml`
+## `.tessary/.synth-lock.yaml`
 
 Written at the end of every successful run.
 
@@ -498,7 +498,7 @@ triggers a `WARN: <file> diverged from lock without locked_fields — pass
 informational only — shards under `pipeline/` are orchestrator-owned, not
 human-curated, so they are always overwritten on re-run.
 
-## `tessary-evals/report.md`
+## `.tessary/report.md`
 
 ```markdown
 # Synthesized eval pipeline

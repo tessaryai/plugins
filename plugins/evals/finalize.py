@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 """
-finalize.py — assemble final tessary-evals/ artifacts at step 7.
+finalize.py — assemble final .tessary/ artifacts at step 7.
 
-Reads the v0.4 sharded pipeline under tessary-evals/pipeline/ and the per-grader files
-under tessary-evals/graders/, then:
+Reads the v0.4 sharded pipeline under .tessary/pipeline/ and the per-grader files
+under .tessary/graders/, then:
 
-  1. Writes tessary-evals/pipeline/meta.yaml from CLI flags (version, product_hint,
+  1. Writes .tessary/pipeline/meta.yaml from CLI flags (version, product_hint,
      runtime). Skips if --skip-meta is passed (orchestrator wrote it already).
-  2. Generates tessary-evals/report.md from the shard contents.
-  3. Writes tessary-evals/.synth-lock.yaml with SHA-256 of every shard and every grader.
-  4. Runs validate.py --bundle tessary-evals/ and surfaces its exit status.
+  2. Generates .tessary/report.md from the shard contents.
+  3. Writes .tessary/.synth-lock.yaml with SHA-256 of every shard and every grader.
+  4. Runs validate.py --bundle .tessary/ and surfaces its exit status.
 
 Usage:
-    python3 finalize.py tessary-evals/ \
+    python3 finalize.py .tessary/ \
         [--version 0.11.0] \
         [--product-hint "<string>"] \
         [--runtime-yaml runtime.yaml] \
@@ -400,9 +400,9 @@ def write_lock(evals_dir: Path, inputs_digest: str | None) -> Path:
 
 def main() -> int:
     ap = argparse.ArgumentParser(
-        description="Assemble final tessary-evals/ artifacts at step 7.",
+        description="Assemble final .tessary/ artifacts at step 7.",
     )
-    ap.add_argument("evals_dir", help="Path to the tessary-evals/ directory.")
+    ap.add_argument("evals_dir", help="Path to the .tessary/ directory.")
     ap.add_argument("--version", default="0.11.0",
                     help="On-disk schema version written into meta.yaml.")
     ap.add_argument("--product-hint", default=None)
@@ -479,7 +479,7 @@ def main() -> int:
     failed = sum(1 for g in graders if g.get("_validation_error"))
     low = sum(1 for g in graders if g.get("confidence") == "low")
     print(
-        f"tessary-evals/ written: {len(pipeline.get('call_sites') or [])} call sites | "
+        f".tessary/ written: {len(pipeline.get('call_sites') or [])} call sites | "
         f"{len(pipeline.get('chains') or [])} chains | "
         f"{len(fm_list)} failures | {len(graders)} graders "
         f"({failed} failed validation, {low} low-confidence) | "
@@ -488,7 +488,7 @@ def main() -> int:
     )
     if failed:
         print(f"WARN: {failed} grader(s) failed schema validation -- "
-              f"inspect: tessary-evals/graders/<id>.yaml")
+              f"inspect: .tessary/graders/<id>.yaml")
     return 0 if bundle_rc == 0 else 1
 
 
