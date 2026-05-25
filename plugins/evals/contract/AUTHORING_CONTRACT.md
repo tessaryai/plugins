@@ -318,7 +318,7 @@ An author conforms to this contract when:
 1. It accepts the input schema above (extra fields ignored).
 2. It returns YAML matching the author-owned fields above.
 3. Its output passes `validate.py` once the orchestrator splices in the orchestrator-owned fields.
-4. It declares `contract_version: 4` — in its SKILL.md frontmatter for skill-based authors, or in its top-level markdown for bundled-procedure authors. (The bundled `authors/default/` author satisfies this via the `(v4)` reference in its first paragraph.) Older authors are still accepted for the grader shapes they support; the orchestrator only requires v4 for `scope: trace` or `kind: agentic` (and v3 for `kind: score`).
+4. It declares the contract version it conforms to via `contract_version:` — in its SKILL.md frontmatter for skill-based authors, or in its top-level markdown for bundled-procedure authors. The **current contract version is 5**; an author fully caught up declares `5`. Because v5 is author-transparent over v4 (it changed only orchestrator-side multi-turn discovery and runner-side trace sourcing — no author-owned field changed), an author declaring `4` is **also** fully conformant and needs no change. The bundled `authors/default/` author declares `4` (the `(v4)` reference in its first paragraph). The version requirement is a **minimum, evaluated per feature**: the orchestrator requires *at least* `3` for `kind: score`, and *at least* `4` for `scope: trace` or `kind: agentic`. So declaring `5` satisfies every gate; older authors are still accepted for the grader shapes their version supports.
 
 The orchestrator discovers authors by **two distinct invocation models**:
 
