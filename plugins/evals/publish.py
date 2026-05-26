@@ -21,6 +21,7 @@ import json
 import mimetypes
 import os
 import socket
+import ssl
 import sys
 import time
 import urllib.error
@@ -107,6 +108,71 @@ def linked_project(evals_dir: Path) -> dict[str, Any] | None:
 
 # ----------------------------------------------------------------------- http
 
+_SSL_CONTEXT: ssl.SSLContext | None = None
+
+
+def ssl_context() -> ssl.SSLContext:
+    """TLS context that actually finds a CA bundle, cached for the process.
+
+    urllib's default context trusts only OpenSSL's compiled-in CA paths. On the
+    python.org macOS build those paths are empty until you run
+    'Install Certificates.command', so every HTTPS request to evals.tessary.ai
+    dies with CERTIFICATE_VERIFY_FAILED / 'unable to get local issuer
+    certificate' — exactly the consuming-machine failure this guards against.
+    We layer fallbacks, most-specific first:
+
+      1. An explicit bundle from SSL_CERT_FILE / REQUESTS_CA_BUNDLE. Covers a
+         corporate TLS-intercepting proxy whose injected root the system trusts
+         but Python doesn't — the only fix there is to point at its bundle.
+      2. The stdlib default store if it already trusts CAs (Linux, Homebrew
+         Python), detected via cert_store_stats — leave it untouched.
+      3. The certifi bundle if importable. pip ships certifi, so it is present
+         in most environments even when ssl was never wired up to it; this is
+         what rescues the bare python.org macOS build.
+
+    Verification is never disabled — an unverifiable host fails loudly rather
+    than silently sending the bundle (and any link token) over plaintext-trust.
+    """
+    global _SSL_CONTEXT
+    if _SSL_CONTEXT is not None:
+        return _SSL_CONTEXT
+    ctx = ssl.create_default_context()
+    explicit = os.environ.get("SSL_CERT_FILE") or os.environ.get("REQUESTS_CA_BUNDLE")
+    if explicit and os.path.isfile(explicit):
+        try:
+            ctx.load_verify_locations(explicit)
+            _SSL_CONTEXT = ctx
+            return ctx
+        except ssl.SSLError:
+            pass  # bad/empty bundle — fall through to the other sources
+    try:
+        has_cas = ctx.cert_store_stats().get("x509_ca", 0) > 0
+    except Exception:
+        has_cas = False
+    if not has_cas:
+        try:
+            import certifi  # type: ignore
+            ctx.load_verify_locations(certifi.where())
+        except Exception:
+            pass  # nothing more we can add; the request will surface the error
+    _SSL_CONTEXT = ctx
+    return ctx
+
+
+def _tls_help(url: str) -> str:
+    return (
+        f"TLS trust error talking to {url}: the certificate could not be verified "
+        "because this machine's Python has no CA bundle it can use.\n"
+        "  • macOS python.org build: run the bundled "
+        "'/Applications/Python 3.x/Install Certificates.command', or "
+        "`pip install --upgrade certifi`.\n"
+        "  • Behind a TLS-intercepting corporate proxy: point Python at its root "
+        "bundle, e.g. `export SSL_CERT_FILE=/path/to/corp-ca.pem` (or "
+        "REQUESTS_CA_BUNDLE), then re-run.\n"
+        "Verification was not disabled — nothing was sent over an untrusted connection."
+    )
+
+
 def _request(method: str, url: str, *, body: bytes | None = None,
              headers: dict[str, str] | None = None) -> tuple[int, bytes]:
     merged = {"User-Agent": USER_AGENT, CLIENT_HEADER_NAME: CLIENT_HEADER_VALUE}
@@ -114,12 +180,16 @@ def _request(method: str, url: str, *, body: bytes | None = None,
         merged.update(headers)
     req = urllib.request.Request(url, data=body, method=method, headers=merged)
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=30, context=ssl_context()) as resp:
             return resp.getcode(), resp.read()
     except urllib.error.HTTPError as e:
         return e.code, e.read()
     except urllib.error.URLError as e:
-        print(f"network error talking to {url}: {e.reason}", file=sys.stderr)
+        reason = e.reason
+        if isinstance(reason, ssl.SSLCertVerificationError) or "CERTIFICATE_VERIFY_FAILED" in str(reason):
+            print(_tls_help(url), file=sys.stderr)
+        else:
+            print(f"network error talking to {url}: {reason}", file=sys.stderr)
         raise SystemExit(2)
 
 
