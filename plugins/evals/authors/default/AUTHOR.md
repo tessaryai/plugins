@@ -1,6 +1,6 @@
-# default — bundled grader author for synthesize-graders (v4)
+# default — bundled grader author for synthesize-graders (v6)
 
-This is the OSS fallback grader-author. It implements the contract in `../../contract/AUTHORING_CONTRACT.md` (v4) and is selected when no higher-priority author skill (e.g. `evals-prompt`) is available in the session.
+This is the OSS fallback grader-author. It implements the contract in `../../contract/AUTHORING_CONTRACT.md` (v6) and is selected when no higher-priority author skill (e.g. `evals-prompt`) is available in the session.
 
 It is **deliberately minimal**. It produces graders that pass `validate.py` and are readable for review, but the rubrics are generic and the judge prompts skip the craft details a dedicated authoring skill brings.
 
@@ -38,14 +38,7 @@ If the failure mode's description names a precondition for the failure to be pos
 
 If you set `applies_when`, you must include at least one `not_applicable` self-test (see section 5 below).
 
-### 2b. Set `applies_when_check` (only when `kind=deterministic` AND `applies_when` is set)
-
-A code-evaluable predicate that mirrors `applies_when`. Phrase as a one-sentence rule a developer can implement as a function returning bool. Example:
-
-- `applies_when`: "the output contains a tool_call".
-- `applies_when_check`: "Parse the output as JSON; return true iff the parsed object has a non-empty `tool_call` field."
-
-The judge evaluates `applies_when` natural-language; deterministic graders need the code-evaluable mirror because there is no judge at runtime. Omit `applies_when_check` when `kind=llm_judge` (the natural-language predicate is sufficient there) or when `applies_when` is absent.
+`applies_when` is **always evaluated by an LLM** at runtime (v6): inline in the judge prompt for `kind=llm_judge`/`score`, and via a separate LLM applicability gate for `kind=deterministic`. So there is **no** `applies_when_check` to write (it was removed in v6 — `validate.py` flags it), and a `deterministic_check` must be **gate-free**: implement only the failure check and assume the input is in scope; the gate filters out-of-scope outputs first.
 
 ### 3. Author `judge_prompt` (only when `kind=llm_judge`)
 
@@ -210,7 +203,7 @@ On retry, the input carries `validator_feedback.errors`. Read every error, ident
 | `self_tests contain expected_verdict: not_applicable but applies_when is null` | Either set `applies_when` or change those cases to `pass` / `fail`. |
 | `self_tests must include at least one expected_verdict: pass` / `fail` | Add a missing-verdict case. |
 | `self_tests must include at least one category: adversarial when length >= 4` | Add an adversarial self-test per § 5. |
-| `kind=deterministic with applies_when requires applies_when_check` | Add `applies_when_check` per § 2b. |
+| `applies_when_check was removed in v6` | Delete `applies_when_check`; keep the `deterministic_check` gate-free (the applies_when LLM gate handles scope). |
 | `scope=single_call must use sample_output` | Replace `call_site_outputs` with a `sample_output` string. |
 | `scope=chain must use call_site_outputs` | Replace `sample_output` with a `call_site_outputs` mapping whose keys equal the chain's `call_site_ids`. |
 | `scope=trace must use input_messages + final_output` | Replace `sample_output`/`call_site_outputs` with an `input_messages` list + a `final_output` string per § 7c. |

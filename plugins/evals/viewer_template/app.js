@@ -649,7 +649,7 @@
     const charHint = s => s ? `${Math.round(s.length / 100) / 10}k chars` : '';
     const body = `
       ${g.rationale ? `<div class="field"><div class="field-label">Rationale</div><div class="field-val">${escapeHtml(g.rationale)}</div></div>` : ''}
-      ${g.applies_when ? `<div class="field"><div class="field-label">Applies when</div><div class="field-val">${escapeHtml(g.applies_when)}${g.applies_when_check ? `<div class="applies-when-check"><span class="field-label-inline">Code check</span> <code>${escapeHtml(g.applies_when_check)}</code></div>` : ''}</div></div>` : ''}
+      ${g.applies_when ? `<div class="field"><div class="field-label">Applies when</div><div class="field-val">${escapeHtml(g.applies_when)}</div></div>` : ''}
       ${(linkedCS || linkedTax) ? `<div class="field"><div class="field-label">Links</div>
         <div class="backlinks" style="margin:0;padding:0;border:0">
           ${linkedCS ? `<span><span class="bl-label">LLM call</span><a href="#" data-modal-open="cs:${escapeHtml(linkedCS.id)}">${escapeHtml(titleFor(linkedCS.use_case, linkedCS.name, stripIdPrefix(linkedCS.id)) || 'LLM call')}</a></span>` : ''}

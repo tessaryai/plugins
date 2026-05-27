@@ -1,10 +1,16 @@
-# Grader-author contract (v5)
+# Grader-author contract (v6)
 
 This document defines the interface between **synthesize-graders** (the orchestrator) and any **grader author** invoked during the grader-synthesis phase. It exists so that the author is swappable: the bundled `authors/default/` is the OSS fallback; closed-source or third-party authors (e.g. `evals-prompt`) declare conformance to this contract and become drop-in replacements.
 
 - **Authoritative schema**: [`grader.schema.json`](./grader.schema.json) — the on-disk grader YAML.
 - **Authoritative enforcer**: `validate.py` (at the plugin root) — runs the schema rules plus cross-field invariants, per-file and `--bundle` cross-references.
-- **Contract version**: 5. v5 is **additive over v4 and author-transparent**: it changes only how the *orchestrator* discovers multi-turn sites and how the platform *sources* a trace grader's history (§ "What changed in v5"). The author-owned fields of every grader (including `scope: trace`) are unchanged, so an author declaring `contract_version: 4` remains fully conformant; no author change is required.
+- **Contract version**: 6. v6 changes author-owned fields (§ "What changed in v6"): it **removes `applies_when_check`** and makes `applies_when` always LLM-evaluated, so a deterministic author declaring `< 6` (which still emits `applies_when_check` and may bake the gate into `deterministic_check`) is **no longer conformant for deterministic graders with a gate**. Authors that don't emit deterministic gates are unaffected.
+
+## What changed in v6
+
+- **`applies_when` is always evaluated by an LLM at runtime.** For `kind=llm_judge`/`score` it rides inline in the judge prompt, as before. For `kind=deterministic` the platform now runs a **separate LLM applicability gate** before the body and skips out-of-scope outputs — so the `deterministic_check` is **gate-free**: it must implement only the failure check and assume the input is in scope (never decide applicability itself).
+- **`applies_when_check` is removed.** It was the code-evaluable mirror compiled into a deterministic body; the gate is never compiled now, so do not emit it. `validate.py` flags it.
+- **Trace deterministic checks receive structured input.** A `scope: trace` deterministic check runs against `input.messages` (turns of `{ role, content, tool_uses: [{ name, input }] }`) and `input.tool_uses` (every tool call across turns, flattened) — not just a flattened transcript string. Carry the relevant tool calls on each trace self-test turn via the structured **`tool_uses`** field so the check validates against the same shape it grades on.
 
 ## What changed in v5
 
@@ -47,8 +53,7 @@ This document defines the interface between **synthesize-graders** (the orchestr
 | `cost_budget_tokens`, `latency_budget_ms_p95` | orchestrator (default: p95 stats from observed); author may override |
 | `_meta` | orchestrator |
 | `kind` | **author** |
-| `applies_when` | **author** |
-| `applies_when_check` | **author** (when `kind=deterministic` AND `applies_when` is non-empty) |
+| `applies_when` | **author** (always LLM-evaluated at runtime) |
 | `judge_prompt` | **author** (when `kind=llm_judge`) |
 | `rubric` | **author** (when `kind=llm_judge`) |
 | `deterministic_check` | **author** (when `kind=deterministic`) |
@@ -105,7 +110,6 @@ existing_grader:           # optional — present only when regenerating
   judge_prompt: <string>
   rubric: <string>
   applies_when: <string | null>
-  applies_when_check: <string | null>
   locked_fields: [<field>, ...]    # author MUST preserve these verbatim
 
 validator_feedback:        # optional — present on retry after a validate.py failure
@@ -119,16 +123,17 @@ Raw YAML, ready for the orchestrator to splice into the on-disk grader file. **N
 
 ```yaml
 kind: llm_judge | deterministic | execution | agentic
-applies_when: |                  # OMIT entirely when always applicable
-  natural-language predicate the judge evaluates before the rubric
-applies_when_check: |            # REQUIRED when kind=deterministic AND applies_when is set;
-                                 # OMIT otherwise
-  one-sentence predicate a developer can implement as a function returning bool
+applies_when: |                  # OMIT entirely when always applicable. Always LLM-evaluated:
+                                 # inline for llm_judge/score, a separate LLM gate for deterministic.
+  natural-language predicate deciding whether the check is in scope
 judge_prompt: |                  # required for kind=llm_judge
   the full system prompt the LLM judge runs at runtime
 rubric: |                        # required for kind=llm_judge
   - bulleted pass/fail criteria
-deterministic_check: |           # required for kind=deterministic
+deterministic_check: |           # required for kind=deterministic. GATE-FREE: implement only the
+                                 # failure check; assume the input is in scope (the applies_when LLM
+                                 # gate filters out-of-scope outputs first). For scope=trace, reason
+                                 # over input.messages / input.tool_uses, not a flattened string.
   precise rule a code function can implement
 execution_spec: |                # required for kind=execution
   how to run the output and what counts as pass/fail
@@ -146,8 +151,9 @@ self_tests:
     rationale: <string>
   # chain self_tests use call_site_outputs: {<call_site_id>: <output>, ...}
   # instead of sample_output. Keys must equal chain.call_site_ids.
-  # trace self_tests use input_messages: [{role, content}, ...] (prior n-1 turns)
-  # + final_output: <string> (the graded turn), instead of sample_output.
+  # trace self_tests use input_messages: [{role, content, tool_uses?}, ...] (prior n-1 turns)
+  # + final_output: <string> (the graded turn), instead of sample_output. For a trace
+  # deterministic check, put each turn's tool calls in the structured tool_uses: [{name, input}].
 confidence: high | medium | low
 rationale: <string>              # one sentence — user impact, not mechanics
 ```
@@ -157,7 +163,7 @@ rationale: <string>              # one sentence — user impact, not mechanics
 1. **`self_tests` length**: at least 3 entries.
 2. **Pass/fail balance**: at least one `expected_verdict: pass` and at least one `expected_verdict: fail`.
 3. **`applies_when` ↔ `not_applicable`** (bidirectional, both directions enforced by `validate.py` and by the JSON schema): if `applies_when` is a non-empty string, at least one self-test must have `expected_verdict: not_applicable`. If `applies_when` is absent, null, or empty string, **no** self-test may use `not_applicable`. The empty-string case is normalized to null inside the validator.
-4. **`applies_when_check` mirror**: when `kind=deterministic` AND `applies_when` is non-empty, `applies_when_check` must also be non-empty and phrased as a code-evaluable predicate. (When `kind=llm_judge`, the judge evaluates `applies_when` at runtime, so the code-evaluable mirror is not required.)
+4. **Gate-free deterministic body** (v6): `applies_when` is always evaluated by an LLM — never compiled. Do **not** emit `applies_when_check`, and do **not** make `deterministic_check` decide applicability (it must assume the input is in scope; the LLM gate filters out-of-scope outputs first). `validate.py` flags a stray `applies_when_check`.
 5. **`self_tests` shape by scope**:
    - `single_call` → each test has a non-empty `sample_output`; no `call_site_outputs` / `input_messages`.
    - `chain` → each test has a non-empty `call_site_outputs` mapping; no `sample_output`. The mapping's keys must equal the chain's `call_site_ids` set.
@@ -179,7 +185,10 @@ one difference: every self-test carries the conversation instead of a single out
 self_tests:
   - input_messages:              # the prior n-1 turns supplied as context
       - { role: user, content: <string> }
-      - { role: assistant, content: <string> }
+      - role: assistant          # a turn may carry structured tool calls (v6):
+        content: <string>
+        tool_uses:
+          - { name: edit, input: { path: <string>, new_string: <string> } }
       - { role: user, content: <string> }
     final_output: <string>       # the final turn (turn n) — the artifact being judged
     expected_verdict: pass | fail | not_applicable
@@ -187,11 +196,17 @@ self_tests:
     rationale: <string>
 ```
 
-Write the `judge_prompt` so it judges `final_output` **in the context of** `input_messages` — e.g.
+For a **trace `llm_judge`** grader, write the `judge_prompt` so it judges `final_output` **in the context of** `input_messages` — e.g.
 "Given the conversation so far, does the final assistant turn stay consistent with commitments and
 constraints established earlier?" Self-tests should include at least one case where the final turn is
 fine in isolation but wrong given the history (that's the whole point of the scope). All other
 invariants (length, pass/fail balance, adversarial coverage, `applies_when`) are unchanged.
+
+For a **trace `deterministic`** grader, the `deterministic_check` runs against the structured trace —
+`input.messages` (each turn `{ role, content, tool_uses: [{ name, input }] }`) and `input.tool_uses`
+(every tool call flattened) — so reason over those, not a flattened transcript string. Keep the body
+gate-free (the `applies_when` LLM gate handles scope). Put each turn's tool calls in the self-test
+`tool_uses` field so the check validates against the same shape it sees in production.
 
 **History sourcing (v5).** In production the runner does not stitch per-turn rows: it groups a
 multi-turn site's observations by trace, takes the **latest turn**, and judges its `input` (which
@@ -318,7 +333,7 @@ An author conforms to this contract when:
 1. It accepts the input schema above (extra fields ignored).
 2. It returns YAML matching the author-owned fields above.
 3. Its output passes `validate.py` once the orchestrator splices in the orchestrator-owned fields.
-4. It declares the contract version it conforms to via `contract_version:` — in its SKILL.md frontmatter for skill-based authors, or in its top-level markdown for bundled-procedure authors. The **current contract version is 5**; an author fully caught up declares `5`. Because v5 is author-transparent over v4 (it changed only orchestrator-side multi-turn discovery and runner-side trace sourcing — no author-owned field changed), an author declaring `4` is **also** fully conformant and needs no change. The bundled `authors/default/` author declares `4` (the `(v4)` reference in its first paragraph). The version requirement is a **minimum, evaluated per feature**: the orchestrator requires *at least* `3` for `kind: score`, and *at least* `4` for `scope: trace` or `kind: agentic`. So declaring `5` satisfies every gate; older authors are still accepted for the grader shapes their version supports.
+4. It declares the contract version it conforms to via `contract_version:` — in its SKILL.md frontmatter for skill-based authors, or in its top-level markdown for bundled-procedure authors. The **current contract version is 6**; an author fully caught up declares `6`. The version requirement is a **minimum, evaluated per feature**: the orchestrator requires *at least* `3` for `kind: score`, and *at least* `4` for `scope: trace` or `kind: agentic`. Unlike v5 (which was author-transparent), **v6 is NOT transparent for deterministic graders with a gate**: a `< 6` author still emits the removed `applies_when_check` and may bake applicability into `deterministic_check`, which now fails `validate.py` / produces a double-gate. So for `kind: deterministic` with an `applies_when`, the orchestrator requires `6`; older authors remain accepted for everything else (llm_judge/score/agentic, and gate-free deterministic graders).
 
 The orchestrator discovers authors by **two distinct invocation models**:
 

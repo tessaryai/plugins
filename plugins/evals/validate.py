@@ -196,23 +196,20 @@ def _check_agentic_body(g: Grader) -> list[str]:
 
 
 def _check_applies_when(g: Grader, kind: str | None) -> list[str]:
-    """applies_when is free-form; applies_when_check must mirror it for deterministic graders."""
+    """applies_when is free-form and ALWAYS LLM-evaluated at runtime (v6). For a
+    deterministic grader the platform runs a separate LLM applicability gate before
+    the gate-free deterministic_check; there is no code-evaluable mirror to author."""
     errors: list[str] = []
     raw = g.get("applies_when")
     if raw is not None and not isinstance(raw, str):
         errors.append("applies_when must be a string or null")
 
-    applies_when = _normalize_applies_when(raw)
-    raw_check = g.get("applies_when_check")
-    if raw_check is not None and not isinstance(raw_check, str):
-        errors.append("applies_when_check must be a string or null")
-    applies_when_check = _normalize_applies_when(raw_check)
-
-    if kind == "deterministic" and applies_when and not applies_when_check:
-        errors.append("kind=deterministic with applies_when requires non-empty applies_when_check "
-                      "(code-evaluable mirror of applies_when)")
-    if applies_when_check and not applies_when:
-        errors.append("applies_when_check is set but applies_when is null — set applies_when too")
+    # applies_when_check was removed in v6 (the gate is never compiled). validate.py
+    # flags it as an error so authors drop it; the JSON schema still tolerates the key
+    # structurally (deprecated) and the platform ignores it, so legacy files don't crash.
+    if _normalize_applies_when(g.get("applies_when_check")):
+        errors.append("applies_when_check was removed in v6 — applies_when is now always "
+                      "evaluated by an LLM, so the deterministic body is gate-free. Drop applies_when_check.")
     return errors
 
 
