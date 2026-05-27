@@ -34,7 +34,7 @@ TEXT (no DB enum constraint), so no migration is required unless the platform ch
 are parsed and stored but not executed** — the same status `deterministic` / `execution` have today.
 
 The authoritative schema is `contract/grader.schema.json` in this plugin; the authoritative grader
-rules are `contract/AUTHORING_CONTRACT.md` (v5). The platform's vendored copy is refreshed via its
+rules are `contract/AUTHORING_CONTRACT.md` (v6). The platform's vendored copy is refreshed via its
 own `scripts/sync-evals-contract.sh` (see `docs/upgrade-evals-contract.md`).
 
 > File/line references below point at evals-platform as surveyed for this handoff. Treat them as
@@ -50,8 +50,11 @@ hardcoded enum list (`backend/.../mcp/McpToolRegistry.java`, the `kind` list ≈
 ## 1. `scope: trace` (multi-turn input)
 
 **Contract:** a trace grader anchors to one `call_site_id` (like `single_call`); its self-tests carry
-`input_messages: [{role, content, tool_calls?, tool_results?}]` (the prior n-1 turns) + `final_output`
-(the graded turn). The grader judges `final_output` *in the context of* `input_messages`.
+`input_messages: [{role, content, tool_uses?}]` (the prior n-1 turns) + `final_output`
+(the graded turn). A trace `llm_judge` judges `final_output` *in the context of* `input_messages`; a
+trace `deterministic` check reads the structured `input.messages` / `input.tool_uses` the platform
+builds from the turns (v6). `applies_when` is always LLM-evaluated — for deterministic graders the
+platform runs a separate LLM applicability gate before the gate-free body (no `applies_when_check`).
 
 **Platform work (v0.11 sourcing — much smaller than the original v0.10 plan):**
 - Group a multi-turn site's observations by `trace_id`, take the **latest turn**, and feed its

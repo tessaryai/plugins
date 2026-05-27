@@ -520,8 +520,8 @@ PART 1 — FAILURE-MODE GRADERS. For each failure mode where grader_deferred is 
 3. Splice orchestrator-owned fields onto the body (id, scope, failure_mode_id,
    call_site_id|chain_id, name, taxonomy_node_id; owner=null; block_on_fail=null;
    cost/latency budgets from observed.*; dataset_refs; _meta provenance with
-   author_contract_version = the version the producing author declared (5 for the
-   evals-prompt skill, 4 for the bundled default author)).
+   author_contract_version = the version the producing author declared (6 for the
+   evals-prompt skill and the bundled default author)).
 4. Write to .tessary/graders/<grader_id_safe>.yaml.
 5. Validate: python3 "$PLUGIN/validate.py" .tessary/graders/<file>.yaml --pipeline .tessary/
    On failure, retry author up to 3x with validator_feedback; after 3 failures,
@@ -539,7 +539,7 @@ quality-dimensions shard (none are deferred):
    quality_dimension_id, call_site_id|chain_id, name, eval propagation; owner=null;
    block_on_fail=FALSE — score graders are report-only trends; dataset_refs;
    _meta provenance with author_contract_version = the version the producing author
-   declared (5 for evals-prompt, 4 for the bundled default)). Do NOT set
+   declared (6 for evals-prompt and the bundled default)). Do NOT set
    failure_mode_id or taxonomy_node_id on score graders.
 3. Write, validate (same retry loop), and calibrate self-tests (level agreement +
    order-reversed pass; confidence high if levels stable, else medium/low).

@@ -343,8 +343,8 @@ chain_id: <string | null>            # required when scope == chain
 name: <string>
 
 kind: <llm_judge | deterministic | execution | agentic>
-applies_when: <string | null>
-applies_when_check: <string | null>  # required when kind=deterministic AND applies_when set
+applies_when: <string | null>       # always LLM-evaluated (inline for judge/score; a
+                                     # separate LLM gate for deterministic). No applies_when_check (v6).
 
 # kind == llm_judge:
 judge_prompt: <string>
