@@ -195,7 +195,7 @@ def _check_agentic_body(g: Grader) -> list[str]:
     return errors
 
 
-def _check_applies_when(g: Grader, kind: str | None) -> list[str]:
+def _check_applies_when(g: Grader) -> list[str]:
     """applies_when is free-form and ALWAYS LLM-evaluated at runtime (v6). For a
     deterministic grader the platform runs a separate LLM applicability gate before
     the gate-free deterministic_check; there is no code-evaluable mirror to author."""
@@ -561,7 +561,7 @@ def validate_grader(g: Grader, pipeline: Pipeline | None = None) -> list[str]:
 
     errors += _check_scope_routing(g, scope)
     errors += _check_kind_body(g, kind)
-    errors += _check_applies_when(g, kind)
+    errors += _check_applies_when(g)
     errors += _check_pass_rate(g)
     errors += _check_meta(g)
 
