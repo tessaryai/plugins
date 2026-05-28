@@ -21,7 +21,7 @@
         "source": "git-subdir",
         "url": "https://github.com/tessaryai/plugins.git",
         "path": "plugins/crew",
-        "ref": "crew-v0.1.0"
+        "ref": "crew-v0.2.0"
       },
       "description": "A multi-agent dev harness: hand it a goal and the orchestrator triages, implements, reviews, and maintains your repo — autonomously, up to a review-ready PR."
     }
