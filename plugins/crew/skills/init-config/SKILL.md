@@ -42,14 +42,23 @@ Then edit `crew.config.yaml` to reflect this repo:
 - `labels.*` — only if the repo uses non-default label names.
 - `guardrails.protected_paths` — add this repo's sensitive areas (migrations, infra,
   secrets, generated code).
-- Leave `orchestrator`, `team`, `knowledge` at defaults unless the user wants otherwise.
+- `mode` — leave `auto` unless the team wants to pin `github` or `local`.
+- `local.isolation` — leave `auto` (kosho if installed, else native `git worktree`); pin it
+  only if the team standardizes on one.
+- Leave `orchestrator`, `team`, `knowledge`, `ledger` at defaults unless the user wants
+  otherwise.
 
 Keep the explanatory comments so the file stays self-documenting.
+
+If local mode may be used, offer to add crew's scratch dirs to `.gitignore` so they don't
+pollute the repo or crew's own diffs: `.crew/`, `.kosho/`, `.crew-worktrees/`.
 
 ## 4. Confirm and next steps
 
 Show the written file. Remind the user that:
 
-- crew needs the GitHub CLI authenticated (`gh auth status`).
-- The label names in the config must exist in the repo (`gh label create` if not).
-- They can now run `/crew:run "<goal>"` or any individual `/crew:*` skill.
+- **GitHub mode** needs the GitHub CLI authenticated (`gh auth status`), and the config's
+  label names must exist in the repo (`gh label create` if not). **Local mode** needs
+  neither — just a git repo.
+- They can now run `/crew:run "<goal>"` (a freeform goal runs locally; an issue/PR number
+  runs against GitHub) or any individual `/crew:*` skill.

@@ -21,6 +21,10 @@ python3 "${CLAUDE_PLUGIN_ROOT}/lib/load_config.py"
 Obey `guardrails.protected_paths` (never touch these), `guardrails.max_files_per_pr` (cap
 per cleanup PR), `commands.*` (to validate), and `labels.{agent_pr,cleanup}`.
 
+Then **read `${CLAUDE_PLUGIN_ROOT}/reference/work-model.md` and resolve the mode** before any
+`gh` call. Detection and validation are identical in both modes; only the output differs
+(step 4).
+
 ## 1. Detect (read-only first)
 
 Pick detectors by language — use what the repo already has before installing anything:
@@ -46,11 +50,18 @@ Apply the removals on a branch, then run `commands.install` and `commands.test` 
 `lint`/`typecheck` if present). If anything breaks, revert that item — a cleanup that
 breaks the build is not a cleanup.
 
-## 4. One PR per category
+## 4. One change set per category
 
-Branch `crew/cleanup-<scope>`, open a PR labeled `labels.agent_pr` + `labels.cleanup`,
-titled `chore(cleanup): <scope>`. In the body, list each removal with its evidence and the
-test result. **Never merge.**
+Work on branch `crew/cleanup-<scope>` (local mode: in an isolated worktree per
+`local.isolation`, work-model.md §4). List each removal with its evidence and the test
+result.
+
+- **GitHub mode:** open a PR labeled `labels.agent_pr` + `labels.cleanup`, titled
+  `chore(cleanup): <scope>`, with that list in the body.
+- **Local mode:** commit to the branch (no push, no PR); record the removal list + evidence
+  in `<ledger.dir>/cleanup-<scope>/decision.md`.
+
+**Never merge.**
 
 ## Constraints
 

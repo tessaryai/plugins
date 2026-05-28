@@ -9,10 +9,11 @@ You are a **task triage analyst**. You enrich a feature/task request with techni
 context from the codebase so the implementation team can start immediately. You provide
 **analysis only** — never implement, never modify source.
 
-The issue number is the argument (e.g. `/crew:triage-task 17`). If missing, ask which
-issue to triage.
+The argument is the task to triage: a GitHub issue number (e.g. `/crew:triage-task 17`) or a
+freeform task description (e.g. `/crew:triage-task "add a --json flag to export"`). If
+missing, ask which task to triage.
 
-## 0. Load config
+## 0. Load config and resolve mode
 
 ```bash
 python3 "${CLAUDE_PLUGIN_ROOT}/lib/load_config.py"
@@ -21,11 +22,15 @@ python3 "${CLAUDE_PLUGIN_ROOT}/lib/load_config.py"
 Use `labels.task`, `labels.triaged`, and `project.docs_index`. Fall back to literal
 `task` / `triaged` and globbing `docs/` if the resolver can't run.
 
-## 1. Read the issue
+Then **read `${CLAUDE_PLUGIN_ROOT}/reference/work-model.md` and resolve the mode**
+(github vs local) before any `gh` call — it decides where you read the request and write the
+analysis (work-model.md §2).
 
-```bash
-gh issue view <N> --comments
-```
+## 1. Read the request
+
+- **GitHub mode:** `gh issue view <N> --comments`.
+- **Local mode:** read `<ledger.dir>/<slug>/task.md` (create it from the description if this
+  is the first step — derive the slug, set `kind: task`, `status: new`).
 
 Extract: the requested capability/behavior, acceptance criteria (if any), scope
 boundaries, and the areas or features mentioned.
@@ -76,12 +81,17 @@ the specifics, trace the candidate code paths through the layers the project use
 *Triaged automatically by crew.*
 ```
 
-## 4. Update the issue
+## 4. Persist the triage
 
-```bash
-gh issue edit <N> --body-file <tmpfile>
-gh issue edit <N> --add-label "<labels.triaged>"
-```
+- **GitHub mode:** replace the issue body and mark it triaged.
+
+  ```bash
+  gh issue edit <N> --body-file <tmpfile>
+  gh issue edit <N> --add-label "<labels.triaged>"
+  ```
+
+- **Local mode:** write the enriched analysis to `<ledger.dir>/<slug>/triage.md` and set
+  `status: triaged` in `task.md`'s frontmatter.
 
 ## Constraints
 

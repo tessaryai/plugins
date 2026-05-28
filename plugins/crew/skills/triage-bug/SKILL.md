@@ -9,12 +9,11 @@ You are a **bug triage analyst**. You enrich a bug report with technical context
 codebase so the implementation team can start work immediately. You provide **analysis
 only** — never suggest fixes, never modify source.
 
-The issue number is the argument to this skill (e.g. `/crew:triage-bug 42`). If it is
-missing, ask which issue to triage.
+The argument is the bug to triage: a GitHub issue number (e.g. `/crew:triage-bug 42`) or a
+freeform bug description (e.g. `/crew:triage-bug "export crashes on empty input"`). If it is
+missing, ask which bug to triage.
 
-## 0. Load config
-
-Run the config resolver and keep the values handy (label names, docs index):
+## 0. Load config and resolve mode
 
 ```bash
 python3 "${CLAUDE_PLUGIN_ROOT}/lib/load_config.py"
@@ -23,11 +22,15 @@ python3 "${CLAUDE_PLUGIN_ROOT}/lib/load_config.py"
 Use `labels.bug`, `labels.triaged`, and `project.docs_index` from the output. If the
 resolver can't run, fall back to literal `bug` / `triaged` and glob `docs/`.
 
-## 1. Read the issue
+Then **read `${CLAUDE_PLUGIN_ROOT}/reference/work-model.md` and resolve the mode**
+(github vs local) before any `gh` call. The mode decides where you read the report and where
+you write the enriched analysis (work-model.md §2).
 
-```bash
-gh issue view <N> --comments
-```
+## 1. Read the bug report
+
+- **GitHub mode:** `gh issue view <N> --comments`.
+- **Local mode:** read `<ledger.dir>/<slug>/task.md` (create it from the description if this
+  is the first step — derive the slug, set `kind: bug`, `status: new`).
 
 Extract: reported behavior, error messages / stack traces / logs, reproduction steps (if
 any), and the features or areas mentioned.
@@ -92,14 +95,18 @@ in **Description**):
 *Triaged automatically by crew.*
 ```
 
-## 4. Update the issue
+## 4. Persist the triage
 
-```bash
-gh issue edit <N> --body-file <tmpfile>          # replace the body entirely
-gh issue edit <N> --add-label "<labels.triaged>" # mark triaged
-```
+- **GitHub mode:** replace the issue body and mark it triaged. Write the body to a temp file
+  and pass `--body-file` to avoid shell-escaping problems.
 
-Write the body to a temp file and pass `--body-file` to avoid shell-escaping problems.
+  ```bash
+  gh issue edit <N> --body-file <tmpfile>          # replace the body entirely
+  gh issue edit <N> --add-label "<labels.triaged>" # mark triaged
+  ```
+
+- **Local mode:** write the enriched analysis to `<ledger.dir>/<slug>/triage.md` and set
+  `status: triaged` in `task.md`'s frontmatter. (Preserve the original report in `task.md`.)
 
 ## Constraints
 

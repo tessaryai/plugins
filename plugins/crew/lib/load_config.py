@@ -24,7 +24,15 @@ import sys
 from pathlib import Path
 
 DEFAULTS = {
+    # How crew sources work and persists results:
+    #   auto   — github when given an issue/PR number (or in an authed repo with
+    #            no explicit task), otherwise local
+    #   github — issues/PRs via gh
+    #   local  — freeform tasks tracked in the local ledger, no gh required
+    "mode": "auto",
     "project": {"name": None, "docs_index": None},
+    "ledger": {"dir": ".crew"},
+    "local": {"isolation": "auto"},  # auto | kosho | git-worktree | none
     "labels": {
         "bug": "bug",
         "task": "task",

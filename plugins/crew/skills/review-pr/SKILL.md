@@ -9,9 +9,10 @@ You are an automated **PR quality gate**. You review a pull request against the 
 coding standards and post a structured review. You **never modify files** and **never
 merge** — you only review and comment.
 
-The PR number is the argument (e.g. `/crew:review-pr 42`). If missing, ask.
+The argument is the PR number (github, e.g. `/crew:review-pr 42`) or a ledger slug (local).
+If missing, ask.
 
-## 0. Load config and standards
+## 0. Load config, standards, and mode
 
 ```bash
 python3 "${CLAUDE_PLUGIN_ROOT}/lib/load_config.py"
@@ -21,12 +22,17 @@ Read the project's coding standards from `review_standards.source` (default `AGE
 also read `CLAUDE.md`). These — not any built-in opinion — are what you review against.
 Note `guardrails.protected_paths` for the prohibited-changes check.
 
+Then **read `${CLAUDE_PLUGIN_ROOT}/reference/work-model.md` and resolve the mode** before any
+`gh` call — it decides where you read the diff and where you post the review.
+
+Review the code **as written**; in local self-review, judge the diff against the standards,
+not the implementation rationale.
+
 ## 1. Read the diff
 
-```bash
-gh pr view <N>
-gh pr diff <N>
-```
+- **GitHub mode:** `gh pr view <N>` and `gh pr diff <N>`.
+- **Local mode:** read the task's branch from `<ledger.dir>/<slug>/task.md`, then
+  `git diff <base>...<branch>` inside the worktree (`<base>` is the branch point).
 
 ## 2. Analyze each changed file
 
@@ -49,6 +55,8 @@ Classify each finding: **blocker** (must fix), **warning** (should fix), or **su
 
 ## 3. Clean up your own stale reviews
 
+*(GitHub mode only — skip in local mode; local reviews are overwritten in `review.md`.)*
+
 Remove prior crew reviews so the PR doesn't accumulate clutter:
 
 ```bash
@@ -66,6 +74,23 @@ gh api "repos/{owner}/{repo}/pulls/<N>/reviews" \
 ```
 
 ## 4. Post the review
+
+**Local mode:** write findings to `<ledger.dir>/<slug>/review.md` and set `task.md` status
+to `changes_requested` (if any blockers/warnings) or `approved` (only suggestions or clean).
+Each finding gives **file:line**, **severity**, **category**, and a **constructive fix**, so
+`respond-to-review` can act on it. Then stop — the rest of this step is github-only.
+
+```markdown
+## Review — iteration <K>  (status: changes_requested)
+### Blockers
+- `path/to/file:42` — **(Security)** … constructive fix …
+### Warnings
+- `path/to/file:8` — **(Consistency)** …
+### Suggestions
+- …
+```
+
+**GitHub mode** — post to the PR:
 
 **If there are blockers or warnings** — submit `REQUEST_CHANGES` with inline comments on
 the affected lines:

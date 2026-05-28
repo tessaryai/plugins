@@ -3,6 +3,30 @@
 All notable changes to the `crew` plugin are documented here. This project
 follows [semantic versioning](https://semver.org/).
 
+## [0.2.0] — unreleased
+
+### Added
+
+- **Local mode** — crew now serves any freeform task with no GitHub dependency.
+  A new `mode` knob (`auto` | `github` | `local`, default `auto`) decides per
+  invocation: a freeform goal runs locally, an issue/PR number runs against
+  GitHub. Local tasks are tracked in a durable ledger (`ledger.dir`, default
+  `.crew/`), and code is written in an isolated git worktree — `kosho` when
+  installed, else native `git worktree` (`local.isolation`). GitHub mode is
+  unchanged. The shared contract lives in `reference/work-model.md`.
+- **Playbooks** — the orchestrator now sequences work along named, recommended
+  workflows it auto-infers from the goal (`full-feature`, `bugfix`, `triage-only`,
+  `review-only`, `docs-refresh`, `knowledge-capture`, `cleanup`,
+  `backlog-recovery`) instead of an implicit hardcoded order. Supports parallel
+  forks and a bounded review→fix loop. Defined in `reference/playbooks.md`.
+
+### Changed
+
+- `gh` is now required **only in GitHub mode**; mode is resolved before any `gh`
+  call, so a local goal is never rejected for missing GitHub auth.
+- All primitives accept either a GitHub issue/PR number or a local task/slug, and
+  persist results to GitHub or the local ledger/branch accordingly.
+
 ## [0.1.0] — unreleased
 
 Initial local-first release.

@@ -9,16 +9,19 @@ You recover work that stalled (rate limits, timeouts, missed events). You find s
 and advance a **bounded** number of them, then stop. Your ceiling is a review-ready PR —
 **never merge.**
 
-## 0. Load config
+## 0. Load config and mode
 
 ```bash
 python3 "${CLAUDE_PLUGIN_ROOT}/lib/load_config.py"
 ```
 
-Use `labels.{bug,task,triaged,agent_pr}` and `orchestrator.max_items` (the per-run cap;
-default 5 if unset). Split the budget across the two backlogs below.
+Use `labels.{bug,task,triaged,agent_pr}`, `ledger.dir`, and `orchestrator.max_items` (the
+per-run cap; default 5 if unset). Split the budget across the backlogs below.
 
-## 1. Find triaged issues with no PR
+Then **read `${CLAUDE_PLUGIN_ROOT}/reference/work-model.md` and resolve the mode** before any
+`gh` call. In **github** mode use steps 1–2; in **local** mode use step 1L.
+
+## 1. (GitHub) Find triaged issues with no PR
 
 ```bash
 gh issue list --state open --label "<labels.triaged>" --json number,title,labels
@@ -27,7 +30,7 @@ gh issue list --state open --label "<labels.triaged>" --json number,title,labels
 Keep those that also carry `labels.bug` or `labels.task`. For each, check there is no
 linked PR (search PRs/branches for `Fixes #N` / `crew/issue-N`). These need implementation.
 
-## 2. Find crew PRs with unaddressed reviews
+## 2. (GitHub) Find crew PRs with unaddressed reviews
 
 ```bash
 gh pr list --state open --label "<labels.agent_pr>" --json number,reviewDecision,title
@@ -36,12 +39,20 @@ gh pr list --state open --label "<labels.agent_pr>" --json number,reviewDecision
 Keep those whose latest review state is `CHANGES_REQUESTED` (or that have unresolved review
 comments). These need a review response.
 
+## 1L. (Local) Scan the ledger for stalled tasks
+
+Read every `<ledger.dir>/*/task.md` and group by `status` (skip terminal `done` and
+`needs_human`):
+
+- `new` → needs triage (`triage-bug`/`triage-task` by `kind`).
+- `triaged` → needs implementation (`implement-issue`).
+- `changes_requested` → needs a review response (`respond-to-review`).
+- `implemented` → needs review (`review-pr`).
+
 ## 3. Advance, up to the cap
 
-Process at most `orchestrator.max_items` items total, one at a time:
-
-- triaged-issue-without-PR → run the `implement-issue` flow for it.
-- PR-with-unaddressed-review → run the `respond-to-review` flow for it.
+Process at most `orchestrator.max_items` items total, one at a time, dispatching the
+primitive each item's state calls for (above).
 
 (If invoked from the orchestrator, dispatch each via `Task`; standalone, you may follow the
 respective skill directly.)

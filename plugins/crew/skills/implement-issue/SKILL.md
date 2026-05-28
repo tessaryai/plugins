@@ -10,9 +10,10 @@ of advisory specialists, synthesize their perspectives, and are the **only** one
 writes code and opens the PR. Your autonomy ceiling is a **review-ready PR — you never
 merge.**
 
-The issue number is the argument (e.g. `/crew:implement-issue 42`). If missing, ask.
+The argument is the work to implement: a GitHub issue number (e.g.
+`/crew:implement-issue 42`) or a freeform task / ledger slug (local). If missing, ask.
 
-## 0. Load config and guardrails
+## 0. Load config, guardrails, and mode
 
 ```bash
 python3 "${CLAUDE_PLUGIN_ROOT}/lib/load_config.py"
@@ -20,18 +21,23 @@ python3 "${CLAUDE_PLUGIN_ROOT}/lib/load_config.py"
 
 Read and obey: `guardrails.protected_paths`, `guardrails.max_files_per_pr`,
 `labels.{bug,task,agent_pr,needs_human}`, `team.personas`, `commands.{install,lint,typecheck,test}`,
-and `review_standards.source`. Also read the project's `AGENTS.md`/`CLAUDE.md` for coding
-conventions — your change must follow them.
+`ledger.dir`, `local.isolation`, and `review_standards.source`. Also read the project's
+`AGENTS.md`/`CLAUDE.md` for coding conventions — your change must follow them.
 
-## 1. Read the issue
+Then **read `${CLAUDE_PLUGIN_ROOT}/reference/work-model.md` and resolve the mode** before any
+`gh` call. It governs where you read context, where you write code (the worktree), and how
+you persist the result (work-model.md §2 and §4).
 
-```bash
-gh issue view <N> --comments
-```
+## 1. Read the work item
 
-Detect whether it carries `labels.bug` or `labels.task` — this picks your PR prefix later
-(`fix:` vs `feat:`). Read the triage analysis already in the body; gather context by
-reading the affected files it names.
+- **GitHub mode:** `gh issue view <N> --comments`. Detect whether it carries `labels.bug` or
+  `labels.task`.
+- **Local mode:** read `<ledger.dir>/<slug>/task.md` and `triage.md`. The `kind` field
+  (`bug`/`task`) is in `task.md`'s frontmatter. If there is no `triage.md` yet, triage first
+  (see Constraints).
+
+The kind picks your commit/PR prefix later (`fix:` vs `feat:`). Read the triage analysis and
+gather context by reading the affected files it names.
 
 ## 2. Convene the team
 
@@ -61,30 +67,33 @@ If the team can't converge after two rounds, pick the smallest-blast-radius appr
 ## 4. Guardrail check — BEFORE writing code
 
 - If the change would modify any path matching `guardrails.protected_paths`
-  (migrations, infra, auth, secrets, CI, …): **do not proceed.** Instead comment on the
-  issue explaining what needs to change and why, add `labels.needs_human`, and stop.
+  (migrations, infra, auth, secrets, CI, …): **do not proceed.** Escalate instead — github:
+  comment on the issue explaining what needs to change and add `labels.needs_human`; local:
+  write `<ledger.dir>/<slug>/ESCALATION.md` and set `status: needs_human`. Then stop.
 - If the change will touch **more than `guardrails.max_files_per_pr` files**: implement on
-  a branch but, before opening the PR, add a comment requesting human review of the
-  approach. Do not silently sprawl.
+  the branch but, before finishing, request human review of the approach (github: a PR
+  comment; local: a note in `decision.md`). Do not silently sprawl.
 
 ## 5. Implement
 
-1. Create a branch: `crew/issue-<N>-<slug>`.
+1. **Set up the branch/worktree:**
+   - **GitHub mode:** create branch `crew/issue-<N>-<slug>` in the working tree.
+   - **Local mode:** create/locate the isolated worktree per `local.isolation`
+     (work-model.md §4) and record the branch + worktree path in `task.md`. Do all edits
+     **inside the worktree** — never the user's main checkout.
 2. Write the change, following the project's conventions and the synthesized approach.
 3. Validate with the configured commands when present: `commands.install` → relevant
-   `commands.lint` / `commands.typecheck` / `commands.test`. Fix what you broke.
+   `commands.lint` / `commands.typecheck` / `commands.test` (in local mode, run these inside
+   the worktree). Fix what you broke.
+4. Commit your change (only crew's own files, by explicit path — never `git add -A`).
 
-## 6. Open the PR (never merge)
+## 6. Persist the result (never merge)
 
-```bash
-gh pr create --label "<labels.agent_pr>" --title "<fix|feat>: <concise summary>" --body-file <tmpfile>
-```
-
-PR body:
+Compose this body once; it's the PR body in github mode and `decision.md` in local mode:
 
 ```markdown
 ## Summary
-Fixes #<N>
+Fixes #<N>        (github; omit in local mode)
 
 **Analysis**: [1–2 sentences]
 **Implementation**: [1–2 sentences on what changed]
@@ -108,12 +117,22 @@ Fixes #<N>
 [How to verify; commands run and their result]
 ```
 
-**Maximum one PR per issue.** Never merge — a human reviews and merges.
+- **GitHub mode:** open the PR (one per issue):
+
+  ```bash
+  gh pr create --label "<labels.agent_pr>" --title "<fix|feat>: <concise summary>" --body-file <tmpfile>
+  ```
+
+- **Local mode:** the commit on the branch is the deliverable — **do not push, do not open a
+  PR.** Write the body above to `<ledger.dir>/<slug>/decision.md` and set
+  `status: implemented`.
+
+Never merge — a human reviews and merges.
 
 ## Constraints
 
-- Never modify `guardrails.protected_paths` unsupervised — escalate with
-  `labels.needs_human` instead.
+- Never modify `guardrails.protected_paths` unsupervised — escalate instead (github:
+  `labels.needs_human`; local: `ESCALATION.md`).
 - The personas never write code; only you do.
-- If the issue is not yet triaged (no `labels.triaged`), triage it first
-  (`/crew:triage-bug` or `/crew:triage-task`) or ask the user.
+- If the work is not yet triaged (github: no `labels.triaged`; local: no `triage.md`),
+  triage it first (`/crew:triage-bug` or `/crew:triage-task`) or ask the user.

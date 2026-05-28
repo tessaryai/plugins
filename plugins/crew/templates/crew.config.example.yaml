@@ -4,6 +4,14 @@
 # falls back to your AGENTS.md / CLAUDE.md and then to built-in defaults. Run
 # `/crew:init-config` to generate a version pre-filled for your repo.
 
+# How crew sources work and persists results.
+#   auto   — github when you pass an issue/PR number (or run with no task in an
+#            authed repo); local for any freeform task. (default)
+#   github — always GitHub issues/PRs (requires `gh auth status` to be green).
+#   local  — always local: freeform tasks tracked in the ledger below; no gh,
+#            no remote required.
+mode: auto
+
 project:
   # Human-readable project name (used in PR/issue text). Optional.
   name: "My App"
@@ -59,3 +67,15 @@ orchestrator:
   max_items: 5        # max issues/PRs /crew:run acts on per invocation
   concurrency: 2      # independent items processed in parallel, up to this
   auto_merge: false   # autonomy ceiling is a review-ready PR; humans merge
+
+# Local-mode settings (ignored in github mode).
+ledger:
+  # Where crew tracks local tasks (one folder per task). Gitignore this.
+  dir: ".crew"
+local:
+  # How crew isolates the code it writes in local mode:
+  #   auto         — use kosho if installed, else native `git worktree` (default)
+  #   kosho        — always use kosho worktrees (.kosho/)
+  #   git-worktree — always use native `git worktree` (.crew-worktrees/)
+  #   none         — commit on a crew/<slug> branch in the main working tree
+  isolation: auto

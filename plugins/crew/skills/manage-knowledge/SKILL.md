@@ -12,20 +12,25 @@ behind the code that source and user docs don't capture. This complements `updat
 Argument is optional: a PR number captures from that PR; with no argument, do a sweep over
 recent merged PRs that aren't yet represented.
 
-## 0. Load config
+## 0. Load config and mode
 
 ```bash
 python3 "${CLAUDE_PLUGIN_ROOT}/lib/load_config.py"
 ```
 
-Use `knowledge.dir` (default `docs/knowledge`) and `labels.agent_pr`.
+Use `knowledge.dir` (default `docs/knowledge`), `labels.agent_pr`, and `ledger.dir`.
+
+Then **read `${CLAUDE_PLUGIN_ROOT}/reference/work-model.md` and resolve the mode** before any
+`gh` call.
 
 ## 1. Gather source material
 
-- **PR mode:** `gh pr view <N> --comments` + `gh pr diff <N>` — read the description, the
-  review thread, and the change itself.
-- **Sweep mode:** `gh pr list --state merged --limit 20 --json number,title,mergedAt` and
-  pick recent ones not yet referenced in `knowledge.dir`.
+- **GitHub — PR mode:** `gh pr view <N> --comments` + `gh pr diff <N>` — read the
+  description, the review thread, and the change itself.
+- **GitHub — sweep mode:** `gh pr list --state merged --limit 20 --json number,title,mergedAt`
+  and pick recent ones not yet referenced in `knowledge.dir`.
+- **Local mode:** read the task's `decision.md` and `review.md` from the ledger plus the
+  branch's history (`git log`/`git diff <base>...<branch>` in the worktree).
 
 ## 2. Extract durable knowledge
 
@@ -50,15 +55,17 @@ yields nothing durable, record nothing for it.
 **Context:** …
 **Decision / lesson:** …
 **Why:** …
-**Source:** #<PR>
+**Source:** #<PR>   (github; in local mode cite the task slug + branch)
 ```
 
 3. Keep the index in `knowledge.dir/README.md` current.
 
-## 4. Open a PR
+## 4. Persist
 
-Branch `docs/knowledge-update-<N|date>`, commit, and open a PR labeled `labels.agent_pr`
-titled `docs(knowledge): capture decisions from #<N>`. **Never merge.**
+- **GitHub mode:** branch `docs/knowledge-update-<N|date>`, commit, and open a PR labeled
+  `labels.agent_pr` titled `docs(knowledge): capture decisions from #<N>`. **Never merge.**
+- **Local mode:** commit the knowledge entry to the task's branch (in the worktree) and note
+  it in the ledger. No PR.
 
 ## Constraints
 
