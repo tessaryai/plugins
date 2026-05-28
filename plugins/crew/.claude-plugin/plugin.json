@@ -1,0 +1,19 @@
+{
+  "name": "crew",
+  "description": "A multi-agent dev harness: hand it a goal and the orchestrator triages, implements, reviews, responds to feedback, and keeps docs and knowledge current — autonomously, up to a review-ready PR. Use the individual skills directly, or /crew:run to let it decide what to do.",
+  "version": "0.0.0",
+  "author": {
+    "name": "Tessary AI"
+  },
+  "homepage": "https://github.com/tessaryai/plugins",
+  "repository": "https://github.com/tessaryai/plugins",
+  "license": "MIT",
+  "keywords": [
+    "agents",
+    "orchestrator",
+    "code-review",
+    "triage",
+    "automation",
+    "github"
+  ]
+}

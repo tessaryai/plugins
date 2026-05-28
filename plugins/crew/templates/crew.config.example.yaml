@@ -1,0 +1,61 @@
+# crew.config.yaml — optional configuration for the `crew` plugin.
+#
+# Place this file at your repository root. Everything here is optional: crew
+# falls back to your AGENTS.md / CLAUDE.md and then to built-in defaults. Run
+# `/crew:init-config` to generate a version pre-filled for your repo.
+
+project:
+  # Human-readable project name (used in PR/issue text). Optional.
+  name: "My App"
+  # Entry point crew reads first when exploring. If unset, crew auto-detects
+  # docs/INDEX.md, docs/README.md, or falls back to globbing docs/.
+  docs_index: "docs/README.md"
+
+# Names of the GitHub labels crew keys off. Change these to match your repo.
+labels:
+  bug: bug                  # triggers triage-bug; with `triaged` triggers implement
+  task: task                # triggers triage-task; with `triaged` triggers implement
+  triaged: triaged          # added by triage; gates implementation
+  docs: docs                # triggers update-docs
+  agent_pr: agent-generated # applied to PRs crew opens
+  needs_human: needs-human  # applied when crew escalates instead of acting
+  cleanup: cleanup          # applied to spring-cleaning PRs
+
+guardrails:
+  # crew refuses to modify files matching these globs and escalates instead.
+  protected_paths:
+    - "**/migrations/**"
+    - "**/*.tf"
+    - "Dockerfile*"
+    - ".env*"
+    - ".github/**"
+  # If an implementation would touch more than this many files, crew requests
+  # human review instead of opening the PR unsupervised.
+  max_files_per_pr: 5
+  # respond-to-review stops and asks for a human after this many rounds.
+  max_review_iterations: 3
+
+# Commands crew runs to validate its own changes. If omitted, crew auto-detects
+# from package.json / pyproject.toml / go.mod / Cargo.toml.
+commands:
+  install: "npm ci"
+  lint: "npm run lint"
+  typecheck: "npm run typecheck"
+  test: "npm test"
+
+review_standards:
+  # Where review-pr reads your coding standards from. Defaults to AGENTS.md.
+  source: "AGENTS.md"
+
+team:
+  # The advisory personas implement-issue / respond-to-review convene.
+  personas: [architect, pragmatist, perf-analyst, visionary, product-advocate]
+
+knowledge:
+  # Where manage-knowledge writes the decision log and topic index.
+  dir: "docs/knowledge"
+
+orchestrator:
+  max_items: 5        # max issues/PRs /crew:run acts on per invocation
+  concurrency: 2      # independent items processed in parallel, up to this
+  auto_merge: false   # autonomy ceiling is a review-ready PR; humans merge

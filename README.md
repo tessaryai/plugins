@@ -20,6 +20,7 @@ To update later:
 ## Plugins
 
 - [evals](#evals) — generate a calibrated eval suite for your LLM product.
+- [crew](#crew) — a multi-agent dev harness that triages, implements, reviews, and maintains your repo.
 
 ### evals
 
@@ -32,6 +33,25 @@ Point `evals` at your repo and it generates a complete eval suite for your LLM f
 Then run `/evals:synthesize-graders` in a Claude Code session, or just ask Claude to "synthesize evals for this repo."
 
 See the [plugin README](./plugins/evals/README.md) for flags, packs, and validator usage.
+
+### crew
+
+`crew` is a multi-agent development harness. Hand it a goal and an orchestrator decides what
+needs doing and does it — triaging issues, implementing changes through a deliberative team,
+reviewing PRs, responding to review feedback, and keeping docs and knowledge current —
+running unattended up to a **review-ready PR** (it never merges; you do). You can also invoke
+any single capability directly.
+
+```
+/plugin install crew@tessary
+```
+
+Then either let it drive — `/crew:run "close out the open bugs"` — or call a primitive
+yourself, e.g. `/crew:review-pr 42` or `/crew:triage-bug 17`. Run `/crew:init-config` once to
+tune it to your repo. This release is local-first (runs in your own Claude Code session);
+GitHub Actions packaging is planned.
+
+See the [plugin README](./plugins/crew/README.md) for the full skill list and configuration.
 
 ## License
 

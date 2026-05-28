@@ -14,6 +14,16 @@
         "ref": "evals-v0.13.0"
       },
       "description": "Generate a calibrated eval suite for your LLM product — graders, datasets, and a visual report, straight from your repo."
+    },
+    {
+      "name": "crew",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/tessaryai/plugins.git",
+        "path": "plugins/crew",
+        "ref": "crew-v0.0.0"
+      },
+      "description": "A multi-agent dev harness: hand it a goal and the orchestrator triages, implements, reviews, and maintains your repo — autonomously, up to a review-ready PR."
     }
   ]
 }
