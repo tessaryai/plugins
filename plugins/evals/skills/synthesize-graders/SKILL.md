@@ -74,7 +74,7 @@ The pipeline produces graders in two distinct scopes that must remain cleanly se
 
 - **`scope: single_call`** — grades one LLM call's output. Layer A (mechanical) and Layer B (judgmental) failures live here.
 - **`scope: chain`** — grades a relationship across N **distinct** call-site outputs in the same logical session. Produced by Phase D; requires a runner that can fetch multiple outputs from one trace.
-- **`scope: trace`** — grades the **final turn** of a multi-turn session at **one** call site, given the prior n-1 turns as context. Anchored to a `call_site_id` exactly like `single_call` (same id shape, same failure mode), but the self-test carries `input_messages` (the prior turns) + `final_output` (the graded turn) instead of `sample_output`. Used for cross-turn coherence failures on `conversational_turn` / `agent_step` sites the orchestrator marked `default_grade_mode: per_conversation`. A repeated same-site conversation is a trace, **not** a chain. **Sourcing (v5):** the runner grades the latest turn per trace and reads the whole transcript from that turn's self-contained `input` — it does not stitch per-turn rows; the `input_messages`/`final_output` self-test shape is unchanged.
+- **`scope: trace`** — grades the **final turn** of a multi-turn session at **one** call site, given the prior n-1 turns as context. Anchored to a `call_site_id` exactly like `single_call` (same id shape, same failure mode). Used for cross-turn coherence failures on `conversational_turn` / `agent_step` sites the orchestrator marked `default_grade_mode: per_conversation`. A repeated same-site conversation is a trace, **not** a chain. **Sourcing (v5):** the runner grades the latest turn per trace and reads the whole transcript from that turn's self-contained `input` — it does not stitch per-turn rows.
 
 ## Inputs
 
@@ -483,8 +483,9 @@ Author discovery:
 Print `Using grader author <name>` once at first use. Per-subagent prompt:
 
 ```
-You are synthesizing and calibrating graders for one call site (or chain) as part
-of a synthesize-graders run.
+You are synthesizing graders for one call site (or chain) as part
+of a synthesize-graders run. (Behavioral calibration is no longer done here; v7
+graders carry no self_tests and are calibrated platform-side against golden datasets.)
 
 CONTEXT
 - Plugin root: <abs $PLUGIN>
@@ -508,10 +509,10 @@ PART 1 — FAILURE-MODE GRADERS. For each failure mode where grader_deferred is 
    failure mode:
    - **scope** — `single_call` by default; **`trace`** when the failure can only be judged
      with conversation history (the failure description says so — cross-turn coherence on
-     `conversational_turn`/`agent_step` sites). A trace grader carries `input_messages`
-     (prior n-1 turns) + `final_output` self-tests instead of `sample_output`. The site that
-     gets trace graders is the one step 1 marked `default_grade_mode: per_conversation`
-     (multi-turn — turns share a trace); a site left `per_turn` stays `single_call`.
+     `conversational_turn`/`agent_step` sites). A trace grader is judged against the final
+     turn given the prior n-1 turns as context at runtime. The site that gets trace graders
+     is the one step 1 marked `default_grade_mode: per_conversation` (multi-turn — turns share
+     a trace); a site left `per_turn` stays `single_call`.
    - **kind** — `llm_judge`/`deterministic` as usual; **`agentic`** when judging requires
      inspecting the result the agent produced (run `git diff`/tests in a sandbox), typically
      on `sandbox_agent`/`cli_agent` sites. An agentic grader carries an `agent_spec`
@@ -520,29 +521,27 @@ PART 1 — FAILURE-MODE GRADERS. For each failure mode where grader_deferred is 
 3. Splice orchestrator-owned fields onto the body (id, scope, failure_mode_id,
    call_site_id|chain_id, name, taxonomy_node_id; owner=null; block_on_fail=null;
    cost/latency budgets from observed.*; dataset_refs; _meta provenance with
-   author_contract_version = the version the producing author declared (6 for the
+   author_contract_version = the version the producing author declared (7 for the
    evals-prompt skill and the bundled default author)).
 4. Write to .tessary/graders/<grader_id_safe>.yaml.
 5. Validate: python3 "$PLUGIN/validate.py" .tessary/graders/<file>.yaml --pipeline .tessary/
    On failure, retry author up to 3x with validator_feedback; after 3 failures,
    write _validation_error and move on.
-6. Calibrate self-tests in place (first pass + order-reversed pass for position
-   bias). Compute pass_rate, variance, confidence (high if pass>=0.8 var<=0.1;
-   medium if pass>=0.5 var<=0.2; else low). Patch via Read+Edit.
+   (v7: graders carry no self_tests; behavioral calibration is done later, platform-side,
+   against golden datasets — not here.)
 
 PART 2 — QUALITY-DIMENSION SCORE GRADERS. For EVERY quality dimension in the
 quality-dimensions shard (none are deferred):
 1. Pass the quality_dimension block to the author (see AUTHORING_CONTRACT § "Score
    graders"). The author returns kind: score with judge_prompt, rubric_levels,
-   score_scale, and score self_tests (expected_level).
+   and score_scale.
 2. Splice orchestrator-owned fields (id = <quality_dimension_id>::grader, scope,
    quality_dimension_id, call_site_id|chain_id, name, eval propagation; owner=null;
    block_on_fail=FALSE — score graders are report-only trends; dataset_refs;
    _meta provenance with author_contract_version = the version the producing author
-   declared (6 for evals-prompt and the bundled default)). Do NOT set
+   declared (7 for evals-prompt and the bundled default)). Do NOT set
    failure_mode_id or taxonomy_node_id on score graders.
-3. Write, validate (same retry loop), and calibrate self-tests (level agreement +
-   order-reversed pass; confidence high if levels stable, else medium/low).
+3. Write and validate (same retry loop). No self-test calibration (v7).
 
 RETURN ONLY this YAML manifest (no prose):
   call_site_id: <id>  # or chain_id
@@ -550,8 +549,6 @@ RETURN ONLY this YAML manifest (no prose):
   score_graders: [<grader_id>, ...]      # subset that are kind: score
   failed_validation: [<grader_id>, ...]
   carried_locked: [<grader_id>, ...]
-  calibration:
-    <grader_id>: { pass_rate, variance, confidence, adversarial_uncaught }
 ```
 
 The orchestrator sees only the manifests — never grader bodies. The contract is authoritative on the author I/O shape; do not duplicate those rules here.

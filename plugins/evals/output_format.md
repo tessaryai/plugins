@@ -365,28 +365,10 @@ agent_spec:
   verdict_contract: <string>         # how the agent emits PASS/FAIL
   budgets: {max_turns: <int>, max_cost_usd: <float>, timeout_s: <int>}   # optional
 
-self_tests:
-  - sample_output: <string>          # single_call form
-    expected_verdict: <pass | fail | not_applicable>
-    category: <clear_pass | clear_fail | near_miss | adversarial | not_applicable>
-    rationale: <string>
-  # or chain form:
-  - call_site_outputs:
-      <call_site_id_a>: <synthetic output A>
-      <call_site_id_b>: <synthetic output B>
-    expected_verdict: <pass | fail | not_applicable>
-    category: <enum>
-    rationale: <string>
-  # or trace form (scope == trace): prior n-1 turns as context + the final turn judged:
-  - input_messages:
-      - {role: <system | user | assistant | tool>, content: <string>}
-    final_output: <string>
-    expected_verdict: <pass | fail | not_applicable>
-    category: <enum>
-    rationale: <string>
+# v7: graders carry NO self_tests. Behavior is calibrated platform-side against golden
+# datasets (real labeled spans associated with the grader in evals-platform), not via
+# per-grader self-test cases. The self_test_pass_rate / self_test_variance fields are gone.
 
-self_test_pass_rate: <float | null>  # filled by step 6 calibration
-self_test_variance: <float | null>
 confidence: <high | medium | low>
 rationale: <string>
 taxonomy_node_id: <string>
@@ -406,7 +388,7 @@ dataset_refs:
 
 _meta:
   author: <string>
-  author_contract_version: 2
+  author_contract_version: 7
   synthesized_at: <iso8601>
   synth_inputs_digest: <hex>
   locked_fields: [<field>, ...]
@@ -456,7 +438,8 @@ repo). Fields beyond the span shape above:
 **per turn or per session boundary** so the git diff between two turns is available as
 text — a normal `llm_judge`/`trace` grader can read it directly, or a `kind: agentic`
 grader can recompute it in the sandbox. Omit `repo_state` when the session did not
-mutate a repo.
+mutate a repo. These dataset rows are also the substrate for **golden datasets** — the
+spans a curator marks golden and labels per grader to calibrate it platform-side (v7).
 
 **Sourcing a `scope: trace` grader's history (schema 0.11.0).** The canonical source is
 **the final turn's self-contained input**: in practice (Langfuse / Claude-Code-style
@@ -466,8 +449,7 @@ judging its transcript-bearing input + final output — no per-turn stitching. T
 agent-session `messages[]` shape above is therefore **not required** for trace
 `llm_judge` graders; it is retained for `kind: agentic` graders (which re-inspect the
 repo) and for instrumentation that does *not* carry the whole transcript on the final
-turn. Self-tests still express history as `input_messages` + `final_output` regardless
-of how production traces are sourced.
+turn.
 
 ## `.tessary/.synth-lock.yaml`
 
@@ -505,7 +487,7 @@ human-curated, so they are always overwritten on re-run.
 
 **Product hint:** <hint>
 
-**Summary:** <N> call sites, <C> chains, <M> single-call failures + <X> chain failures, <K> graders (<single_K> single-call + <chain_K> chain, <F> failed validation, <L> low-confidence, <A> adversarial-flagged), <T> taxonomy nodes, <P> packs.
+**Summary:** <N> call sites, <C> chains, <M> single-call failures + <X> chain failures, <K> graders (<single_K> single-call + <chain_K> chain, <F> failed validation, <L> low-confidence), <T> taxonomy nodes, <P> packs.
 
 ## Engaged packs
 ## Product profile

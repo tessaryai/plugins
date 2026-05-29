@@ -562,7 +562,7 @@
       </button>` : '';
 
     return `
-      ${sectionHead(3, 'Graders', 'One grader per failure mode. Global graders apply to every LLM call. Click a row to inspect the judge prompt, rubric, and self-tests.')}
+      ${sectionHead(3, 'Graders', 'One grader per failure mode. Global graders apply to every LLM call. Click a row to inspect the judge prompt, rubric, and applies-when gate.')}
       <div class="grader-toolbar">
         <div class="grader-toolbar-filters">${filterPills}</div>
         <div class="grader-toolbar-aside">
@@ -669,10 +669,6 @@
       ${collapsibleField('Deterministic check', g.deterministic_check, charHint(g.deterministic_check))}
       ${collapsibleField('Execution spec', g.execution_spec, charHint(g.execution_spec))}
       ${renderAgentSpec(g.agent_spec)}
-      ${Array.isArray(g.self_tests) && g.self_tests.length ? `<div class="field"><details>
-        <summary><span class="field-label-inline">Self-tests <span style="color:var(--muted-2);font-weight:400">· ${g.self_tests.length} ${g.self_tests.length === 1 ? 'test' : 'tests'}${g.self_test_pass_rate != null ? ` · pass rate ${Math.round(g.self_test_pass_rate * 100)}%` : ''}${g.self_test_variance != null ? ` · variance ${Math.round(g.self_test_variance * 100)}%` : ''}</span></span></summary>
-        ${renderSelfTests(g.self_tests)}
-      </details></div>` : ''}
       ${g._validation_error ? `<div class="field"><div class="field-label" style="color:var(--bad)">Validation error</div><pre style="color:var(--bad)">${escapeHtml(g._validation_error)}</pre></div>` : ''}
       ${g._load_error ? `<div class="field"><div class="field-label" style="color:var(--bad)">Load error</div><pre style="color:var(--bad)">${escapeHtml(g._load_error)}</pre></div>` : ''}
     `;
@@ -763,40 +759,6 @@
       ${collapsibleField('Task prompt', spec.task_prompt, charHint(spec.task_prompt))}
       ${collapsibleField('Verdict contract', spec.verdict_contract, charHint(spec.verdict_contract))}
     </div>`;
-  }
-
-  function renderSelfTests(tests) {
-    return tests.map(t => {
-      const isScore = t.expected_level != null;
-      const v = isScore ? String(t.expected_level) : (t.expected_verdict || 'unknown');
-      const cls = isScore ? '' : (v === 'pass' ? 'conf-high' : v === 'fail' ? 'conf-low' : '');
-      const label = isScore ? `Expected level ${escapeHtml(v)}` : `Expected ${escapeHtml(v)}`;
-      let body;
-      if (Array.isArray(t.input_messages)) {
-        const convo = t.input_messages.map(m => {
-          const role = escapeHtml(m && m.role ? m.role : '?');
-          const content = escapeHtml(m && m.content != null ? String(m.content)
-            : JSON.stringify({ tool_calls: m && m.tool_calls, tool_results: m && m.tool_results }));
-          return `<div class="st-turn"><span class="st-role">${role}</span><span class="st-content">${content}</span></div>`;
-        }).join('');
-        body = `<div class="st-convo">${convo}</div>` +
-          `<div class="st-final"><span class="st-final-label">final turn</span>` +
-          `<pre style="margin:4px 0 0">${escapeHtml(t.final_output != null ? String(t.final_output) : '')}</pre></div>`;
-      } else if (t.sample_output != null) {
-        body = `<pre style="margin:6px 0 0">${escapeHtml(t.sample_output)}</pre>`;
-      } else {
-        body = `<pre style="margin:6px 0 0">${escapeHtml(JSON.stringify(t.call_site_outputs || {}, null, 2))}</pre>`;
-      }
-      return `<div style="border:1px solid var(--border-soft);border-radius:3px;padding:10px 12px;margin-top:6px">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
-          ${dot(cls)}
-          <span class="chip ${cls}">${label}</span>
-          ${t.category ? ` ${rawChip(t.category, 'muted')}` : ''}
-        </div>
-        ${t.rationale ? `<div style="color:var(--muted);font-size:11.5px;margin-bottom:2px">${escapeHtml(t.rationale)}</div>` : ''}
-        ${body}
-      </div>`;
-    }).join('');
   }
 
   // ---------- Taxonomy (modal-only — not a sidebar section) ----------

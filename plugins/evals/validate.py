@@ -68,14 +68,10 @@ import pipeline_io  # noqa: E402
 VALID_KINDS: Final[frozenset[str]] = frozenset({"llm_judge", "deterministic", "execution", "score", "agentic"})
 FAILURE_KINDS: Final[frozenset[str]] = frozenset({"llm_judge", "deterministic", "execution", "agentic"})
 VALID_SCOPES: Final[frozenset[str]] = frozenset({"single_call", "chain", "trace"})
-# scope=trace anchors to a single call site (like single_call); only the self-test input shape differs.
+# scope=trace anchors to a single call site (like single_call).
 CALL_SITE_SCOPES: Final[frozenset[str]] = frozenset({"single_call", "trace"})
 VALID_VERDICTS: Final[frozenset[str]] = frozenset({"pass", "fail", "not_applicable"})
 VALID_CONFIDENCE: Final[frozenset[str]] = frozenset({"high", "medium", "low"})
-VALID_SELF_TEST_CATEGORIES: Final[frozenset[str]] = frozenset({
-    "clear_pass", "clear_fail", "near_miss", "adversarial", "not_applicable",
-    "clear_high", "clear_low",
-})
 VALID_LAYERS: Final[frozenset[str]] = frozenset({"A", "B", "C"})
 
 # Failure-catching graders require these; score graders use a different set (below).
@@ -93,7 +89,6 @@ MIN_LAYER_A_PER_SITE: Final[int] = 3
 MIN_LAYER_B_PER_SITE: Final[int] = 5
 MIN_LAYER_C_PER_SITE: Final[int] = 3  # exempt for embedding shapes (handled separately)
 MIN_CHAIN_FAILURES: Final[int] = 3
-ADVERSARIAL_REQUIRED_AT_SELF_TESTS_COUNT: Final[int] = 4
 
 Scope = Literal["single_call", "chain"]
 Grader = Mapping[str, Any]
@@ -213,144 +208,6 @@ def _check_applies_when(g: Grader) -> list[str]:
     return errors
 
 
-def _check_pass_rate(g: Grader) -> list[str]:
-    errors: list[str] = []
-    for field in ("self_test_pass_rate", "self_test_variance"):
-        rate = g.get(field)
-        if rate is None:
-            continue
-        if not isinstance(rate, (int, float)) or isinstance(rate, bool):
-            errors.append(f"{field} must be a number in [0, 1] or null")
-            continue
-        if not (0.0 <= float(rate) <= 1.0):
-            errors.append(f"{field} must be in [0, 1]; got {rate}")
-    return errors
-
-
-def _check_self_tests(
-    self_tests: Sequence[Any],
-    scope: str | None,
-) -> tuple[set[str], set[str], list[str]]:
-    """Returns (verdicts_seen, categories_seen, errors)."""
-    errors: list[str] = []
-    verdicts_seen: set[str] = set()
-    categories_seen: set[str] = set()
-
-    for i, st in enumerate(self_tests):
-        if not isinstance(st, dict):
-            errors.append(f"self_tests[{i}] must be a mapping")
-            continue
-
-        verdict = st.get("expected_verdict")
-        if verdict not in VALID_VERDICTS:
-            errors.append(f"self_tests[{i}].expected_verdict must be one of "
-                          f"{sorted(VALID_VERDICTS)}; got {verdict!r}")
-        else:
-            verdicts_seen.add(verdict)
-
-        if not _is_nonempty_str(st.get("rationale")):
-            errors.append(f"self_tests[{i}].rationale must be a non-empty string")
-
-        category = st.get("category")
-        if category is not None:
-            if category not in VALID_SELF_TEST_CATEGORIES:
-                errors.append(f"self_tests[{i}].category must be one of "
-                              f"{sorted(VALID_SELF_TEST_CATEGORIES)}; got {category!r}")
-            else:
-                categories_seen.add(category)
-
-        errors.extend(_check_self_test_body(st, scope, i))
-
-    return verdicts_seen, categories_seen, errors
-
-
-def _check_self_test_body(st: Mapping[str, Any], scope: str | None, i: int) -> list[str]:
-    """Per-entry shape: single_call uses sample_output; chain uses call_site_outputs;
-    trace uses input_messages (prior n-1 turns) + final_output (the graded turn)."""
-    errors: list[str] = []
-    if scope == "single_call":
-        if "call_site_outputs" in st:
-            errors.append(f"self_tests[{i}]: scope=single_call must use "
-                          f"sample_output, not call_site_outputs")
-        if not _is_nonempty_str(st.get("sample_output")):
-            errors.append(f"self_tests[{i}].sample_output must be a non-empty string")
-    elif scope == "chain":
-        if "sample_output" in st:
-            errors.append(f"self_tests[{i}]: scope=chain must use "
-                          f"call_site_outputs, not sample_output")
-        cso = st.get("call_site_outputs")
-        if not isinstance(cso, dict) or not cso:
-            errors.append(f"self_tests[{i}].call_site_outputs must be a non-empty mapping")
-        else:
-            for k, v in cso.items():
-                if not _is_nonempty_str(v):
-                    errors.append(f"self_tests[{i}].call_site_outputs[{k!r}] "
-                                  f"must be a non-empty string")
-    elif scope == "trace":
-        for forbidden in ("sample_output", "call_site_outputs"):
-            if forbidden in st:
-                errors.append(f"self_tests[{i}]: scope=trace must use "
-                              f"input_messages + final_output, not {forbidden}")
-        msgs = st.get("input_messages")
-        if not isinstance(msgs, list) or not msgs:
-            errors.append(f"self_tests[{i}].input_messages must be a non-empty list "
-                          f"(the prior n-1 conversation turns)")
-        else:
-            for j, m in enumerate(msgs):
-                if not isinstance(m, dict) or not _is_nonempty_str(m.get("role")):
-                    errors.append(f"self_tests[{i}].input_messages[{j}] must be a "
-                                  f"mapping with a non-empty role")
-        if not _is_nonempty_str(st.get("final_output")):
-            errors.append(f"self_tests[{i}].final_output must be a non-empty string "
-                          f"(the final turn the grader judges)")
-    return errors
-
-
-def _check_verdict_consistency(
-    applies_when: str | None,
-    verdicts_seen: set[str],
-) -> list[str]:
-    """applies_when ↔ not_applicable, bidirectional."""
-    errors: list[str] = []
-    if applies_when and "not_applicable" not in verdicts_seen:
-        errors.append("applies_when is set but no self_test has "
-                      "expected_verdict: not_applicable")
-    if not applies_when and "not_applicable" in verdicts_seen:
-        errors.append("self_tests contain expected_verdict: not_applicable "
-                      "but applies_when is null")
-    return errors
-
-
-def _check_pass_fail_balance(scope: str | None, verdicts_seen: set[str]) -> list[str]:
-    """At least one `pass` and at least one `fail` among non-n/a verdicts.
-
-    Evaluated independently so a malformed entry can't mask a structurally
-    missing verdict. The all-n/a case is allowed.
-    """
-    if not (scope and verdicts_seen and verdicts_seen != {"not_applicable"}):
-        return []
-    non_na = verdicts_seen - {"not_applicable"}
-    errors: list[str] = []
-    if "pass" not in non_na:
-        errors.append("self_tests must include at least one expected_verdict: pass")
-    if "fail" not in non_na:
-        errors.append("self_tests must include at least one expected_verdict: fail")
-    return errors
-
-
-def _check_adversarial_coverage(
-    self_tests: Sequence[Any],
-    categories_seen: set[str],
-) -> list[str]:
-    """When self_tests has >= 4 entries, at least one must be category: adversarial."""
-    if len(self_tests) < ADVERSARIAL_REQUIRED_AT_SELF_TESTS_COUNT:
-        return []
-    if "adversarial" in categories_seen:
-        return []
-    return [f"self_tests must include at least one category: adversarial when length >= "
-            f"{ADVERSARIAL_REQUIRED_AT_SELF_TESTS_COUNT}"]
-
-
 def _check_id_shape(g: Grader, scope: str | None) -> list[str]:
     gid, fmid = g.get("id"), g.get("failure_mode_id")
     if not (_is_nonempty_str(gid) and _is_nonempty_str(fmid)):
@@ -389,7 +246,6 @@ def _check_pipeline_refs(
     g: Grader,
     pipeline: Pipeline,
     scope: str | None,
-    self_tests: Sequence[Any],
 ) -> list[str]:
     """Cross-reference grader IDs against the pipeline manifest."""
     errors: list[str] = []
@@ -421,17 +277,6 @@ def _check_pipeline_refs(
         cid = g.get("chain_id")
         if cid not in chains_by_id:
             errors.append(f"chain_id {cid!r} not found in pipeline.chains")
-        else:
-            expected_keys = set(chains_by_id[cid].get("call_site_ids") or [])
-            for i, st in enumerate(self_tests):
-                cso = st.get("call_site_outputs") if isinstance(st, dict) else None
-                if isinstance(cso, dict):
-                    actual = set(cso.keys())
-                    if actual != expected_keys:
-                        errors.append(
-                            f"self_tests[{i}].call_site_outputs keys {sorted(actual)} "
-                            f"do not match chain.call_site_ids {sorted(expected_keys)}"
-                        )
     return errors
 
 
@@ -472,42 +317,6 @@ def _check_score_body(g: Grader) -> list[str]:
     return errors
 
 
-def _check_score_self_tests(self_tests: Sequence[Any], scale: tuple[int, int] | None,
-                            scope: str | None) -> list[str]:
-    errors: list[str] = []
-    categories_seen: set[str] = set()
-    levels_seen: list[int] = []
-    for i, st in enumerate(self_tests):
-        if not isinstance(st, dict):
-            errors.append(f"self_tests[{i}] must be a mapping")
-            continue
-        lvl = st.get("expected_level")
-        if not isinstance(lvl, int) or isinstance(lvl, bool):
-            errors.append(f"self_tests[{i}].expected_level must be an integer for kind=score")
-        elif scale is not None and not (scale[0] <= lvl <= scale[1]):
-            errors.append(f"self_tests[{i}].expected_level {lvl} out of score_scale "
-                          f"[{scale[0]}, {scale[1]}]")
-        else:
-            levels_seen.append(lvl)
-        if not _is_nonempty_str(st.get("rationale")):
-            errors.append(f"self_tests[{i}].rationale must be a non-empty string")
-        cat = st.get("category")
-        if cat is not None and cat not in VALID_SELF_TEST_CATEGORIES:
-            errors.append(f"self_tests[{i}].category must be one of "
-                          f"{sorted(VALID_SELF_TEST_CATEGORIES)}; got {cat!r}")
-        elif cat is not None:
-            categories_seen.add(cat)
-        errors += _check_self_test_body(st, scope, i)
-    # Require anchored extremes + a near-miss.
-    for need in ("clear_high", "clear_low", "near_miss"):
-        if need not in categories_seen:
-            errors.append(f"score graders must include a self_test with category: {need}")
-    if len(self_tests) >= ADVERSARIAL_REQUIRED_AT_SELF_TESTS_COUNT and "adversarial" not in categories_seen:
-        errors.append(f"self_tests must include a category: adversarial when length >= "
-                      f"{ADVERSARIAL_REQUIRED_AT_SELF_TESTS_COUNT}")
-    return errors
-
-
 def _check_id_shape_score(g: Grader) -> list[str]:
     gid, qdid = g.get("id"), g.get("quality_dimension_id")
     if not (_is_nonempty_str(gid) and _is_nonempty_str(qdid)):
@@ -525,22 +334,13 @@ def _validate_score_grader(g: Grader, pipeline: Pipeline | None) -> list[str]:
     scope = g.get("scope") if g.get("scope") in VALID_SCOPES else None
     errors += _check_scope_routing(g, scope)
     errors += _check_score_body(g)
-    errors += _check_pass_rate(g)
     errors += _check_meta(g)
     if g.get("applies_when") not in (None, ""):
         errors.append("kind=score must not set applies_when (a score grader always applies)")
 
-    raw_tests = g.get("self_tests")
-    if not isinstance(raw_tests, list) or len(raw_tests) < 3:
-        got = len(raw_tests) if isinstance(raw_tests, list) else type(raw_tests).__name__
-        errors.append(f"self_tests must be a list of >= 3 entries; got {got}")
-        self_tests: list[Any] = raw_tests if isinstance(raw_tests, list) else []
-    else:
-        self_tests = list(raw_tests)
-    errors += _check_score_self_tests(self_tests, _score_scale(g), scope)
     errors += _check_id_shape_score(g)
     if pipeline is not None:
-        errors += _check_pipeline_refs(g, pipeline, scope, self_tests)
+        errors += _check_pipeline_refs(g, pipeline, scope)
     return errors
 
 
@@ -562,28 +362,11 @@ def validate_grader(g: Grader, pipeline: Pipeline | None = None) -> list[str]:
     errors += _check_scope_routing(g, scope)
     errors += _check_kind_body(g, kind)
     errors += _check_applies_when(g)
-    errors += _check_pass_rate(g)
     errors += _check_meta(g)
-
-    raw_tests = g.get("self_tests")
-    if not isinstance(raw_tests, list) or len(raw_tests) < 3:
-        got = len(raw_tests) if isinstance(raw_tests, list) else type(raw_tests).__name__
-        errors.append(f"self_tests must be a list of >= 3 entries; got {got}")
-        self_tests: list[Any] = raw_tests if isinstance(raw_tests, list) else []
-    else:
-        self_tests = list(raw_tests)
-
-    verdicts_seen, categories_seen, st_errors = _check_self_tests(self_tests, scope)
-    errors += st_errors
-
-    applies_when = _normalize_applies_when(g.get("applies_when"))
-    errors += _check_verdict_consistency(applies_when, verdicts_seen)
-    errors += _check_pass_fail_balance(scope, verdicts_seen)
-    errors += _check_adversarial_coverage(self_tests, categories_seen)
     errors += _check_id_shape(g, scope)
 
     if pipeline is not None:
-        errors += _check_pipeline_refs(g, pipeline, scope, self_tests)
+        errors += _check_pipeline_refs(g, pipeline, scope)
 
     return errors
 
