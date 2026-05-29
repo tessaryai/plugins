@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://evals.tessary.ai/schemas/grader.v6.json",
+  "$id": "https://evals.tessary.ai/schemas/grader.v7.json",
   "title": "Grader (on-disk form)",
-  "description": "Schema for one grader YAML file under .tessary/graders/. The authoritative validator is validate.py (at the plugin root), which enforces these structural rules plus cross-field invariants and optional pipeline.yaml / bundle cross-references. This schema is the contract any grader author must satisfy; validate.py is the enforcer. v2 adds: self_tests[].category, applies_when_check (deterministic graders), per-grader runtime fields (owner, block_on_fail, cost/latency budgets, dataset_refs), and a _meta provenance block for survivable re-runs. v3 adds kind=score (continuous 1-5 quality scoring). v4 adds scope=trace (multi-turn: grade the final turn given prior n-1 messages, self-tests carry input_messages + final_output) and kind=agentic (binary verdict produced by an agent running in a sandbox via agent_spec; emitted here, executed by the runner). v5 adds no grader fields (the change is the call-site default_grade_mode flag plus pinned trace history sourcing). v6: applies_when is ALWAYS evaluated by an LLM at runtime — for kind=deterministic the platform runs a separate LLM applicability gate before the (gate-free) deterministic_check; for llm_judge/score it rides inline in the judge prompt. applies_when_check is REMOVED (the gate is never compiled). Trace deterministic checks receive structured input (messages + tool_uses), and trace self-test turns may carry tool_uses. The $id tracks the current contract version (6).",
+  "description": "Schema for one grader YAML file under .tessary/graders/. The authoritative validator is validate.py (at the plugin root), which enforces these structural rules plus cross-field invariants and optional pipeline.yaml / bundle cross-references. This schema is the contract any grader author must satisfy; validate.py is the enforcer. v2 adds: self_tests[].category, applies_when_check (deterministic graders), per-grader runtime fields (owner, block_on_fail, cost/latency budgets, dataset_refs), and a _meta provenance block for survivable re-runs. v3 adds kind=score (continuous 1-5 quality scoring). v4 adds scope=trace (multi-turn: grade the final turn given prior n-1 messages) and kind=agentic (binary verdict produced by an agent running in a sandbox via agent_spec; emitted here, executed by the runner). v5 adds no grader fields (the change is the call-site default_grade_mode flag plus pinned trace history sourcing). v6: applies_when is ALWAYS evaluated by an LLM at runtime — for kind=deterministic the platform runs a separate LLM applicability gate before the (gate-free) deterministic_check; for llm_judge/score it rides inline in the judge prompt. applies_when_check is REMOVED (the gate is never compiled). Trace deterministic checks receive structured input (messages + tool_uses). v7 REMOVES per-grader self_tests entirely: graders no longer carry hand-authored self-test cases, the self_test_pass_rate/self_test_variance calibration fields, or the applies_when ↔ not_applicable self-test invariant. A grader's behavior is now validated platform-side against reusable golden datasets — real spans associated with the grader and labeled per (grader, dataset_item) — so the author emits only the verdict body, applies_when, confidence, and rationale. The $id tracks the current contract version (7).",
   "type": "object",
   "required": [
     "id",
@@ -10,8 +10,7 @@
     "name",
     "kind",
     "confidence",
-    "rationale",
-    "self_tests"
+    "rationale"
   ],
   "properties": {
     "id": {
@@ -21,7 +20,7 @@
     },
     "scope": {
       "enum": ["single_call", "chain", "trace"],
-      "description": "single_call: grades one call's output. chain: grades a relationship across N distinct call-site outputs in a session. trace: grades the final turn of a multi-turn session given the prior n-1 messages as context — anchored to one call_site_id like single_call, but the self-test carries input_messages + final_output."
+      "description": "single_call: grades one call's output. chain: grades a relationship across N distinct call-site outputs in a session. trace: grades the final turn of a multi-turn session given the prior n-1 messages as context — anchored to one call_site_id like single_call."
     },
     "failure_mode_id": {
       "type": "string",
@@ -114,7 +113,7 @@
     },
     "applies_when": {
       "type": ["string", "null"],
-      "description": "Natural-language applicability predicate, ALWAYS evaluated by an LLM at runtime (v6). For kind=llm_judge/score it rides inline in the judge prompt; for kind=deterministic the platform runs a separate LLM applicability gate BEFORE the deterministic_check and skips out-of-scope outputs — so the deterministic_check must NOT implement the gate itself. Bidirectional invariant (enforced by validate.py): if set to a non-empty string, at least one self_test must have expected_verdict=not_applicable; if absent, null, or empty string, no self_test may use not_applicable."
+      "description": "Natural-language applicability predicate, ALWAYS evaluated by an LLM at runtime (v6). For kind=llm_judge/score it rides inline in the judge prompt; for kind=deterministic the platform runs a separate LLM applicability gate BEFORE the deterministic_check and skips out-of-scope outputs — so the deterministic_check must NOT implement the gate itself. When set, out-of-scope outputs are reported not_applicable at runtime; golden dataset items that fall outside scope are surfaced as not_applicable by the platform runner rather than asserted by the author (v7 removed per-grader self-tests)."
     },
     "applies_when_check": {
       "type": ["string", "null"],
@@ -140,31 +139,12 @@
 
     "confidence": {
       "enum": ["high", "medium", "low"],
-      "description": "Author-assigned initial confidence; may be overwritten by orchestrator at step 6 (self-test calibration)."
-    },
-    "self_test_pass_rate": {
-      "type": ["number", "null"],
-      "minimum": 0,
-      "maximum": 1,
-      "description": "Populated by orchestrator at step 6."
-    },
-    "self_test_variance": {
-      "type": ["number", "null"],
-      "minimum": 0,
-      "maximum": 1,
-      "description": "Populated by orchestrator at step 6 — fraction of self-tests whose verdict flipped between two independent rubric applications (order-permuted, same content). Higher = less trustworthy judge. validate.py does not enforce a threshold; the orchestrator demotes confidence when variance > 0.2."
+      "description": "Author-assigned confidence in this grader. Behavioral calibration now happens platform-side against golden datasets (real labeled spans), not via per-grader self-tests."
     },
     "rationale": {
       "type": "string",
       "minLength": 1,
       "description": "One sentence in user-impact terms for the curation report."
-    },
-
-    "self_tests": {
-      "type": "array",
-      "minItems": 3,
-      "items": { "$ref": "#/$defs/self_test" },
-      "description": "Author must include at least one pass and at least one fail. If applies_when is set, must also include at least one not_applicable. Author must also include at least one adversarial self-test (a sample_output that attempts to manipulate the judge — prompt-injection, role-confusion, fake prior-verdict) with expected_verdict=fail — validate.py enforces this when there are >= 4 entries."
     },
 
     "owner": {
@@ -188,7 +168,7 @@
     "dataset_refs": {
       "type": ["array", "null"],
       "items": { "$ref": "#/$defs/dataset_ref" },
-      "description": "Optional. Pointers to real inputs this grader should run against — captured trace span IDs or file:line source locations. Populated by orchestrator from Path A trace ingestion or Path B static discovery. Empty/absent means 'no captured dataset; rely on self_tests only'."
+      "description": "Optional. Pointers to real inputs this grader should run against — captured trace span IDs or file:line source locations. Populated by orchestrator from Path A trace ingestion or Path B static discovery. Empty/absent means 'no captured dataset'."
     },
 
     "pack_ids": {
@@ -273,101 +253,10 @@
       "comment": "Score graders link to a quality dimension and carry an anchored rubric + scale.",
       "if": { "properties": { "kind": { "const": "score" } } },
       "then": { "required": ["quality_dimension_id", "judge_prompt", "rubric_levels", "score_scale"] }
-    },
-    {
-      "comment": "Bidirectional applies_when invariant. When applies_when is null/absent, no self_test may declare expected_verdict=not_applicable.",
-      "if": {
-        "anyOf": [
-          { "not": { "required": ["applies_when"] } },
-          { "properties": { "applies_when": { "type": "null" } } },
-          { "properties": { "applies_when": { "const": "" } } }
-        ]
-      },
-      "then": {
-        "properties": {
-          "self_tests": {
-            "items": {
-              "properties": {
-                "expected_verdict": { "enum": ["pass", "fail", "not_applicable"] }
-              }
-            }
-          }
-        }
-      }
     }
   ],
 
   "$defs": {
-    "self_test": {
-      "type": "object",
-      "required": ["rationale"],
-      "anyOf": [
-        { "required": ["expected_verdict"] },
-        { "required": ["expected_level"] }
-      ],
-      "properties": {
-        "expected_verdict": {
-          "enum": ["pass", "fail", "not_applicable"],
-          "description": "For binary graders (kind=llm_judge/deterministic/execution)."
-        },
-        "expected_level": {
-          "type": "integer",
-          "description": "For kind=score: the rubric level this sample_output should receive, within score_scale [min, max]. validate.py enforces the range and that score graders include a clear-high, a clear-low, and a near-miss self-test."
-        },
-        "category": {
-          "enum": ["clear_pass", "clear_fail", "near_miss", "adversarial", "not_applicable", "clear_high", "clear_low"],
-          "description": "Taxonomy of self-test purpose. Binary graders: clear_pass/clear_fail anchor calibration. Score graders: clear_high/clear_low anchor the rubric extremes. near_miss probes rubric sharpness (both); adversarial probes the judge's resistance to prompt-injection / role-confusion / fake prior verdicts in sample_output; not_applicable matches applies_when. validate.py requires at least one adversarial entry when self_tests has >= 4 items; recommends one of each otherwise. When absent, validate.py treats the entry as 'uncategorized' (no enforcement)."
-        },
-        "rationale": {
-          "type": "string",
-          "minLength": 1,
-          "description": "One sentence explaining why this case carries the expected verdict."
-        },
-        "sample_output": {
-          "type": "string",
-          "minLength": 1,
-          "description": "Required for scope=single_call; must be absent for scope=chain and scope=trace."
-        },
-        "call_site_outputs": {
-          "type": "object",
-          "minProperties": 1,
-          "additionalProperties": { "type": "string", "minLength": 1 },
-          "description": "Required for scope=chain. Keys must equal the chain's call_site_ids set (cross-checked by validate.py against pipeline.yaml). Values are the per-call outputs."
-        },
-        "input_messages": {
-          "type": "array",
-          "minItems": 1,
-          "description": "Required for scope=trace. The first n-1 conversation turns supplied as context to the grader. Each item is a message with a role and content. For a trace deterministic grader, carry the turn's tool calls in the structured `tool_uses` array (v6) so the check sees the same shape it grades on in production (input.messages / input.tool_uses); a judge grader can rely on content alone.",
-          "items": {
-            "type": "object",
-            "required": ["role"],
-            "properties": {
-              "role": { "enum": ["system", "user", "assistant", "tool"] },
-              "content": { "type": "string" },
-              "tool_uses": {
-                "type": "array",
-                "description": "Structured tool calls made on this turn (v6). Each is the tool name plus its (already-parsed) input object. Surfaced to deterministic trace checks as input.messages[].tool_uses and flattened into input.tool_uses.",
-                "items": {
-                  "type": "object",
-                  "required": ["name"],
-                  "properties": {
-                    "name": { "type": "string", "minLength": 1 },
-                    "input": { "type": "object" }
-                  }
-                }
-              },
-              "tool_calls": { "type": "array", "deprecated": true, "description": "Legacy free-form tool calls; prefer the structured tool_uses." },
-              "tool_results": { "type": "array", "deprecated": true }
-            }
-          }
-        },
-        "final_output": {
-          "type": "string",
-          "minLength": 1,
-          "description": "Required for scope=trace. The final turn (turn n) — the artifact the grader judges, given input_messages as context."
-        }
-      }
-    },
     "dataset_ref": {
       "type": "object",
       "description": "One pointer to a real input this grader can be run against.",
@@ -426,7 +315,7 @@
         "locked_fields": {
           "type": "array",
           "items": {
-            "enum": ["judge_prompt", "rubric", "applies_when", "deterministic_check", "execution_spec", "self_tests", "owner", "block_on_fail", "cost_budget_tokens", "latency_budget_ms_p95"]
+            "enum": ["judge_prompt", "rubric", "applies_when", "deterministic_check", "execution_spec", "owner", "block_on_fail", "cost_budget_tokens", "latency_budget_ms_p95"]
           },
           "description": "Fields the orchestrator must preserve verbatim on re-run. Set by humans during curation (or by --lock at the CLI). On overwrite, the orchestrator loads the existing file, retains values for every key in this list, and only refreshes other fields."
         },

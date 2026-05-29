@@ -49,20 +49,22 @@ hardcoded enum list (`backend/.../mcp/McpToolRegistry.java`, the `kind` list ≈
 
 ## 1. `scope: trace` (multi-turn input)
 
-**Contract:** a trace grader anchors to one `call_site_id` (like `single_call`); its self-tests carry
-`input_messages: [{role, content, tool_uses?}]` (the prior n-1 turns) + `final_output`
-(the graded turn). A trace `llm_judge` judges `final_output` *in the context of* `input_messages`; a
-trace `deterministic` check reads the structured `input.messages` / `input.tool_uses` the platform
-builds from the turns (v6). `applies_when` is always LLM-evaluated — for deterministic graders the
-platform runs a separate LLM applicability gate before the gate-free body (no `applies_when_check`).
+**Contract:** a trace grader anchors to one `call_site_id` (like `single_call`); at runtime it is fed
+the prior n-1 turns as context plus the final turn it judges. A trace `llm_judge` judges the final turn
+*in the context of* the prior conversation; a trace `deterministic` check reads the structured
+`input.messages` / `input.tool_uses` the platform builds from the turns (v6). `applies_when` is always
+LLM-evaluated — for deterministic graders the platform runs a separate LLM applicability gate before the
+gate-free body (no `applies_when_check`). (v7: graders carry no inline self-tests; behavior is calibrated
+against golden datasets — real labeled spans — platform-side.)
 
 **Platform work (v0.11 sourcing — much smaller than the original v0.10 plan):**
 - Group a multi-turn site's observations by `trace_id`, take the **latest turn**, and feed its
   `input` (the transcript) + final output to the judge. evals-platform already has this as its
   internal `TraceTransform`/`TraceTransformer` (`select: last_turn`); a `scope: trace` grader on a
   call site is the signal to apply it (its per-call-site `grade_mode` curation toggle overrides).
-- Run `scope: trace` self-tests by flattening the case's `input_messages` into that transcript +
-  `final_output` (reuse the judge's pre-framed transcript path).
+- Calibrate `scope: trace` graders against golden datasets (v7): the golden items are real trace spans
+  whose transcript-bearing `input` + final output are fed through the same last-turn judge path; the
+  grader carries no inline self-tests to run.
 - ~~Add a `messages: List<Message>` variant to `RawEntry`~~ and ~~feed prior turns via
   `ContentExtractor`~~ are **no longer required** for trace `llm_judge` graders under v0.11 sourcing
   (still needed for `kind: agentic` / non-self-contained instrumentation).

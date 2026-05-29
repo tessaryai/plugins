@@ -39,7 +39,7 @@ Everything lands in `.tessary/` in your repo:
 | --- | --- |
 | `.tessary/index.html` | Self-contained visual report. Open it in a browser — no server needed. |
 | `.tessary/report.md` | Human-readable walkthrough of every grader and what it catches. |
-| `.tessary/graders/*.yaml` | One grader per failure mode: judge prompt, rubric, self-tests. Run these against your call sites in CI. |
+| `.tessary/graders/*.yaml` | One grader per failure mode: judge prompt, rubric, applies-when gate. Run these against your call sites in CI; calibrate them against golden datasets on [evals.tessary.ai](https://evals.tessary.ai). |
 | `.tessary/datasets/*.jsonl` | Replayable input rows captured from your traces (when provided). |
 | `.tessary/pipeline/` | The pipeline definition: call sites, failure modes, taxonomy. Read this if you're wiring graders into your own runner. |
 
