@@ -98,6 +98,18 @@ the specifics, trace the candidate code paths through the layers the project use
 - **Local mode:** write the enriched analysis to `<ledger.dir>/<slug>/triage.md` and set
   `status: triaged` in `task.md`'s frontmatter.
 
+## 5. If the scope is huge — recommend scale-out
+
+If your analysis shows the task would span **many modules or need a broad rewrite** — far more
+than one review-ready PR — still finish the triage above, but **do not let the orchestrator
+treat it as a single implement step.** Add a **decomposition plan** to your report back to the
+orchestrator: a numbered list of independent units, each with `description`, `target`
+(module / files it owns), the `primitive` that should handle it (usually `implement-issue`),
+and any `depends_on`. Flag the report **`scale-out-recommended`**. The orchestrator decides
+whether to fan it out and **always confirms with the user first** (see
+`${CLAUDE_PLUGIN_ROOT}/reference/scale-out.md` for the exact unit shape). You only recommend —
+you never spawn anything.
+
 ## Constraints
 
 - **Read-only on source.** No implementation, no patches, no branches/PRs.

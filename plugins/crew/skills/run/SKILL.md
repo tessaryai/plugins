@@ -41,9 +41,13 @@ Then **read these two files and follow them**:
   the right workflow (the mission, the decision framework, effort right-sizing, the primitive
   toolbox, and illustrative patterns).
 
+A third file, `${CLAUDE_PLUGIN_ROOT}/reference/scale-out.md`, governs the rare case where the
+work is too big for the serial loop — read it only when step 3 tells you to.
+
 Bind: `mode`, `ledger.dir`, `local.isolation`, `labels.*`, `orchestrator.max_items`,
-`orchestrator.concurrency`, `orchestrator.auto_merge` (must be false — you never merge
-regardless), `guardrails.*`.
+`orchestrator.concurrency`, `orchestrator.scale_out` (the unit-count floor for scale-out; `0`
+disables it), `orchestrator.auto_merge` (must be false — you never merge regardless),
+`guardrails.*`.
 
 **Resolve the mode now, before any `gh` call** (per work-model.md §1). Only in **github**
 mode do you require `gh auth status` to pass; if it fails there, tell the user to
@@ -128,6 +132,15 @@ invent as the request warrants.
 - Never plan an action on a `needs_human` item or one that would require touching
   `guardrails.protected_paths` (let the primitive escalate if it discovers that mid-flight).
 
+**Scale-out check.** If a primitive's report (or your own survey) flags
+**`scale-out-recommended`** — the work spans many modules or needs a broad rewrite — and the
+decomposition yields **more independent units than `orchestrator.scale_out`** (the floor;
+default 8, `0` disables), do **not** try to grind it through the serial loop. Switch to
+scale-out: **read `${CLAUDE_PLUGIN_ROOT}/reference/scale-out.md`** and follow it — assemble the
+decomposition plan, **confirm with the user** (mandatory), then run it as a single `Workflow`
+fan-out. At or below the floor, or if the user declines, stay in the serial loop and note any
+remainder. Scale-out is never automatic and never skips the confirmation gate.
+
 ## 4. Dry-run gate
 
 If `--dry-run` was given: print the plan as a table (item → composed workflow as ordered
@@ -135,10 +148,17 @@ steps → why) plus the count deferred by the cap, and **stop without acting.**
 
 ## 5. Execute
 
-Dispatch each step as a subagent so each runs with its own focused context. Run independent
-steps — including a workflow's parallel forks and independent subtasks — up to
-`orchestrator.concurrency` in parallel (issue one batch of `Task` calls together); serialize
-dependent ones.
+There are two execution modes:
+
+- **Serial loop (default).** Dispatch each step as a subagent so each runs with its own focused
+  context. Run independent steps — including a workflow's parallel forks and independent
+  subtasks — up to `orchestrator.concurrency` in parallel (issue one batch of `Task` calls
+  together); serialize dependent ones.
+- **Scale-out (only when step 3 escalated and the user confirmed).** Build the decomposition
+  into `args` and invoke the shipped Workflow once —
+  `Workflow({ scriptPath: "${CLAUDE_PLUGIN_ROOT}/workflows/scale-out.js", args })` — exactly as
+  `reference/scale-out.md` specifies. It runs an implement→review pipeline per unit in isolated
+  worktrees and notifies you on completion; then synthesize its results (scale-out.md §6).
 
 For each step, spawn a `general-purpose` `Task` whose prompt is:
 
@@ -187,6 +207,10 @@ Deferred by cap: J (run /crew:run again to continue)
 Merged: 0 (crew never merges — humans merge)
 ```
 
+If this run used **scale-out**, report it as one block: units implemented / came back
+`request_changes` (and whether a fix wave ran) / escalated / failed, with the branch or PR per
+unit (scale-out.md §6).
+
 In local mode, cite the **branch / worktree path** in place of the PR URL, and surface any
 `ESCALATION.md` items.
 
@@ -194,6 +218,8 @@ In local mode, cite the **branch / worktree path** in place of the PR URL, and s
 
 - **Unattended but bounded** — respect `max_items`, `concurrency`, and all primitive
   guardrails. Don't sprawl.
+- **Scale-out is the one exception to "unattended"** — it always pauses to **confirm with the
+  user** before spawning a `Workflow`, and still never merges (one branch/PR per unit).
 - **Never merge.** Escalate, don't force, anything touching `protected_paths`.
 - **Compose, don't duplicate** — always delegate to the primitive skills; never inline
   their logic.

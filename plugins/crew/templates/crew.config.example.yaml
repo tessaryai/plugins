@@ -67,6 +67,12 @@ orchestrator:
   max_items: 5        # max issues/PRs /crew:run acts on per invocation
   concurrency: 2      # independent items processed in parallel, up to this
   auto_merge: false   # autonomy ceiling is a review-ready PR; humans merge
+  # Scale-out floor. When triage/analysis flags a huge-scope task AND it breaks
+  # into more independent units than this number, crew may fan the work out across
+  # a Claude Workflow (one branch/PR per unit) instead of the serial loop — but it
+  # ALWAYS asks you to confirm (with an agent-count/cost estimate) before spawning.
+  # At or below this floor it stays serial. Set to 0 to disable scale-out entirely.
+  scale_out: 8
 
 # Local-mode settings (ignored in github mode).
 ledger:

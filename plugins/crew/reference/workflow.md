@@ -50,6 +50,10 @@ More process is not more quality. Scale it to the change's size and risk:
 - **Substantial / risky** (touches core paths, public API, performance-sensitive code, or
   spans modules): convene the full advisory team, review thoroughly, loop until clean, keep
   docs current, and capture the decision. Fork independent sub-parts to run in parallel.
+- **Huge / repo- or module-wide** (a module-by-module rewrite, a repo-wide cleanup spanning
+  dozens of files, a migration across many call sites): too big for the serial loop. Decompose
+  it into independent units, **confirm with the user**, and fan it out across a single Claude
+  `Workflow` — one branch/PR per unit, never one mega-PR. See `scale-out.md`.
 
 When unsure, lean toward *slightly* more rigor on anything that ships behavior, and *less*
 on anything cosmetic. The goal is best-in-class outcomes at the lowest necessary ceremony.
@@ -85,6 +89,10 @@ Reach for these as defaults, then adapt:
 - **Just review:** `review`. **Just docs:** `update-docs`. **Just capture knowledge:** `manage-knowledge`.
 - **Tidy up:** `spring-cleaning → optional review`.
 - **Catch up on stalled work:** `process-backlog`, then whatever each recovered item needs.
+- **Too big for one pass:** when triage/analysis flags `scale-out-recommended` and the work
+  breaks into more independent units than `orchestrator.scale_out`, decompose → **confirm with
+  the user** → fan out via a `Workflow` (see `scale-out.md`). The serial loop stays the default;
+  scale-out is the exception, never automatic.
 
 If a request doesn't fit any of these, **invent the sequence** that serves the mission. The
 patterns exist to save thinking on common cases, not to constrain you.
@@ -92,7 +100,9 @@ patterns exist to save thinking on common cases, not to constrain you.
 ## Always, regardless of the workflow you compose
 
 - **Never merge** — the ceiling is a review-ready PR (github) or branch (local); a human
-  merges.
+  merges. This holds at scale too — scale-out opens one branch/PR per unit, never merges.
+- **Escalate to a `Workflow` only after user confirmation** — the serial `Task` loop is the
+  default; fanning out to a Workflow is a deliberate, always-confirmed step (`scale-out.md`).
 - **Quality gate before "done"** — anything that changes behavior gets at least one review
   pass before you consider it finished; don't skip review to save a step.
 - **Respect guardrails** — never touch `protected_paths`; escalate instead. Stay within

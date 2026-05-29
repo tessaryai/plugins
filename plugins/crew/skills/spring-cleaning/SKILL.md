@@ -48,6 +48,16 @@ For the chosen scope, select at most `guardrails.max_files_per_pr` changes. Excl
 anything matching `protected_paths`. Prefer high-confidence removals; when unsure, leave it
 and note it in the PR description as a candidate for human judgment.
 
+**If the cleanup is huge.** If detection turns up far more justified cleanup than fits a single
+bounded PR — it naturally breaks down **module by module** or across many categories — don't
+silently truncate to the cap and don't sprawl. Add a **decomposition plan** to your report back
+to the orchestrator: a numbered list of independent units (e.g. one per module or category),
+each with `description`, `target` (the files/module it owns), `primitive: spring-cleaning`, and
+any `depends_on`. Flag the report **`scale-out-recommended`**. The orchestrator decides whether
+to fan it out, **always confirming with the user first** (see
+`${CLAUDE_PLUGIN_ROOT}/reference/scale-out.md` for the unit shape). You only recommend — you
+never spawn anything.
+
 ## 3. Validate
 
 Apply the removals on a branch, then run `commands.install` and `commands.test` (and

@@ -65,7 +65,16 @@ DEFAULTS = {
         ]
     },
     "knowledge": {"dir": "docs/knowledge"},
-    "orchestrator": {"max_items": 5, "concurrency": 2, "auto_merge": False},
+    "orchestrator": {
+        "max_items": 5,
+        "concurrency": 2,
+        "auto_merge": False,
+        # Scale-out floor: when triage flags huge scope AND the decomposition has
+        # more independent units than this, /crew:run may (after confirming with
+        # the user) fan the work out across a Claude Workflow instead of the serial
+        # loop. Set to 0/false to disable scale-out entirely.
+        "scale_out": 8,
+    },
 }
 
 

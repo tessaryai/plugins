@@ -3,7 +3,22 @@
 All notable changes to the `crew` plugin are documented here. This project
 follows [semantic versioning](https://semver.org/).
 
-## [0.3.1] — unreleased
+## [0.4.0] — 2026-05-29
+
+### Added
+
+- **Scale-out.** When triage or analysis reveals a task is too big for the serial
+  loop — a module-by-module rewrite, a repo-wide cleanup spanning dozens of files —
+  a primitive now reports a **decomposition plan** flagged `scale-out-recommended`.
+  Above the `orchestrator.scale_out` floor (default 8 units), `/crew:run` proposes
+  the split, **asks you to confirm** (with an agent-count/cost estimate), and only
+  then fans the work out across a single Claude **Workflow** — a shipped,
+  parameterized script (`workflows/scale-out.js`) that runs one implement→review
+  pipeline per unit in an isolated worktree. One branch/PR per unit; crew still
+  never merges, and never spawns a Workflow without your OK. New config knob
+  `orchestrator.scale_out` (set `0` to disable). See `reference/scale-out.md`.
+
+## [0.3.1] — 2026-05-29
 
 ### Changed
 
@@ -12,7 +27,7 @@ follows [semantic versioning](https://semver.org/).
   separate `.crew-worktrees/`. One gitignore entry (`.crew/`) now covers
   everything crew writes locally.
 
-## [0.3.0] — unreleased
+## [0.3.0] — 2026-05-29
 
 ### Changed
 
@@ -34,7 +49,7 @@ follows [semantic versioning](https://semver.org/).
   (review → fix loop), falling back to the GitHub backlog only when the branch is
   clean.
 
-## [0.2.0] — unreleased
+## [0.2.0] — 2026-05-28
 
 ### Added
 
@@ -58,7 +73,7 @@ follows [semantic versioning](https://semver.org/).
 - All primitives accept either a GitHub issue/PR number or a local task/slug, and
   persist results to GitHub or the local ledger/branch accordingly.
 
-## [0.1.0] — unreleased
+## [0.1.0] — 2026-05-28
 
 Initial local-first release.
 

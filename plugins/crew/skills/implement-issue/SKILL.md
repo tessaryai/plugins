@@ -44,6 +44,13 @@ you persist the result (work-model.md §2 and §4).
 The kind picks your commit/PR prefix later (`fix:` vs `feat:`). Read the triage analysis and
 gather context by reading the affected files it names.
 
+**If the work is far bigger than one PR.** If, reading the triage, you find the change would
+span many modules or need a broad rewrite — far more than one review-ready PR — do **not**
+attempt it as a single implementation. Stop and report a **decomposition plan** (numbered
+independent units: `description`, `target`, `primitive`, `depends_on`) flagged
+**`scale-out-recommended`** back to the orchestrator, which decides whether to fan it out and
+**always confirms with the user first** (`${CLAUDE_PLUGIN_ROOT}/reference/scale-out.md`).
+
 ## 2. Convene the team
 
 Spawn each persona in `team.personas` as a subagent (via `Task`, or `TeamCreate` if

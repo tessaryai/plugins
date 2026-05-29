@@ -79,6 +79,19 @@ and doc/knowledge updates. Independent work can fork to run in parallel; review
 loops are bounded by `max_review_iterations`. The reasoning framework,
 effort-scaling guidance, and illustrative patterns live in `reference/workflow.md`.
 
+#### When the job is too big — scale-out
+
+Some requests are bigger than the serial loop should handle — a module-by-module
+rewrite, a repo-wide cleanup spanning dozens of files. When triage or analysis
+reveals that, the primitive reports a **decomposition plan** (independent units of
+work). If it has more units than the `orchestrator.scale_out` floor (default 8),
+crew proposes the split, **asks you to confirm** — showing an estimated agent count
+and rough cost — and only then fans the work out across a single Claude
+**Workflow**: one implement→review pipeline per unit, each in its own isolated
+worktree, **one branch/PR per unit**. crew never spawns a Workflow without your OK,
+and still never merges. Set `orchestrator.scale_out: 0` to turn it off. Details in
+`reference/scale-out.md`.
+
 ### The primitives (internal — dispatched by the orchestrator)
 
 You don't invoke these directly; `/crew:run` selects and sequences them. They're
@@ -128,7 +141,7 @@ guardrails:
   max_review_iterations: 3
 commands: { install: "npm ci", lint: "npm run lint", test: "npm test" }
 review_standards: { source: "AGENTS.md" }
-orchestrator: { max_items: 5, concurrency: 2, auto_merge: false }
+orchestrator: { max_items: 5, concurrency: 2, auto_merge: false, scale_out: 8 }
 knowledge: { dir: "docs/knowledge" }
 ledger: { dir: ".crew" }          # local mode: per-task state
 local: { isolation: auto }        # auto | kosho | git-worktree | none
@@ -163,6 +176,9 @@ to do this).
   local: an `ESCALATION.md` in the ledger).
 - **Bounded.** The orchestrator acts on at most `orchestrator.max_items` per run,
   and review loops stop after `max_review_iterations`.
+- **Scale-out always asks first.** crew never spawns a Claude Workflow for
+  huge-scope work without an explicit confirmation (shown with an agent-count/cost
+  estimate); below `orchestrator.scale_out` units it stays on the serial loop.
 - **`gh` only in GitHub mode.** GitHub mode uses the GitHub CLI (`gh auth status`
   must be green); local mode needs neither `gh` nor a remote.
 
