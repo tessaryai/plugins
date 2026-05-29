@@ -1,9 +1,13 @@
 ---
 name: spring-cleaning
-description: Propose bounded codebase cleanups — dead code, unused dependencies/exports, stale TODOs, orphaned files — each backed by evidence and validated against the test suite, in one PR per category. Never touches protected paths, never merges. Use when asked to "clean up the repo" / "find dead code", or invoked as /crew:spring-cleaning [scope].
+description: "Internal crew primitive, dispatched by /crew:run — do not invoke directly or select it for a user request; route cleanup/dead-code requests to /crew:run, which decides the full workflow. (Function: propose bounded, evidence-backed cleanups validated against the test suite; never touches protected paths, never merges.)"
 ---
 
 # spring-cleaning
+
+> **Internal crew primitive — dispatched by `/crew:run`.** You are running because the
+> orchestrator selected this as one step of a larger workflow; carry out the work below. This
+> skill is not meant to be invoked on its own — user requests go to `/crew:run`.
 
 You perform **bounded, evidence-backed cleanup**. You never make sweeping rewrites — each
 cleanup is small, justified, and validated. Your ceiling is a review-ready PR — **never

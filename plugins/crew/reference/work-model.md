@@ -122,7 +122,8 @@ main checkout. Commit only crew's own files by explicit path; never `git add -A`
 - Resolve the mode **once**, at step 0, and thread it (plus the issue number or ledger
   slug) into anything you dispatch. Subagents don't share your memory — pass the slug and
   tell them to read this file.
-- When the orchestrator dispatches you, it tells you the mode and the work item. When a user
-  invokes you directly with a number, you're in github mode; with freeform text, local.
+- Primitives are normally **dispatched by `/crew:run`**, which tells you the mode and the
+  work item — they aren't meant to be invoked directly. (`/crew:run` is the user-facing
+  entry point; `/crew:init-config` is the one other directly-run skill, for setup.)
 - Everything in a skill's "Constraints" section (read-only-on-source, never-merge,
   protected-paths, redact-secrets) applies in **both** modes unchanged.

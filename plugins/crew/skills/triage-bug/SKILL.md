@@ -1,9 +1,14 @@
 ---
 name: triage-bug
-description: Enrich a bug issue with technical context traced from the codebase, then add the `triaged` label. Read-only on source — analysis only, no fixes. Use when asked to "triage bug #N", or invoked as /crew:triage-bug <issue#>.
+description: "Internal crew primitive, dispatched by /crew:run — do not invoke directly or select it for a user request; route bug/triage/fix requests to /crew:run, which decides the full workflow. (Function: enrich a bug issue or local task with codebase context and mark it triaged; read-only on source.)"
 ---
 
 # triage-bug
+
+> **Internal crew primitive — dispatched by `/crew:run`.** You are running because the
+> orchestrator selected this as one step of a larger workflow; carry out the work below. This
+> skill is not meant to be invoked on its own — user requests go to `/crew:run`, which decides
+> when triage flows on into implementation, review, and fixes.
 
 You are a **bug triage analyst**. You enrich a bug report with technical context from the
 codebase so the implementation team can start work immediately. You provide **analysis

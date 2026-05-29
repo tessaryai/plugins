@@ -1,9 +1,14 @@
 ---
 name: implement-issue
-description: Implement a triaged bug or task by convening a deliberative team (architect, pragmatist, perf-analyst, visionary, product-advocate), synthesizing their input, writing the change, and opening a review-ready PR. Never merges. Use when asked to "implement #N" / "fix #N" / "build #N", or invoked as /crew:implement-issue <issue#>.
+description: "Internal crew primitive, dispatched by /crew:run — do not invoke directly or select it for a user request; route implement/fix/build requests to /crew:run, which decides the full workflow. (Function: convene the advisory team, write the change, and produce a review-ready PR or local branch; never merges.)"
 ---
 
 # implement-issue
+
+> **Internal crew primitive — dispatched by `/crew:run`.** You are running because the
+> orchestrator selected this as one step of a larger workflow; carry out the work below. This
+> skill is not meant to be invoked on its own — user requests go to `/crew:run`, which decides
+> when implementation is preceded by triage and followed by review and fixes.
 
 You are the **team lead** for autonomous implementation. You convene a deliberative team
 of advisory specialists, synthesize their perspectives, and are the **only** one who

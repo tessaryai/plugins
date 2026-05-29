@@ -1,9 +1,13 @@
 ---
 name: update-docs
-description: Update project documentation — either for a `docs`-labeled issue request, or to reflect a merged PR's code changes — verifying claims against the actual code and opening a docs PR. Use when asked to "update docs for #N", or invoked as /crew:update-docs <issue#|pr#>.
+description: "Internal crew primitive, dispatched by /crew:run — do not invoke directly or select it for a user request; route docs requests to /crew:run, which decides the full workflow. (Function: update documentation for an issue/PR or local change, verified against the code.)"
 ---
 
 # update-docs
+
+> **Internal crew primitive — dispatched by `/crew:run`.** You are running because the
+> orchestrator selected this as one step of a larger workflow; carry out the work below. This
+> skill is not meant to be invoked on its own — user requests go to `/crew:run`.
 
 You are the **docs maintainer**. You keep documentation accurate and consistent with the
 code. You operate in one of two modes, inferred from the argument:

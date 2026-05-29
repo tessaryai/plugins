@@ -3,6 +3,28 @@
 All notable changes to the `crew` plugin are documented here. This project
 follows [semantic versioning](https://semver.org/).
 
+## [0.3.0] — unreleased
+
+### Changed
+
+- **`/crew:run` is now the sole entry point** and **auto-activates on ordinary
+  development requests** — you no longer have to say "crew" or type the command.
+  The primitives (`triage-bug`, `implement-issue`, `review-pr`, …) are internal and
+  only dispatched by the orchestrator, so a request like "triage this bug" flows
+  through the full workflow instead of stopping after one step.
+  `/crew:init-config` remains directly runnable for setup.
+- **Free-flowing workflow composition.** The fixed menu of named playbooks is
+  replaced by a reasoning framework (`reference/workflow.md`): the orchestrator
+  assesses each request against one mission — best-in-class implementation, coding
+  standards, and project health — and composes the right sequence of primitives,
+  right-sizing the effort (a typo stays light; a feature gets the full team,
+  review loop, and docs/knowledge). The former playbooks remain as illustrative
+  patterns, not a closed list.
+- **New default with no goal:** `/crew:run` (no argument) inspects the current
+  branch's changes and composes a polish-the-branch workflow on them
+  (review → fix loop), falling back to the GitHub backlog only when the branch is
+  clean.
+
 ## [0.2.0] — unreleased
 
 ### Added

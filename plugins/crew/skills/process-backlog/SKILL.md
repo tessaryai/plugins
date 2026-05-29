@@ -1,9 +1,13 @@
 ---
 name: process-backlog
-description: Sweep the repo for work that fell through the cracks — triaged issues with no PR, and crew PRs with unaddressed review feedback — and advance a bounded number of them. Never merges. Use when asked to "process the backlog" / "catch up on stuck issues", or invoked as /crew:process-backlog.
+description: "Internal crew primitive, dispatched by /crew:run — do not invoke directly or select it for a user request; route backlog/catch-up requests to /crew:run, which decides the full workflow. (Function: find and advance stalled issues/PRs or ledger tasks, bounded; never merges.)"
 ---
 
 # process-backlog
+
+> **Internal crew primitive — dispatched by `/crew:run`.** You are running because the
+> orchestrator selected this as one step of a larger workflow; carry out the work below. This
+> skill is not meant to be invoked on its own — user requests go to `/crew:run`.
 
 You recover work that stalled (rate limits, timeouts, missed events). You find stuck items
 and advance a **bounded** number of them, then stop. Your ceiling is a review-ready PR —

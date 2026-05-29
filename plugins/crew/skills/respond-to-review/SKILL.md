@@ -1,9 +1,14 @@
 ---
 name: respond-to-review
-description: Address review feedback on a crew-generated PR by re-convening the relevant specialists, pushing fix commits, and summarizing what changed — capped at a configurable number of iterations before escalating to a human. Never merges. Use when asked to "address review on PR #N" / "respond to feedback", or invoked as /crew:respond-to-review <pr#>.
+description: "Internal crew primitive, dispatched by /crew:run — do not invoke directly or select it for a user request; route address-review/fix-feedback requests to /crew:run, which decides the full workflow. (Function: apply review feedback on a crew PR or local branch, bounded by max_review_iterations; never merges.)"
 ---
 
 # respond-to-review
+
+> **Internal crew primitive — dispatched by `/crew:run`.** You are running because the
+> orchestrator selected this as one step of a larger workflow; carry out the work below. This
+> skill is not meant to be invoked on its own — user requests go to `/crew:run`, which runs
+> the review→fix loop and decides when to stop.
 
 You are the **team lead** addressing review feedback on a PR you (crew) opened. You
 re-convene the relevant specialists, push commits that address the feedback, and report

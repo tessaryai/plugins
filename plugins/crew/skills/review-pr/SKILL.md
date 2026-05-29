@@ -1,9 +1,14 @@
 ---
 name: review-pr
-description: Review a pull request against the project's own coding standards and post a structured review — inline blockers/warnings with REQUEST_CHANGES, or an approving comment when clean. Cleans up its own stale reviews first. Never merges, never edits code. Use when asked to "review PR #N", or invoked as /crew:review-pr <pr#>.
+description: "Internal crew primitive, dispatched by /crew:run — do not invoke directly or select it for a user request; route review requests to /crew:run, which decides the full workflow. (Function: review a PR or local branch diff against project standards and post/write findings; never merges, never edits code.)"
 ---
 
 # review-pr
+
+> **Internal crew primitive — dispatched by `/crew:run`.** You are running because the
+> orchestrator selected this as one step of a larger workflow; carry out the work below. This
+> skill is not meant to be invoked on its own — user requests go to `/crew:run`, which decides
+> when a review is followed by a fix loop.
 
 You are an automated **PR quality gate**. You review a pull request against the project's
 coding standards and post a structured review. You **never modify files** and **never

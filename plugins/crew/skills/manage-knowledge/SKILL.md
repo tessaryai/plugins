@@ -1,9 +1,13 @@
 ---
 name: manage-knowledge
-description: Capture durable engineering knowledge — decisions, rationale, and gotchas — from merged PRs and review discussions into an evergreen knowledge base, deduped against what's already recorded. Use when asked to "capture knowledge from PR #N" / "update the knowledge base", or invoked as /crew:manage-knowledge [pr#].
+description: "Internal crew primitive, dispatched by /crew:run — do not invoke directly or select it for a user request; route knowledge-capture requests to /crew:run, which decides the full workflow. (Function: capture durable decisions, rationale, and gotchas into the knowledge base, deduped.)"
 ---
 
 # manage-knowledge
+
+> **Internal crew primitive — dispatched by `/crew:run`.** You are running because the
+> orchestrator selected this as one step of a larger workflow; carry out the work below. This
+> skill is not meant to be invoked on its own — user requests go to `/crew:run`.
 
 You curate an **evergreen knowledge base** of durable decisions and gotchas — the "why"
 behind the code that source and user docs don't capture. This complements `update-docs`

@@ -6,11 +6,17 @@ implementing fixes and features through a deliberative team, reviewing PRs,
 responding to review feedback, and keeping docs and knowledge current — running
 unattended **up to a review-ready PR** (it never merges; you do).
 
-You can drive it two ways:
-
-- **Autonomous** — `/crew:run "close out the open bugs"` lets the orchestrator
-  survey your repo and advance every actionable item.
-- **Direct** — invoke any single capability yourself, e.g. `/crew:review-pr 42`.
+**Just describe the development work you want — you don't have to say "crew" or
+type a command.** crew is the team's single entry point and activates on ordinary
+dev requests ("add a `--json` flag", "fix the failing test", "review PR 42",
+"make this production-ready", "clean up dead code"), or run `/crew:run` with no
+goal to polish the current branch. It assesses the request and runs the whole
+workflow, scaling its rigor to the task. The individual capabilities below
+(triage, implement, review, …) are **internal primitives the orchestrator
+dispatches** — you don't pick them yourself, because a single primitive only does
+its one step (a triage on its own won't go on to fix the bug; the orchestrator is
+what carries it through). You can still type `/crew:run "<goal>"` explicitly when
+you want to be precise.
 
 And it works in two **modes**, chosen automatically:
 
@@ -44,6 +50,9 @@ And it works in two **modes**, chosen automatically:
 # Local: hand it a freeform task — no GitHub needed
 /crew:run "add a hello command to the CLI"
 
+# No goal: review and polish the changes on your current branch
+/crew:run
+
 # or preview the plan without acting
 /crew:run "fix the open bugs" --dry-run
 ```
@@ -54,23 +63,26 @@ And it works in two **modes**, chosen automatically:
 
 | Skill | What it does |
 |---|---|
-| `/crew:run "<goal>" [--dry-run]` | Resolves the mode, surveys the work (GitHub issues/PRs, or the freeform task + local ledger), picks a recommended **playbook**, and dispatches the primitives below along it — looping until the goal is met or a guardrail stops it. Never merges. |
+| `/crew:run "<goal>" [--dry-run]` | Resolves the mode, surveys the work (GitHub issues/PRs, or the freeform task + local ledger), **assesses what the request needs and composes the right workflow**, then dispatches the primitives below along it — looping until the goal is met or a guardrail stops it. Never merges. |
 
-#### Playbooks
+#### How it decides
 
-The orchestrator sequences work along a named **playbook** it infers from your
-goal, instead of acting ad hoc. The headline one, `full-feature`:
+There's no fixed menu of workflows. The orchestrator reasons about each request
+the way a tech lead would — what outcome you want, the current state of the repo,
+and what "done well" actually requires — then composes a sequence of primitives to
+get there. It works backwards from one mission: **best-in-class implementation,
+coding standards, and project health.**
 
-```
-triage → implement → [ docs ‖ self-review ] → loop{ respond → re-review } → capture knowledge
-```
+It also **right-sizes the effort**: a typo gets implemented and quickly reviewed;
+a real feature gets the full advisory team, thorough review, a review→fix loop,
+and doc/knowledge updates. Independent work can fork to run in parallel; review
+loops are bounded by `max_review_iterations`. The reasoning framework,
+effort-scaling guidance, and illustrative patterns live in `reference/workflow.md`.
 
-Others: `bugfix`, `triage-only`, `review-only`, `docs-refresh`,
-`knowledge-capture`, `cleanup`, and `backlog-recovery`. Independent work can fork
-to run in parallel; the review→fix loop is bounded by `max_review_iterations`. See
-`reference/playbooks.md`.
+### The primitives (internal — dispatched by the orchestrator)
 
-### The primitives (also usable on their own)
+You don't invoke these directly; `/crew:run` selects and sequences them. They're
+listed here so you know what the orchestrator has at its disposal.
 
 | Skill | What it does |
 |---|---|
@@ -83,11 +95,10 @@ to run in parallel; the review→fix loop is bounded by `max_review_iterations`.
 | `/crew:process-backlog` | Finds triaged issues without PRs and agent PRs with unaddressed reviews |
 | `/crew:manage-knowledge [pr#]` | Captures durable decisions and gotchas into your knowledge base |
 | `/crew:spring-cleaning [scope]` | Proposes bounded cleanups (dead code, unused deps, stale TODOs) |
-| `/crew:init-config` | Writes a `crew.config.yaml` tuned to your repo |
+| `/crew:init-config` | Writes a `crew.config.yaml` tuned to your repo (this one *is* meant to be run directly, as one-time setup) |
 
-The triage/implement/review/respond skills take a GitHub issue or PR **number**
-in GitHub mode, or a **freeform description** (triage/implement) or **ledger
-slug** (review/respond) in local mode.
+The orchestrator dispatches each primitive with a GitHub issue/PR **number** in
+GitHub mode, or a **freeform description / ledger slug** in local mode.
 
 ### The team
 
