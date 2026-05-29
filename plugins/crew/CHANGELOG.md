@@ -3,6 +3,15 @@
 All notable changes to the `crew` plugin are documented here. This project
 follows [semantic versioning](https://semver.org/).
 
+## [0.3.1] — unreleased
+
+### Changed
+
+- Local-mode git worktrees now live under the ledger dir at
+  `<ledger.dir>/worktrees/<slug>` (default `.crew/worktrees/`) instead of a
+  separate `.crew-worktrees/`. One gitignore entry (`.crew/`) now covers
+  everything crew writes locally.
+
 ## [0.3.0] — unreleased
 
 ### Changed

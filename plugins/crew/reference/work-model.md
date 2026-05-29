@@ -93,8 +93,8 @@ across steps and across re-runs.
 The ledger holds the *artifacts*; **git holds the diff** (the branch + commits). The ledger
 only points at the branch — never paste diffs into it.
 
-**Never `git add` the ledger or worktree directories** (`.crew/`, `.kosho/`,
-`.crew-worktrees/`). They are crew's scratch space, not part of the user's change.
+**Never `git add` the ledger or worktree directories** (`<ledger.dir>/`, default `.crew/`,
+and `.kosho/`). They are crew's scratch space, not part of the user's change.
 
 ## 4. Worktree isolation (local mode)
 
@@ -106,9 +106,9 @@ isolated git worktree on the task's branch. Resolve `local.isolation`:
 - **`kosho`** — `kosho run crew-<slug> git rev-parse --show-toplevel` creates (on first
   use) and reports the worktree at `.kosho/crew-<slug>` on branch `crew-<slug>`. Run
   validation commands inside it via `kosho run crew-<slug> <cmd>`.
-- **`git-worktree`** — `git worktree add .crew-worktrees/<slug> -b crew/<slug>` (if the
-  branch/worktree already exists from a prior run, reuse it instead of erroring). Run
-  validation by `cd`-ing into `.crew-worktrees/<slug>`.
+- **`git-worktree`** — `git worktree add <ledger.dir>/worktrees/<slug> -b crew/<slug>`
+  (default `.crew/worktrees/<slug>`; if the branch/worktree already exists from a prior run,
+  reuse it instead of erroring). Run validation by `cd`-ing into that path.
 - **`none`** — no worktree; create/checkout branch `crew/<slug>` in the main working tree.
   First run `git status --porcelain`; if the tree is dirty in files crew intends to touch,
   **stop and report** rather than committing over the user's work.

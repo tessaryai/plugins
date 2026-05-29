@@ -51,7 +51,8 @@ Then edit `crew.config.yaml` to reflect this repo:
 Keep the explanatory comments so the file stays self-documenting.
 
 If local mode may be used, offer to add crew's scratch dirs to `.gitignore` so they don't
-pollute the repo or crew's own diffs: `.crew/`, `.kosho/`, `.crew-worktrees/`.
+pollute the repo or crew's own diffs: `.crew/` (the ledger, which also holds local
+worktrees) and `.kosho/`.
 
 ## 4. Confirm and next steps
 

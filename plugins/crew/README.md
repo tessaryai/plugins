@@ -150,8 +150,9 @@ writes in a git worktree, governed by `local.isolation`:
   dirty-tree guard).
 
 crew never touches your main working tree in worktree modes, and never merges —
-you review the branch and merge yourself. Add `.crew/`, `.kosho/`, and
-`.crew-worktrees/` to `.gitignore` (`/crew:init-config` offers to do this).
+you review the branch and merge yourself. Add `.crew/` (the ledger, which also
+holds local worktrees) and `.kosho/` to `.gitignore` (`/crew:init-config` offers
+to do this).
 
 ## Safety model
 

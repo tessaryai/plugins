@@ -76,6 +76,6 @@ local:
   # How crew isolates the code it writes in local mode:
   #   auto         — use kosho if installed, else native `git worktree` (default)
   #   kosho        — always use kosho worktrees (.kosho/)
-  #   git-worktree — always use native `git worktree` (.crew-worktrees/)
+  #   git-worktree — always use native `git worktree` (<ledger.dir>/worktrees/)
   #   none         — commit on a crew/<slug> branch in the main working tree
   isolation: auto
