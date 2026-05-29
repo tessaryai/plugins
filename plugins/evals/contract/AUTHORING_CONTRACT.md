@@ -38,7 +38,7 @@ This document defines the interface between **synthesize-graders** (the orchestr
 
 ## What changed in v2
 
-- `applies_when_check` is a new author-owned field: a code-evaluable mirror of `applies_when` required when `kind=deterministic` AND `applies_when` is non-empty. (Both `applies_when_check` and the per-grader self-test fields it referenced were later removed — see v6 and v7.)
+- `applies_when_check` is a new author-owned field: a code-evaluable mirror of `applies_when` required when `kind=deterministic` AND `applies_when` is non-empty. (`applies_when_check` was later removed in v6; the per-grader self-test fields were removed in v7.)
 - The orchestrator writes a `_meta` provenance block onto every grader file and respects `_meta.locked_fields` on re-run. Authors should not touch `_meta`.
 - Per-grader operational fields (`owner`, `block_on_fail`, `cost_budget_tokens`, `latency_budget_ms_p95`, `dataset_refs`) are optional and orchestrator-owned by default; authors may emit `cost_budget_tokens` / `latency_budget_ms_p95` if they can reason about them, but the orchestrator fills in operational fields from the call site's `observed.*` stats when authors omit them.
 
