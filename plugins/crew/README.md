@@ -137,7 +137,6 @@ labels: { bug: bug, task: task, triaged: triaged, docs: docs,
           agent_pr: agent-generated, needs_human: needs-human }
 guardrails:
   protected_paths: ["**/migrations/**", "**/*.tf", "Dockerfile*", ".env*", ".github/**"]
-  max_files_per_pr: 5
   max_review_iterations: 3
 commands: { install: "npm ci", lint: "npm run lint", test: "npm test" }
 review_standards: { source: "AGENTS.md" }

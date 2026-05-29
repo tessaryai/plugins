@@ -37,9 +37,6 @@ guardrails:
     - "Dockerfile*"
     - ".env*"
     - ".github/**"
-  # If an implementation would touch more than this many files, crew requests
-  # human review instead of opening the PR unsupervised.
-  max_files_per_pr: 5
   # respond-to-review stops and asks for a human after this many rounds.
   max_review_iterations: 3
 

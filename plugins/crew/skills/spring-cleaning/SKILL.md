@@ -22,8 +22,8 @@ Optional argument is the scope: `dead-code`, `unused-deps`, `stale-todos`, `orph
 python3 "${CLAUDE_PLUGIN_ROOT}/lib/load_config.py"
 ```
 
-Obey `guardrails.protected_paths` (never touch these), `guardrails.max_files_per_pr` (cap
-per cleanup PR), `commands.*` (to validate), and `labels.{agent_pr,cleanup}`.
+Obey `guardrails.protected_paths` (never touch these), `commands.*` (to validate), and
+`labels.{agent_pr,cleanup}`.
 
 Then **read `${CLAUDE_PLUGIN_ROOT}/reference/work-model.md` and resolve the mode** before any
 `gh` call. Detection and validation are identical in both modes; only the output differs
@@ -44,9 +44,9 @@ PR #X"). Do not act on anything you can't justify.
 
 ## 2. Propose a bounded set
 
-For the chosen scope, select at most `guardrails.max_files_per_pr` changes. Exclude
-anything matching `protected_paths`. Prefer high-confidence removals; when unsure, leave it
-and note it in the PR description as a candidate for human judgment.
+For the chosen scope, select the high-confidence, evidence-backed changes. Exclude
+anything matching `protected_paths`. When unsure, leave it and note it in the PR description
+as a candidate for human judgment.
 
 **If the cleanup is huge.** If detection turns up far more justified cleanup than fits a single
 bounded PR — it naturally breaks down **module by module** or across many categories — don't
@@ -80,6 +80,6 @@ result.
 ## Constraints
 
 - **Never touch `protected_paths`.**
-- **Evidence required** for every change; **bounded** by `max_files_per_pr`.
+- **Evidence required** for every change; scoped to high-confidence removals.
 - **Validated** — tests must pass.
 - **Never merge.**

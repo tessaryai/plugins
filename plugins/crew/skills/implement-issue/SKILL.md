@@ -24,7 +24,7 @@ The argument is the work to implement: a GitHub issue number (e.g.
 python3 "${CLAUDE_PLUGIN_ROOT}/lib/load_config.py"
 ```
 
-Read and obey: `guardrails.protected_paths`, `guardrails.max_files_per_pr`,
+Read and obey: `guardrails.protected_paths`,
 `labels.{bug,task,agent_pr,needs_human}`, `team.personas`, `commands.{install,lint,typecheck,test}`,
 `ledger.dir`, `local.isolation`, and `review_standards.source`. Also read the project's
 `AGENTS.md`/`CLAUDE.md` for coding conventions — your change must follow them.
@@ -82,9 +82,6 @@ If the team can't converge after two rounds, pick the smallest-blast-radius appr
   (migrations, infra, auth, secrets, CI, …): **do not proceed.** Escalate instead — github:
   comment on the issue explaining what needs to change and add `labels.needs_human`; local:
   write `<ledger.dir>/<slug>/ESCALATION.md` and set `status: needs_human`. Then stop.
-- If the change will touch **more than `guardrails.max_files_per_pr` files**: implement on
-  the branch but, before finishing, request human review of the approach (github: a PR
-  comment; local: a note in `decision.md`). Do not silently sprawl.
 
 ## 5. Implement
 

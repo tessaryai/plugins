@@ -119,7 +119,7 @@ Only when a plan's shape genuinely doesn't fit the shipped template — e.g. a d
 graph that can't be split into independent waves — may you author a **bespoke inline**
 `Workflow({ script })`. If you do, it **must** reuse the same contract this file defines: the
 identical dispatch prompt (§4 / run/SKILL.md step 5), `isolation: 'worktree'` for mutating
-agents, per-unit `max_files_per_pr` bounds, one branch/PR per unit, and **never merge**. The
+agents, one branch/PR per unit, and **never merge**. The
 shipped script is the reference implementation; a bespoke one must not drift from it.
 
 ## 6. Synthesis and report
@@ -138,6 +138,5 @@ The Workflow runs in the background and notifies you on completion. Then:
 - **Always confirm** before spawning — no Workflow without explicit user approval.
 - **Never merge**, at any scale. The ceiling is review-ready, per unit.
 - **One branch/PR per unit** — never one giant PR.
-- Every per-unit guardrail still applies inside each unit-agent: `protected_paths` → escalate,
-  `max_files_per_pr` per unit.
+- Every per-unit guardrail still applies inside each unit-agent: `protected_paths` → escalate.
 - Stay above the `orchestrator.scale_out` floor; below it, use the serial loop.

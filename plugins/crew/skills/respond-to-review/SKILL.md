@@ -24,7 +24,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/lib/load_config.py"
 ```
 
 Read `guardrails.max_review_iterations`, `guardrails.protected_paths`,
-`guardrails.max_files_per_pr`, `team.personas`, `labels.needs_human`, `ledger.dir`, and the
+`team.personas`, `labels.needs_human`, `ledger.dir`, and the
 `commands.*` for validation.
 
 Then **read `${CLAUDE_PLUGIN_ROOT}/reference/work-model.md` and resolve the mode** before any

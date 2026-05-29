@@ -106,7 +106,7 @@ patterns exist to save thinking on common cases, not to constrain you.
 - **Quality gate before "done"** — anything that changes behavior gets at least one review
   pass before you consider it finished; don't skip review to save a step.
 - **Respect guardrails** — never touch `protected_paths`; escalate instead. Stay within
-  `orchestrator.max_items` per run and `max_files_per_pr` per change.
+  `orchestrator.max_items` per run.
 - **Keep self-review honest** — when reviewing crew's own work locally, dispatch the review
   as a fresh subagent given only the diff and the standards, not the implementation
   rationale.

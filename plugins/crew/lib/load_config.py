@@ -50,7 +50,6 @@ DEFAULTS = {
             ".env*",
             ".github/**",
         ],
-        "max_files_per_pr": 5,
         "max_review_iterations": 3,
     },
     "commands": {"install": None, "lint": None, "typecheck": None, "test": None},

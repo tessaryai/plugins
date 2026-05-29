@@ -75,7 +75,7 @@ const dispatch = (u, primitive, extra = '') =>
   `Work item: ledger slug "${u.slug}" — ${u.description}. ` +
   `Scope strictly to this unit's target: ${u.target}. ` +
   `Obey every guardrail in crew.config.yaml; never touch protected_paths (escalate instead); ` +
-  `stay within max_files_per_pr; do not merge anything. ${extra} ` +
+  `do not merge anything. ${extra} ` +
   `Report back: what you did, the PR URL or branch name, the files you touched, and whether ` +
   `you escalated (needs_human label / ESCALATION.md).`
 

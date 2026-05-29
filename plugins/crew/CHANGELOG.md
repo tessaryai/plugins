@@ -3,6 +3,18 @@
 All notable changes to the `crew` plugin are documented here. This project
 follows [semantic versioning](https://semver.org/).
 
+## [0.5.0] — 2026-05-29
+
+### Removed
+
+- **The `max_files_per_pr` cap is gone.** crew no longer bounds a change by file
+  count or escalates large diffs on that basis. `implement-issue` drops its
+  size-based "request human review" brake, and `spring-cleaning` is now bounded by
+  evidence, scope, and the test suite rather than a hard file count. The
+  `protected_paths` guardrail and the never-merge ceiling are unchanged. The
+  `guardrails.max_files_per_pr` config knob is removed (any leftover value in your
+  `crew.config.yaml` is simply ignored).
+
 ## [0.4.0] — 2026-05-29
 
 ### Added
