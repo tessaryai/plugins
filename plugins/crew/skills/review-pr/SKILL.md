@@ -25,10 +25,15 @@ python3 "${CLAUDE_PLUGIN_ROOT}/lib/load_config.py"
 
 Read the project's coding standards from `review_standards.source` (default `AGENTS.md`;
 also read `CLAUDE.md`). These — not any built-in opinion — are what you review against.
-Note `guardrails.protected_paths` for the prohibited-changes check.
+Note `guardrails.protected_paths` for the prohibited-changes check, and `team.personas` (the
+advisory panel — convened for substantial diffs in step 2).
 
 Then **read `${CLAUDE_PLUGIN_ROOT}/reference/work-model.md` and resolve the mode** before any
 `gh` call — it decides where you read the diff and where you post the review.
+
+Then **read `${CLAUDE_PLUGIN_ROOT}/reference/review-rigor.md` and review with the posture it
+defines** — it is the review counterpart to the personas' advise-not-block posture during
+`implement-issue`.
 
 Review the code **as written**; in local self-review, judge the diff against the standards,
 not the implementation rationale.
@@ -39,10 +44,40 @@ not the implementation rationale.
 - **Local mode:** read the task's branch from `<ledger.dir>/<slug>/task.md`, then
   `git diff <base>...<branch>` inside the worktree (`<base>` is the branch point).
 
-## 2. Analyze each changed file
+## 2. Analyze the change
 
-Check against the project's documented standards. In the absence of project-specific
-rules, apply these widely-accepted ones:
+Right-size the rigor to the diff (mirroring how `implement-issue` right-sizes team
+deliberation):
+
+- **Routine diff — the default.** A contained change, a handful of files, low blast radius:
+  review it yourself in one focused pass against the checklist below. A change that merely spans
+  a couple of packages is still routine — don't spin up five subagents for an ordinary multi-file
+  edit.
+- **Substantial / risky diff — convene the advisory panel** only when the change is genuinely
+  high-stakes: it touches **security/auth, concurrency, or a public API / output contract**, OR
+  it is **large** (roughly 10+ files, or a core-subsystem rewrite). Then spawn each persona in
+  `team.personas` as a subagent (via `Task` / `TeamCreate`), give each the **diff + the
+  standards**, and charge each to *attack the change from their lens* and return `file:line`
+  findings with severities:
+  - `architect` — convention/layering/contract violations; logic in the wrong place.
+  - `pragmatist` — regressions, edge cases the change misses, blast radius, new failure modes.
+  - `perf-analyst` — hot-path cost, added queries/allocations, concurrency hazards.
+  - `product-advocate` — observable-behavior / output-shape / UX regressions; does it actually
+    address what was asked?
+  - `visionary` — tech debt or a bad pattern the change locks in.
+
+  (The lenses above mirror `agents/*.md`; the review *posture* lives in `review-rigor.md` — edit
+  posture there, not here. A custom persona configured in `team.personas` is convened too, with
+  the generic "attack from your lens" charge.)
+
+  You are the lead: collect their findings, **dedup**, and **reconcile divergence** per
+  `review-rigor.md` — surface disagreement, weigh by blast radius, and flag a high-stakes split
+  for the human to decide rather than silently averaging.
+
+**Check** against the project's documented standards; absent project-specific rules, apply these
+widely-accepted ones. In a **solo** review you apply this whole checklist; in a **panel** review
+each persona applies the slice that fits their lens and you (the lead) own the full checklist as
+the baseline:
 
 - **Correctness & safety** — obvious bugs, unhandled errors, race conditions, resource
   leaks, off-by-one / null handling.
@@ -57,6 +92,11 @@ rules, apply these widely-accepted ones:
 
 Classify each finding: **blocker** (must fix), **warning** (should fix), or **suggestion**
 (optional). Cap at the ~20 most important findings — blockers first.
+
+**Verify before you flag.** Before you keep a **blocker**, re-read the cited code and its
+surrounding context to confirm the problem is real (`review-rigor.md`). Drop or downgrade any
+finding you can't confirm against the code — a false blocker requests changes a human must
+refute, or sends the review→fix loop chasing a non-bug.
 
 ## 3. Clean up your own stale reviews
 
@@ -87,6 +127,7 @@ Each finding gives **file:line**, **severity**, **category**, and a **constructi
 
 ```markdown
 ## Review — iteration <K>  (status: changes_requested)
+**Verdict:** changes-requested
 ### Blockers
 - `path/to/file:42` — **(Security)** … constructive fix …
 ### Warnings
@@ -104,7 +145,8 @@ the affected lines:
 gh api "repos/{owner}/{repo}/pulls/<N>/reviews" \
   -f event="REQUEST_CHANGES" \
   -f body="## Code Review Summary
-Found N blocker(s) and M warning(s)." \
+Found N blocker(s) and M warning(s).
+Verdict: changes-requested." \
   -f 'comments[0][path]=path/to/file' \
   -f 'comments[0][line]=42' \
   -f 'comments[0][body]=**Blocker (Security)**: … constructive fix …'
@@ -116,6 +158,7 @@ Found N blocker(s) and M warning(s)." \
 gh pr comment <N> --body "## Code Review Summary
 
 No blockers or warnings found. K suggestion(s) noted.
+Verdict: approve.
 
 **Suggestions:**
 - \`path/to/file:8\` — …"
@@ -124,8 +167,12 @@ No blockers or warnings found. K suggestion(s) noted.
 ### Rules
 
 - Always prefix the review body with `## Code Review Summary`.
+- **End the summary with an explicit verdict** — `approve` (clean / suggestions only) or
+  `changes-requested` (blockers or warnings to fix). A `protected_paths` change or a high-stakes
+  split decision is a blocker that names the call for a human to make — crew reviews, it never
+  decides the merge.
 - Inline comments for blockers/warnings, on the exact line.
-- Each finding states **severity**, **category**, and a **constructive suggestion**.
+- Each finding states **severity**, **category**, **`file:line`**, and a **constructive
+  suggestion** — and is one you verified against the code (`review-rigor.md`), not a guess.
 - **Never auto-merge** — a human approves and merges.
 - **Never modify files** — review and comment only.
-- Be specific: exact file paths and line numbers.

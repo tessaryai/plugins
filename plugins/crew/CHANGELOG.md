@@ -3,6 +3,27 @@
 All notable changes to the `crew` plugin are documented here. This project
 follows [semantic versioning](https://semver.org/).
 
+## [0.6.0] — 2026-06-03
+
+### Added
+
+- **Adversarial multi-lens review.** For a substantial or risky diff, `review-pr` now convenes
+  the advisory panel (architect, pragmatist, perf-analyst, product-advocate, visionary) to each
+  **attack the finished change from their lens** — instead of a single standards pass. The lead
+  dedups, reconciles divergence, and verifies before posting. Routine diffs still get a fast
+  single-pass review, so the rigor is right-sized the way `implement-issue` already right-sizes
+  team deliberation.
+- **Verify-before-flag.** crew now re-reads the cited code to confirm a **blocker** is real
+  before posting it, and the orchestrator treats an unverified concern as a question rather than
+  burning review→fix iterations on it — so a false positive doesn't request changes on a human's
+  PR or send the fix loop chasing a non-bug. `respond-to-review` likewise sanity-checks a finding
+  against the code before changing anything, and may answer a false positive with a refutation.
+- **`reference/review-rigor.md`** — a shared review posture read by `review-pr`:
+  adversarial-but-grounded, evidence-cited (`file:line` + quote, no speculation), tough-grader
+  severities, an explicit overall **verdict** (`approve` / `changes-requested`), and how to
+  reconcile a divided panel. It's the *review* counterpart to the personas' advise-not-block
+  posture during `implement-issue`, which is unchanged.
+
 ## [0.5.0] — 2026-05-29
 
 ### Removed

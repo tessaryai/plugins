@@ -48,8 +48,10 @@ More process is not more quality. Scale it to the change's size and risk:
 - **Routine** (a contained bug fix, a small feature): understand → implement → review →
   address what review finds. Capture knowledge only if there's a durable lesson.
 - **Substantial / risky** (touches core paths, public API, performance-sensitive code, or
-  spans modules): convene the full advisory team, review thoroughly, loop until clean, keep
-  docs current, and capture the decision. Fork independent sub-parts to run in parallel.
+  spans modules): convene the full advisory team, review thoroughly — for a diff this size
+  `review-pr` reviews with adversarial rigor (`reference/review-rigor.md`), not a single
+  standards pass — loop until clean, keep docs current, and capture the decision. Fork
+  independent sub-parts to run in parallel.
 - **Huge / repo- or module-wide** (a module-by-module rewrite, a repo-wide cleanup spanning
   dozens of files, a migration across many call sites): too big for the serial loop. Decompose
   it into independent units, **confirm with the user**, and fan it out across a single Claude
@@ -105,6 +107,10 @@ patterns exist to save thinking on common cases, not to constrain you.
   default; fanning out to a Workflow is a deliberate, always-confirmed step (`scale-out.md`).
 - **Quality gate before "done"** — anything that changes behavior gets at least one review
   pass before you consider it finished; don't skip review to save a step.
+- **Verify findings before acting on them** — `review-pr` confirms each blocker against the
+  cited code before posting it (`reference/review-rigor.md`), so don't burn review→fix
+  iterations on a finding that doesn't hold up. Treat an unverified concern as a question for the
+  author, not a required change.
 - **Respect guardrails** — never touch `protected_paths`; escalate instead. Stay within
   `orchestrator.max_items` per run.
 - **Keep self-review honest** — when reviewing crew's own work locally, dispatch the review

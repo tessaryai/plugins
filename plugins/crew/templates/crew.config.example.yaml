@@ -53,7 +53,8 @@ review_standards:
   source: "AGENTS.md"
 
 team:
-  # The advisory personas implement-issue / respond-to-review convene.
+  # The advisory personas crew convenes — to advise during implement-issue / respond-to-review,
+  # and (for substantial diffs) to adversarially review in review-pr.
   personas: [architect, pragmatist, perf-analyst, visionary, product-advocate]
 
 knowledge:

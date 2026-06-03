@@ -67,7 +67,10 @@ Collect their guidance. (Skip personas with no relevant comments.)
 
 1. Get onto the branch — github: `gh pr checkout <N>`; local: work in the task's existing
    worktree (from `task.md`).
-2. Make the changes addressing the feedback. **Re-check guardrails** — never touch
+2. Make the changes addressing the feedback. **Sanity-check each finding against the actual code
+   first** — if a finding doesn't hold up on re-reading (a false positive, a concern the code
+   already covers), answer it with the refutation in your summary rather than forcing a change.
+   **Re-check guardrails** — never touch
    `protected_paths`; if feedback demands it, escalate instead (github: `labels.needs_human`;
    local: `ESCALATION.md`).
 3. Validate with the configured `commands.*` (local: inside the worktree).

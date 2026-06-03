@@ -102,7 +102,7 @@ listed here so you know what the orchestrator has at its disposal.
 | `/crew:triage-bug <issue#>` | Enriches a `bug` issue with codebase context and adds the `triaged` label |
 | `/crew:triage-task <issue#>` | Same, for `task`/feature issues |
 | `/crew:implement-issue <issue#>` | Assembles a deliberative team, implements the change, opens a PR (`Fixes #N`) |
-| `/crew:review-pr <pr#>` | Reviews the diff against your standards and posts a structured review |
+| `/crew:review-pr <pr#>` | Reviews the diff against your standards — a fast pass for routine changes, the full adversarial panel for substantial ones — and posts a structured review with a verdict |
 | `/crew:respond-to-review <pr#>` | Re-assembles the team to address review feedback (max iterations capped) |
 | `/crew:update-docs <issue#\|pr#>` | Updates docs for a `docs` issue or after a merged PR; opens a docs PR |
 | `/crew:process-backlog` | Finds triaged issues without PRs and agent PRs with unaddressed reviews |
@@ -119,6 +119,13 @@ GitHub mode, or a **freeform description / ledger slug** in local mode.
 **architect**, **pragmatist**, **perf-analyst**, **visionary**, and
 **product-advocate** — who analyze the change from their angle. Only the lead
 writes code; the personas never do. Their deliberation is summarized in the PR.
+
+The same panel does double duty on the **review** side: for a substantial or risky diff,
+`review-pr` convenes them to **attack the finished change** from each lens — not a single
+standards pass — then dedups, reconciles any divergence, and verifies each blocker against the
+code before posting (`reference/review-rigor.md`). During *implementation* the personas advise
+without blocking; during *review* they're adversarial. Routine diffs still get a fast single
+pass.
 
 ## Configuration
 
