@@ -140,7 +140,7 @@ chain_failure_modes:
     grader_deferred: false    # orchestrator sets in D.3
 ```
 
-Carry the **full 11-field entry schema** shown above — the same canonical chain entry
+Carry the **full 13-field entry schema** shown above — the same canonical chain entry
 documented in `prompts/per_site_kit.md` (§ "chain entry") and authoritative in
 `output_format.md` (`.tessary/pipeline/failure_modes/_chains.yaml`). Omitting
 `call_site_id`, `chain_id`, `pack_ids`, `compliance_tags`, `grader_id`, or
