@@ -62,8 +62,10 @@ plugin directory. **Resolve the plugin path once, at the start of the run,
 and reuse it.** At the start of Phase A, do this via Bash:
 
 ```bash
-PLUGIN="${CLAUDE_PLUGIN_ROOT:-$(find ~/.claude -name SKILL.md -path '*synthesize-graders*' 2>/dev/null | head -1 | xargs -I{} dirname {} | xargs dirname | xargs dirname)}"
-echo "$PLUGIN"
+PLUGIN="${CLAUDE_PLUGIN_ROOT:-$(find ~/.claude -name SKILL.md -path '*synthesize-graders*' 2>/dev/null \
+  | xargs -I{} dirname {} | xargs -I{} dirname {} | xargs -I{} dirname {} \
+  | sort -V | tail -1)}"
+echo "PLUGIN=$PLUGIN"   # surface the resolved version so a stale-cache mismatch is visible
 ```
 
 Cache the result as `$PLUGIN`. **Never hardcode `.claude/skills/synthesize-graders/`** — that path is not stable across Claude Code plugin layouts.
@@ -199,6 +201,9 @@ Send **one message with two Agent tool calls** so they run in parallel.
 1. **Product profile subagent** (`subagent_type: Explore`) — pass `$PLUGIN/prompts/analyze_product.md`, the target repo path, and the absolute `.tessary/` path. Writes `.tessary/pipeline/product_profile.yaml` and `.tessary/pipeline/invariants.yaml`. Returns a manifest with domain, regulatory regimes, data sensitivity kinds, invariant counts, and `coverage_deferred: true` (because call-site discovery may still be running).
 
 2. **Call-site discovery subagent** — choose:
+
+   **Your deliverable is the shard files on disk, not the manifest.** Write each `.tessary/pipeline/call_sites/<id>.yaml` (and any `.tessary/datasets/<id>.jsonl`) directly to disk; the manifest only *summarizes* what you wrote. Before returning, list each file you wrote and confirm it exists — a manifest that names files it did not write is a failure. (Mirrors `analyze_product.md` — "write the shards directly, return a tiny manifest".)
+
    - **Path A — traces provided**: `subagent_type: general-purpose`. Parse the JSONL (OTLP/JSON or flat Python SDK exporter shape), normalize spans, group by normalized system-prompt hash, write one `.tessary/pipeline/call_sites/<id>.yaml` per group and `.tessary/datasets/<id>.jsonl` per group. Span taxonomy and observability stats (`observed.*` p50/p95/error_rate/refusal_rate/cost) are required. Stratified sampling at up to 10 representative spans per site. Set `invocation: sdk` by default; if span attributes show the model was reached via a shelled-out agent CLI, a raw HTTP gateway, or a sandbox runner (e.g. a `gen_ai.system` / command attribute naming `claude`, `ollama`, an `http.url` to a model host, or a sandbox span parent), set the matching `invocation` instead. Also set `default_grade_mode: per_conversation` when the group is **multi-turn** — ≥ 2 spans for this site share a `trace_id` (or session id) — so its cross-turn graders default to `scope: trace`; otherwise leave it `per_turn` (omit).
    - **Path A-agent — agent-session transcripts provided**: a variant of Path A for Claude Code / opencode session JSONL (and similar agent runners). These are conversation transcripts, not OTLP spans: each line is a turn carrying `tool_use`/`tool_result` blocks, file edits, and bash commands. `subagent_type: general-purpose`. Reconstruct the ordered turn+tool sequence per session and group sessions by the agent's task/system identity into call sites (`invocation: cli_agent` or `sandbox_agent`). Write the captured turns to `.tessary/datasets/<id>.jsonl` using the **agent-session row shape** (see `output_format.md`): a `messages` array of `{role, content, tool_calls?, tool_results?}`, plus an optional per-turn `repo_state: {commit?, git_diff?}` so the **git diff between two turns** is captured as text and becomes a gradeable artifact. Sessions reconstructed this way are the natural input for `scope: trace` graders (prior turns → final turn) and `kind: agentic` graders (which re-inspect the repo state). A site reconstructed from multi-turn sessions (≥ 2 turns) is multi-turn by definition — set `default_grade_mode: per_conversation` on its shard.
    - **Path B — static repo**: `subagent_type: Explore`. Grep for LLM-call patterns; write one shard per discovered call site.
@@ -221,6 +226,12 @@ Send **one message with two Agent tool calls** so they run in parallel.
        ```
      Use `match_field: model` for a pinned model literal, `metadata.<key>` for an explicit metadata/tag the code attaches, `trace_id` only when the code sets a trace-level identifier. **Omit `expected_spans` entirely (or write `[]`) when no instrumentation hint is visible** — never invent a name. This is low-risk metadata: a wrong or missing entry only weakens span binding, it never blocks grading.
 
+     **Confidence rubric — grep-verify before you stamp (do not over-claim).** A `high` confidence span matcher should be trustworthy, so:
+     - assign `confidence: high` **only when the literal `match_pattern` string is found verbatim in source** — grep-confirm it appears in a `start_span("…")` / `tracer.start_as_current_span("…")` / `spanBuilder("…")` / Langfuse `name="…"` literal before stamping `high`;
+     - a name **derived from a variable / method call / interpolation** (`grader.name()`, `f"{x}"`, a registry key) → `confidence: low`, and **never** a wildcard `name` (`*` / `?`) at `high`;
+     - **prefer a grounded `metadata.<key>` matcher over a wildcard `name`** when the code attaches an explicit metadata/tag (a literal `metadata.grader_id` beats a guessed `name`);
+     - emit `expected_spans: []` when the call site **bypasses the common instrumented wrapper** — it calls the model SDK directly with no custom span and no metadata. Do not guess entries for a bypassing site.
+
      **Split on runtime dispatch — a single physical call location is not always a single call site.** A call site is one *(intent, system prompt, output schema)* combination, not one line of code. When a call location selects its prompt or schema from a registry / map / enum / `match` keyed on a parameter, follow the dispatch and emit **one call site per branch** — each branch has its own failure surface and deserves its own graders. Signals that a call location fans out and must be split:
      - the system prompt is loaded by a variable key (`load_prompt(gate.system_prompt_path)`, `PROMPTS[kind]`, `f"{name}.txt"`) rather than a fixed literal;
      - the response schema is chosen per branch (`schema = gate.response_schema`, `SCHEMAS[kind]`);
@@ -238,13 +249,22 @@ Send **one message with two Agent tool calls** so they run in parallel.
 
    Examples (observed → factual): "Stream conversational chat responses about completed test sessions" → `Answer questions about a test session`; "Summarize conversation history into cached message to reduce token usage" → `Compact conversation history`; "Generate aggregate UX analysis report from multiple test sessions" → `Generate aggregate UX report`; "Extract episodic memories from session action steps via background worker" → `Extract episodic memories`.
 
-After both return, read only the manifests. Print:
+After both return, read only the manifests, then **run post-subagent filesystem verification** (see Constraints § "Post-subagent filesystem verification") on the shards they claim to have written — `product_profile.yaml`, `invariants.yaml`, and every `call_sites/*.yaml` — before locking. Print:
 
 ```
 Phase A done: domain=<x>; <N> invariants (<high>/<medium>/<low>); regulatory: [<regimes>] | <M> call sites (<indirect> indirect: cli/http/sandbox); redaction_state=<>
 ```
 
-If the product subagent set `coverage_deferred: true`, spawn a tiny serial follow-up subagent that reads `invariants.yaml` and the call-site shards, computes `invariant_coverage`, and rewrites `invariants.yaml` in place.
+If the product subagent set `coverage_deferred: true`, spawn a tiny serial follow-up subagent that reads `invariants.yaml` and the call-site shards, computes `invariant_coverage`, and rewrites `invariants.yaml` in place. Give it the **exact output shape** — `invariant_coverage` is a **LIST** (per `analyze_product.md` § "Initial coverage assessment" and `output_format.md:157-159`), never a map:
+
+```yaml
+invariant_coverage:
+  - invariant: <invariant id or text>
+    enforced_in: [<call_site_id>, ...]      # sites that already guard it
+    likely_gap_in: [<call_site_id>, ...]    # sites that should but don't
+```
+
+It **must NOT** emit a `invariant_name: [call_site_ids]` mapping (the platform's `readList` rejects an OBJECT), and it **must** discriminate `enforced_in` vs `likely_gap_in` per invariant from real evidence — do not blanket-list every call site in one bucket. Preserve the existing `implicit_invariants` list unchanged.
 
 Lock phase A:
 
@@ -255,6 +275,21 @@ python3 "$PLUGIN/pipeline_io.py" lock A \
   .tessary/pipeline/call_sites/*.yaml \
   --evals-dir .tessary
 ```
+
+**Seed `pipeline/meta.yaml` now and lock it**, so the bundle is self-identifying from the end of Phase A (`publish.py` and the viewer key off `meta.yaml`'s existence; without this seed the bundle reads as a non-bundle until the first `finalize.py`). Use `<N>` = number of call-site shards just written and the product hint from the profile manifest (or `None`):
+
+```bash
+python3 - <<'PY'
+import sys; sys.path.insert(0, "$PLUGIN")
+from pathlib import Path
+import pipeline_io
+pipeline_io.write_meta(Path(".tessary"), "0.12.0", "<product_hint or None>", {},
+                       progress={"sites_completed": 0, "sites_total": <N>})
+PY
+python3 "$PLUGIN/pipeline_io.py" lock A .tessary/pipeline/meta.yaml --evals-dir .tessary
+```
+
+The seed is later overwritten by `finalize.py`, which **preserves** this `0.12.0` version and the `product_hint` when run flag-bare (see Step C.5) — so the version never regresses.
 
 ### Phase B — Triage
 
@@ -330,6 +365,8 @@ INPUT PATHS
 Return ONLY the manifest specified at the bottom of per_site_kit.md.
 ```
 
+When it returns, **run post-subagent filesystem verification** (see Constraints) on this site's `failure_modes/<id>.yaml` (and `quality_dimensions/<id>.yaml` for judgment sites) — confirm they exist, parse, and that each failure-mode entry carries `call_site_id` — before dedup. On a miss, re-dispatch this site's subagent once.
+
 **Step C.2 — Dedup (deterministic) — before marking deferred or grading.** Run `python3 "$PLUGIN/dedup.py" .tessary/`. Dedup is intra-site (it only merges failures that share a `call_site_id` / `chain_id`, never across sites) and byte-stable on already-deduped shards, so re-running it each iteration leaves prior sites untouched. **Order matters:** dedup can merge failures and bump severity, so it must run *before* you derive `grader_deferred` (which depends on severity) and *before* grading (so a failure that gets merged away never gets an orphaned grader file).
 
 **Step C.3 — Mark deferred.** Read the deduped `failure_modes/<id>.yaml`. For each entry:
@@ -352,7 +389,17 @@ python3 "$PLUGIN/pipeline_io.py" lock C-fm .tessary/pipeline/failure_modes/<id>.
 - one per **non-deferred failure mode** → a failure-catching grader (`kind: llm_judge | deterministic | execution`);
 - one per **quality dimension** of this site → a `kind: score` grader (always — quality dimensions are never deferred).
 
-Author discovery and both per-grader templates are under "Grader subagent template" below. Before spawning each subagent, run `python3 "$PLUGIN/pipeline_io.py" check-file .tessary/graders/<grader_id_safe>.yaml --evals-dir .tessary` — if exit 0, skip (already emitted in a prior partial run). Lock each emitted grader file as the subagent returns.
+Author discovery and both per-grader templates are under "Grader subagent template" below. Before spawning each subagent, run `python3 "$PLUGIN/pipeline_io.py" check-file .tessary/graders/<grader_id_safe>.yaml --evals-dir .tessary` — if exit 0, skip (already emitted in a prior partial run).
+
+**Step C.4 (and D.5) — orchestrator stamps `_meta`.** `_meta` is orchestrator-owned (contract Roles table), not authored by the subagent. After each grader file returns and **before** locking it, the orchestrator stamps the provenance block deterministically:
+
+```bash
+python3 "$PLUGIN/pipeline_io.py" stamp-meta .tessary/graders/<grader_id_safe>.yaml \
+  --author "<resolved author name>" --synth-inputs-digest "<digest>" \
+  --author-contract-version 8 --evals-dir .tessary
+```
+
+`stamp_meta` fills `author`, `synthesized_at`, `synth_inputs_digest`, `author_contract_version`, and **preserves** any existing `_meta.locked_fields` / `_meta.human_edited` on re-run (so it never clobbers human edits). Then lock each emitted grader file as the subagent returns.
 
 **Step C.5 — Bookkeeping.** Run, in order:
 
@@ -428,13 +475,13 @@ After a successful publish, treat this run as published for the rest of the sess
 
 Run only after Phase C has processed every site in `priorities.yaml` (not after each site). Mid-stream chain detection and taxonomy re-clustering just churn the shards.
 
-**D.1 — Chain detection** (skip if `priorities.yaml` length < 2). One subagent (`subagent_type: general-purpose`) passing plugin root, repo root, `.tessary/` root, the list of call-site shard paths, and `$PLUGIN/prompts/analyze_chains.md`. Writes `chains.yaml` + `failure_modes/_chains.yaml`.
+**D.1 — Chain detection** (skip if `priorities.yaml` length < 2). One subagent (`subagent_type: general-purpose`) passing plugin root, repo root, `.tessary/` root, the list of call-site shard paths, and `$PLUGIN/prompts/analyze_chains.md`. Writes `chains.yaml` + `failure_modes/_chains.yaml`. When it returns, **run post-subagent filesystem verification** (see Constraints) on `chains.yaml` and `failure_modes/_chains.yaml` (each chain failure carries `chain_id`) before dedup; re-dispatch once on a miss.
 
 **D.2 — Dedup.** Run `python3 "$PLUGIN/dedup.py" .tessary/`. As in Phase C, dedup runs before deferral and grading so it can settle chain-failure severities and merges without orphaning graders.
 
 **D.3 — Mark deferred for chain failures.** Apply the same rule to `failure_modes/_chains.yaml`: `severity: high` → `grader_deferred: false`; medium/low → `grader_deferred: true` and `grader_id: null`.
 
-**D.4 — Taxonomy.** One subagent reads every failure-modes shard, clusters all failure modes (single_call + chain) into a 2-level taxonomy with 6–15 top-level nodes, writes `taxonomy.yaml`, and patches `taxonomy_node_id` back onto each failure-mode entry shard-by-shard via Read + Edit. (Taxonomy runs before grading so `taxonomy_node_id` can be spliced onto each grader.)
+**D.4 — Taxonomy.** One subagent reads every failure-modes shard, clusters all failure modes (single_call + chain) into a 2-level taxonomy with 6–15 top-level nodes, writes `taxonomy.yaml`, and patches `taxonomy_node_id` back onto each failure-mode entry shard-by-shard via Read + Edit. (Taxonomy runs before grading so `taxonomy_node_id` can be spliced onto each grader.) When it returns, **run post-subagent filesystem verification** (see Constraints) on `taxonomy.yaml` (parses, has `taxonomy:`) before locking; re-dispatch once on a miss.
 
 **D.5 — Grader synthesis for chains** (skip if no chains). Same fan-out pattern as C.4, applied to chain-scope failure modes that are not deferred.
 
@@ -485,12 +532,14 @@ When the final remaining site has zero `grader_deferred: true` failures, `finali
 
 ### Grader subagent template (used by C.4 and D.5)
 
-Author discovery:
+Author discovery — **the orchestrator resolves the author ONCE, in its own context**, then passes the result explicitly to every grader subagent via the `Grader author` / `Author invocation` fields below. Subagents do not re-resolve.
 
-1. **`evals-prompt`** skill — prefer if available.
-2. **`authors/default`** — bundled fallback at `$PLUGIN/authors/default/AUTHOR.md`.
+1. **`evals-prompt`** skill — use only if the orchestrator has **positively confirmed** `evals-prompt` is invocable *inside a subagent*. If confirmed, pass `Author invocation: skill` and the author name `evals-prompt`.
+2. **`authors/default`** — the bundled default, the **deterministic default**. Unless (1) is confirmed, resolve to this: pass `Author invocation: bundled-markdown` and the absolute path `$PLUGIN/authors/default/AUTHOR.md`. Both authors declare contract v8, so the version-in-force is identical either way; default to bundled for determinism.
 
-Print `Using grader author <name>` once at first use. Per-subagent prompt:
+**A subagent must NOT call the Skill tool for the bundled author** — there is no skill by that name, so the call fails (see `contract/AUTHORING_CONTRACT.md` § "Author invocation"). A subagent uses the Skill tool **only** when the orchestrator passed `Author invocation: skill`; for `bundled-markdown` it reads the `AUTHOR.md` at the given path inline.
+
+Print `Using grader author <name>` once at first use, driven by the resolved value. Per-subagent prompt:
 
 ```
 You are synthesizing graders for one call site (or chain) as part
@@ -534,9 +583,9 @@ PART 1 — FAILURE-MODE GRADERS. For each failure mode where grader_deferred is 
      `_body_source: platform` and the definition, not a hand-written judge_prompt/rubric.
 3. Splice orchestrator-owned fields onto the body (id, scope, failure_mode_id,
    call_site_id|chain_id, name, taxonomy_node_id; owner=null; block_on_fail=null;
-   cost/latency budgets from observed.*; dataset_refs; _meta provenance with
-   author_contract_version = the version the producing author declared (8 for the
-   evals-prompt skill and the bundled default author)).
+   cost/latency budgets from observed.*; dataset_refs).
+   Do NOT write `_meta` — it is orchestrator-owned and stamped after you return
+   (see "Step C.4/D.5 — orchestrator stamps _meta" below). Leave it absent.
 4. Write to .tessary/graders/<grader_id_safe>.yaml.
 5. Validate: python3 "$PLUGIN/validate.py" .tessary/graders/<file>.yaml --pipeline .tessary/
    On failure, retry author up to 3x with validator_feedback; after 3 failures,
@@ -552,9 +601,8 @@ quality-dimensions shard (none are deferred):
    scoring judge prompt on import from the rubric_levels/score_scale definition).
 2. Splice orchestrator-owned fields (id = <quality_dimension_id>::grader, scope,
    quality_dimension_id, call_site_id|chain_id, name, eval propagation; owner=null;
-   block_on_fail=FALSE — score graders are report-only trends; dataset_refs;
-   _meta provenance with author_contract_version = the version the producing author
-   declared (8 for evals-prompt and the bundled default)). Do NOT set
+   block_on_fail=FALSE — score graders are report-only trends; dataset_refs).
+   Do NOT write `_meta` (orchestrator-stamped after you return), and do NOT set
    failure_mode_id or taxonomy_node_id on score graders.
 3. Write and validate (same retry loop). No self-test calibration (v7).
 
@@ -605,6 +653,17 @@ files under `pipeline/call_sites/` and `pipeline/failure_modes/`.
 - **Show your work between phases.** One-line status per phase and per per-site iteration; the per-site status line format is fixed (see Phase C.6).
 - **Stop after site 1 and after site 2 — always.** End the turn and wait for the user; never run the whole priority list unattended. This overrides any prior "go fast / don't ask" instruction. See Phase C.7.
 - **Subagents** at Phase A (product profile + call-site discovery), Phase C.1 (one per site), Phase C.4 (one per non-deferred failure group per site), Phase D.1 (chains), Phase D.4 (taxonomy), Phase D.5 (chain graders), and audit-driven targeted fixes. Every other step is deterministic Python or main-agent dialogue.
+
+### Post-subagent filesystem verification
+
+**Verify the filesystem, not just the manifest.** A subagent's manifest is a *summary*; the deliverable is the shard files on disk. After **every** shard-producing fan-out — Phase A (call sites + product profile), Phase C.1, Phase D.1 (chains), Phase D.4 (taxonomy) — and **before** locking, the orchestrator must confirm, for each path the returned manifest names (and the deterministic set the step is contracted to produce):
+
+1. the file **exists** on disk — `test -f <path>`;
+2. it **parses as YAML** and carries the expected top-level key — `python3 -c "import yaml; d=yaml.safe_load(open('<path>')); assert '<key>' in d"`, where `<key>` is `product_profile` / `implicit_invariants`+`invariant_coverage` / `failure_modes` / `quality_dimensions` / `chains` / `taxonomy` for the respective shard;
+3. for `call_sites/*.yaml` and `failure_modes/*.yaml`, that each entry carries the keys the next step keys on — notably **`call_site_id` / `chain_id`** on failure-mode entries (missing these silently breaks dedup grouping and per-site coverage gates);
+4. **on any miss → do NOT lock. Re-dispatch that subagent once** and re-verify; never lock, grade, or publish on an unverified shard.
+
+This is the earliest catch for a "perfect-looking manifest, zero files" subagent failure, and it also surfaces a missing `call_site_id` (otherwise only caught at `validate.py`) and a missing seeded `meta.yaml` long before platform import.
 
 ## Verification (what the user should expect)
 

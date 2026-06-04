@@ -80,9 +80,14 @@ VALID_CONFIDENCE: Final[frozenset[str]] = frozenset({"high", "medium", "low"})
 VALID_LAYERS: Final[frozenset[str]] = frozenset({"A", "B", "C"})
 
 # Failure-catching graders require these; score graders use a different set (below).
+# Note: `taxonomy_node_id` is NOT required here. The taxonomy is built at Phase D,
+# after Phase C emits single_call graders, so it is empty mid-run (partial mode).
+# Its presence is enforced only at the final non-partial bundle gate — see
+# `_bundle_taxonomy_assigned`. (`taxonomy_node_id` ownership is unchanged: the
+# orchestrator fills it during clustering; only *when* presence is enforced moves.)
 REQUIRED_SCALAR_FIELDS: Final[tuple[str, ...]] = (
     "id", "scope", "failure_mode_id", "name", "kind",
-    "confidence", "rationale", "taxonomy_node_id",
+    "confidence", "rationale",
 )
 REQUIRED_SCALAR_FIELDS_SCORE: Final[tuple[str, ...]] = (
     "id", "scope", "quality_dimension_id", "name", "kind",
@@ -626,6 +631,21 @@ def _bundle_duplicate_ids(graders: Sequence[tuple[Path, Grader]]) -> list[str]:
     return errors
 
 
+def _bundle_taxonomy_assigned(graders: Sequence[tuple[Path, Grader]]) -> list[str]:
+    """Non-partial only: every failure-catching grader must carry a non-empty
+    `taxonomy_node_id` by the final gate. Mid-run (partial) the taxonomy is not yet
+    built (Phase D), so this is skipped there — see REQUIRED_SCALAR_FIELDS note."""
+    errors: list[str] = []
+    for path, g in graders:
+        if g.get("kind") == "score":
+            continue
+        if _is_nonempty_str(g.get("_validation_error")):
+            continue
+        if not _is_nonempty_str(g.get("taxonomy_node_id")):
+            errors.append(f"{path}: missing or empty required field: taxonomy_node_id")
+    return errors
+
+
 def _bundle_taxonomy_reachability(pipeline: Pipeline) -> list[str]:
     errors: list[str] = []
     tax = pipeline.get("taxonomy") or []
@@ -1041,6 +1061,9 @@ def _run_bundle(evals_dir: Path, calibration_csv: Path | None,
         bundle_warnings = list(coverage_msgs)
     else:
         bundle_errors += coverage_msgs
+        # taxonomy_node_id is only available once Phase D has clustered; enforce its
+        # presence on failure-catching graders only at the final non-partial gate.
+        bundle_errors += _bundle_taxonomy_assigned(graders)
         bundle_warnings = []
 
     lock_path = evals_dir / ".synth-lock.yaml"

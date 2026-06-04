@@ -58,7 +58,7 @@ This document defines the interface between **synthesize-graders** (the orchestr
 | `failure_mode_id` | orchestrator |
 | `call_site_id` / `chain_id` | orchestrator |
 | `name` | orchestrator |
-| `taxonomy_node_id` | orchestrator (step 5 — clustering, before grader synthesis) |
+| `taxonomy_node_id` | orchestrator (Phase D taxonomy clustering — patched onto graders/entries after single_call grader synthesis; empty until then) |
 | `owner`, `block_on_fail`, `dataset_refs` | orchestrator (sourced from call-site observed stats / curator input) |
 | `cost_budget_tokens`, `latency_budget_ms_p95` | orchestrator (default: p95 stats from observed); author may override |
 | `_meta` | orchestrator |

@@ -24,11 +24,48 @@ Failure modes and quality dimensions are two different axes and must not be conf
 
 **A. Patch the call-site shard in place** (Read + Edit, *not* Write — preserve the static fields step 1 wrote). Add four fields: `shape`, `shape_confidence`, `intent`, `constraints` — plus `default_grade_mode` when the site is multi-turn (see § 1.5), and `expected_spans` when the code shows instrumentation nomenclature and step 1 did not already record it (see § 1.6).
 
-**B. Write `.tessary/pipeline/failure_modes/<call_site_id_safe>.yaml`** with top-level key `failure_modes:` and a canonical-sorted list. Leave `taxonomy_node_id` empty — step 5 patches it back.
+**B. Write `.tessary/pipeline/failure_modes/<call_site_id_safe>.yaml`** with top-level key `failure_modes:` and a canonical-sorted list. Leave `taxonomy_node_id` empty (`""`) — step 5 (Phase D taxonomy) patches it back; do **not** invent a value here.
+
+**Required fields — do NOT omit `call_site_id` / `chain_id`.** Every entry must carry the full schema (`output_format.md:259-296` is authoritative). The downstream dedup, per-site coverage gates, and the platform importer **key on `call_site_id` (single_call) / `chain_id` (chain)** — an entry missing it is silently dropped and the bundle becomes unimportable. Copy-pasteable templates:
+
+```yaml
+# single_call entry — call_site_id set, chain_id null
+failure_modes:
+  - id: <call_site_id>::<short_snake_name>
+    scope: single_call
+    call_site_id: <this call site's id>      # REQUIRED — never omit
+    chain_id: null
+    name: <Short human label>
+    description: <What goes wrong, concretely>
+    severity: high            # high | medium | low
+    layer: A                  # A (mechanical) | B (judgmental) | C (policy/pack)
+    pack_ids: []              # pack ids that contributed this entry, if any
+    compliance_tags: []       # e.g. [HIPAA] for pack-contributed entries
+    taxonomy_node_id: ""      # leave empty — step 5 patches it
+    grader_id: null           # orchestrator sets at grading
+    grader_deferred: false    # orchestrator sets in step C.3
+```
+
+```yaml
+# chain entry — chain_id set, call_site_id null (used only by the chain subagent)
+  - id: <chain_id>::<short_snake_name>
+    scope: chain
+    call_site_id: null
+    chain_id: <this chain's id>              # REQUIRED for chain scope — never omit
+    name: <Short human label>
+    description: <Cross-call relationship that breaks>
+    severity: high
+    layer: B
+    pack_ids: []
+    compliance_tags: []
+    taxonomy_node_id: ""
+    grader_id: null
+    grader_deferred: false
+```
 
 **C. Write `.tessary/pipeline/quality_dimensions/<call_site_id_safe>.yaml`** with top-level key `quality_dimensions:` (see § 4) — **required for judgment call sites, omitted only for the exempt shapes listed there.**
 
-Then **return only the manifest** described at the bottom of this file. No prose, no YAML body.
+Before returning, **confirm each file you wrote exists on disk** (the files are the deliverable; the manifest only summarizes them). Then **return only the manifest** described at the bottom of this file. No prose, no YAML body.
 
 ---
 
@@ -117,6 +154,17 @@ expected_spans:
 This is low-risk: a missing or wrong entry only weakens the platform's span binding, it never blocks
 grading.
 
+**Confidence rubric — grep-verify before you stamp.** A `high` matcher must be trustworthy:
+- `confidence: high` **only** when the literal `match_pattern` is found **verbatim in source** (a
+  `start_span("…")` / `tracer.start_as_current_span("…")` / `spanBuilder("…")` / Langfuse `name="…"`
+  literal) — grep-confirm it before stamping `high`.
+- A name **derived from a variable / method call / interpolation** (`grader.name()`, `f"{x}"`, a
+  registry key) → `confidence: low`, and **never** a wildcard `name` (`*` / `?`) at `high`.
+- **Prefer a grounded `metadata.<key>` matcher over a wildcard `name`** when the code attaches an
+  explicit metadata/tag (a literal `metadata.grader_id` beats a guessed `name`).
+- Emit `expected_spans: []` when the call site **bypasses the common instrumented wrapper** (calls the
+  model SDK directly with no custom span and no metadata) — do not guess.
+
 ---
 
 ## 2. Intent + constraints
@@ -155,7 +203,7 @@ Produce **11–26 distinct failure modes**:
 
 A run that produces only one layer is incomplete. **All three layers, every time.**
 
-Each failure mode has:
+Each failure mode carries the **full entry schema** shown in Output B above (and `output_format.md:259-296`) — including `id`, `scope`, and **`call_site_id`** (never omit it). The hypothesis-specific fields are:
 
 - `name`: short, snake_case, taxonomy-friendly (e.g. `cites_unretrieved_document`, `summary_omits_action_owner`).
 - `description`: one or two sentences a grader can act on. Specific to this call site, not generic.

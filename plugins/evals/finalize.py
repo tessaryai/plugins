@@ -13,7 +13,7 @@ under .tessary/graders/, then:
 
 Usage:
     python3 finalize.py .tessary/ \
-        [--version 0.11.0] \
+        [--version 0.12.0] \
         [--product-hint "<string>"] \
         [--runtime-yaml runtime.yaml] \
         [--inputs-digest <hex>] \
@@ -47,6 +47,10 @@ import pipeline_io  # noqa: E402
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
+
+# On-disk schema version (see output_format.md / contract v8). Used when no
+# --version is passed and meta.yaml has no prior version to preserve.
+DEFAULT_VERSION = "0.12.0"
 
 
 def _sha256_hex(text: str) -> str:
@@ -326,12 +330,22 @@ def render_report(pipeline: dict[str, Any],
 # ---------------------------------------------------------------------------
 
 def _compute_progress(pipeline: dict[str, Any],
-                      graders: list[dict[str, Any]]) -> dict[str, Any]:
+                      graders: list[dict[str, Any]],
+                      evals_dir: Path) -> dict[str, Any]:
     """Summarize how much of the synthesis is done so the viewer can show progress."""
     call_sites = [cs for cs in pipeline.get("call_sites") or [] if isinstance(cs, dict)]
     sites_total = len(call_sites)
     fms = [fm for fm in pipeline.get("failure_modes") or [] if isinstance(fm, dict)]
     deferred = sum(1 for fm in fms if fm.get("grader_deferred") is True)
+
+    # A site is only "processed" once its per-site failure_modes/<id>.yaml shard
+    # exists on disk (written inside the C.1 loop). Without this, not-yet-processed
+    # sites have no FM entries → expected==0 → they were wrongly counted complete.
+    fm_dir = pipeline_io.pipeline_dir(evals_dir) / "failure_modes"
+    processed = {
+        p.stem.replace("__", "::") for p in fm_dir.glob("*.yaml")
+        if p.name != "_chains.yaml"
+    } if fm_dir.is_dir() else set()
 
     grader_ids = {g.get("id") for g in graders if isinstance(g, dict)}
     per_site_expected: dict[str, int] = {}
@@ -354,6 +368,8 @@ def _compute_progress(pipeline: dict[str, Any],
         if not sid:
             continue
         if cs.get("shape") is None:
+            continue
+        if sid not in processed:  # not yet processed → not complete
             continue
         expected = per_site_expected.get(sid, 0)
         emitted = per_site_emitted.get(sid, 0)
@@ -403,8 +419,9 @@ def main() -> int:
         description="Assemble final .tessary/ artifacts at step 7.",
     )
     ap.add_argument("evals_dir", help="Path to the .tessary/ directory.")
-    ap.add_argument("--version", default="0.11.0",
-                    help="On-disk schema version written into meta.yaml.")
+    ap.add_argument("--version", default=None,
+                    help="On-disk schema version written into meta.yaml. When omitted, "
+                         "preserves the existing meta.yaml version, else defaults to 0.12.0.")
     ap.add_argument("--product-hint", default=None)
     ap.add_argument("--runtime-yaml", default=None,
                     help="Optional YAML file with runtime fields to embed in meta.yaml.")
@@ -441,7 +458,7 @@ def main() -> int:
             if isinstance(doc, dict):
                 graders.append(doc)
 
-    progress = _compute_progress(pipeline, graders)
+    progress = _compute_progress(pipeline, graders, evals_dir)
 
     # 1. meta.yaml
     if not args.skip_meta:
@@ -452,7 +469,15 @@ def main() -> int:
                 loaded = yaml.safe_load(runtime_path.read_text(encoding="utf-8"))
                 if isinstance(loaded, dict):
                     runtime = loaded
-        pipeline_io.write_meta(evals_dir, args.version, args.product_hint, runtime,
+        # Preserve existing meta values when the corresponding flag was not passed,
+        # so a flag-bare partial finalize never clobbers a seeded version/product_hint.
+        version = args.version
+        if version is None:
+            version = pipeline.get("version") or DEFAULT_VERSION
+        product_hint = args.product_hint
+        if product_hint is None:
+            product_hint = pipeline.get("product_hint")
+        pipeline_io.write_meta(evals_dir, version, product_hint, runtime,
                                progress=progress)
 
     # 2. report.md

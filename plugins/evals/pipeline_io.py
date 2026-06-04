@@ -40,7 +40,9 @@ def id_safe(ident: str) -> str:
 
 
 def pipeline_dir(evals_dir: Path) -> Path:
-    return evals_dir / "pipeline"
+    # Coerce str → Path so every writer/reader entry point is str-tolerant
+    # (idempotent for existing Path callers).
+    return Path(evals_dir) / "pipeline"
 
 
 def _load_yaml(path: Path) -> Any:
@@ -248,6 +250,38 @@ def write_quality_dimensions_for_site(evals_dir: Path, call_site_id: str,
     return path
 
 
+def stamp_meta(grader_path: Path, author: str, synth_inputs_digest: str,
+               author_contract_version: int) -> Path:
+    """Deterministically stamp the orchestrator-owned `_meta` provenance block onto
+    a grader file *after* the author returns its body.
+
+    Fills `author`, `synthesized_at` (ISO timestamp), `synth_inputs_digest`, and
+    `author_contract_version`. PRESERVES any existing `_meta.locked_fields` /
+    `_meta.human_edited` on re-run (re-run safety machinery consumes these), and never
+    clobbers them. `_meta` is orchestrator-owned per the contract Roles table — authors
+    and per-site subagents do not write it.
+    """
+    grader_path = Path(grader_path)
+    doc = yaml.safe_load(grader_path.read_text(encoding="utf-8"))
+    if not isinstance(doc, dict):
+        raise ValueError(f"stamp_meta: {grader_path} is not a YAML mapping")
+    existing = doc.get("_meta")
+    meta: dict[str, Any] = {
+        "author": author,
+        "synthesized_at": _now_iso(),
+        "synth_inputs_digest": synth_inputs_digest,
+        "author_contract_version": author_contract_version,
+    }
+    if isinstance(existing, dict):
+        if "locked_fields" in existing:
+            meta["locked_fields"] = existing["locked_fields"]
+        if "human_edited" in existing:
+            meta["human_edited"] = existing["human_edited"]
+    doc["_meta"] = meta
+    _dump(grader_path, doc)
+    return grader_path
+
+
 # ---------------------------------------------------------------------------
 # Shard discovery (used by lock + validate).
 # ---------------------------------------------------------------------------
@@ -408,7 +442,20 @@ def _cli(argv: list[str]) -> int:
     p_check_file.add_argument("path")
     p_check_file.add_argument("--evals-dir", default=".tessary")
 
+    p_stamp = sub.add_parser("stamp-meta",
+                             help="Stamp the orchestrator-owned _meta block onto a grader file.")
+    p_stamp.add_argument("path")
+    p_stamp.add_argument("--author", required=True)
+    p_stamp.add_argument("--synth-inputs-digest", required=True)
+    p_stamp.add_argument("--author-contract-version", type=int, default=8)
+
     args = ap.parse_args(argv)
+
+    if args.cmd == "stamp-meta":
+        stamp_meta(Path(args.path), args.author, args.synth_inputs_digest,
+                   args.author_contract_version)
+        return 0
+
     evals = Path(args.evals_dir).resolve()
 
     if args.cmd == "lock":

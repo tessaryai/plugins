@@ -147,6 +147,10 @@ Both files must parse as YAML mappings. Use `yaml.safe_dump(..., sort_keys=False
 semantics; on disk, two-space indentation, no trailing whitespace. Create parent
 directories if needed.
 
+The shard files on disk are your deliverable — the manifest only summarizes them.
+Before returning, confirm each path you report in the manifest actually exists on
+disk; a manifest that names a file you did not write is a failure.
+
 When you are done, return ONLY this manifest (no prose, no quoted YAML):
 
 ```yaml
