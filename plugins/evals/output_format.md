@@ -120,6 +120,13 @@ packs:
     conflicts:    [<pack_id>, ...]   # optional
 ```
 
+`enabled_by` and `content_digest` are **orchestrator-added** at assembly time, not
+producer-standard pack-manifest fields: the pack author writes `pack.yaml` /
+`interview.md` / `failures.md`, and the orchestrator stamps `enabled_by` (how the pack
+was engaged) and `content_digest` (the SHA-256 of those three files) onto each entry
+when it writes the assembled `packs.yaml` via `pipeline_io.write_packs`. Treat them as
+a superset of the manifest, present only in the assembled bundle.
+
 ## `.tessary/pipeline/product_profile.yaml`
 
 ```yaml
@@ -407,9 +414,11 @@ dataset_refs:
   - file: <"path:line">
   - jsonl_path: <"datasets/<call_site_id>.jsonl">
 
-_meta:
+_meta:                              # optional block; when present, author /
+                                     # synthesized_at / synth_inputs_digest are required
   author: <string>
-  author_contract_version: 8
+  author_contract_version: 8         # optional even when _meta is present (not gated
+                                     # by validate.py); stamped by the orchestrator
   synthesized_at: <iso8601>
   synth_inputs_digest: <hex>
   locked_fields: [<field>, ...]

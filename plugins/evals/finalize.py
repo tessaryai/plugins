@@ -19,7 +19,9 @@ Usage:
         [--inputs-digest <hex>] \
         [--skip-meta] \
         [--skip-report] \
-        [--skip-validate]
+        [--skip-validate] \
+        [--partial]   # mid-synthesis: deferred failures get no grader, the bundle
+                      # validator runs in --partial mode, meta.yaml records progress
 
 Exit codes:
     0 -- finalize succeeded and validate.py --bundle returned 0

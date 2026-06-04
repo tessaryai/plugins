@@ -302,4 +302,4 @@ The orchestrator discovers authors by **two distinct invocation models**:
 - **Skill-based authors** (e.g. `evals-prompt`) — invoked through the Skill tool. Preferred when available.
 - **Bundled markdown author** (`authors/default/AUTHOR.md`) — read as a procedure and followed inline by the step-6 subagent. Always available because it ships with this plugin. No Skill-tool call.
 
-This distinction matters: subagents that try to invoke the bundled author via the Skill tool will fail because there is no skill of that name. The orchestrator's subagent prompt must branch on author type. See `SKILL.md` § "Author discovery" for the exact branching logic. Future versions may surface explicit selection.
+This distinction matters: subagents that try to invoke the bundled author via the Skill tool will fail because there is no skill of that name. The orchestrator's subagent prompt must branch on author type. See `SKILL.md` § "Grader subagent template" (its "Author discovery" paragraph) for the exact branching logic. Future versions may surface explicit selection.

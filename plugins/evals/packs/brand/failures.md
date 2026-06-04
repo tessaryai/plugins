@@ -95,7 +95,7 @@ For products with multiple surfaces, emit one failure per call site that depends
 
 ## Output
 
-Emit as regular step-4 contributions with `pack_ids: [brand]`. Step 4.6 dedup is especially relevant here — `ai_disclosure_omitted` is shared with the security pack. The dedup pass keeps one failure with `pack_ids: [brand, security]` and the union of compliance tags.
+Emit as regular step-4 contributions in the **canonical failure-mode entry shape** documented in `prompts/per_site_kit.md` (§ "Required fields" / "single_call entry") — every entry must carry the full schema (`id`, `scope`, **`call_site_id`**, `chain_id: null`, `name`, `description`, `severity`, `layer`, `pack_ids`, `compliance_tags`, `taxonomy_node_id: ""`, `grader_id`, `grader_deferred`), not just `pack_ids`. Step 4.6 dedup is especially relevant here — `ai_disclosure_omitted` is shared with the security pack. The dedup pass keeps one failure with `pack_ids: [brand, security]` and the union of compliance tags.
 
 ## Anti-patterns
 

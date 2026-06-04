@@ -379,7 +379,7 @@ When it returns, **run post-subagent filesystem verification** (see Constraints)
 Patch the shard in place via Read + Edit, then re-lock (include the quality-dimensions shard):
 
 ```bash
-python3 "$PLUGIN/pipeline_io.py" lock C-fm .tessary/pipeline/failure_modes/<id>.yaml \
+python3 "$PLUGIN/pipeline_io.py" lock C-fm-<id> .tessary/pipeline/failure_modes/<id>.yaml \
   .tessary/pipeline/call_sites/<id>.yaml \
   .tessary/pipeline/quality_dimensions/<id>.yaml --evals-dir .tessary
 ```
@@ -483,7 +483,7 @@ Run only after Phase C has processed every site in `priorities.yaml` (not after 
 
 **D.3 — Mark deferred for chain failures.** Apply the same rule to `failure_modes/_chains.yaml`: `severity: high` → `grader_deferred: false`; medium/low → `grader_deferred: true` and `grader_id: null`.
 
-**D.4 — Taxonomy.** One subagent reads every failure-modes shard, clusters all failure modes (single_call + chain) into a 2-level taxonomy with 6–15 top-level nodes, writes `taxonomy.yaml`, and patches `taxonomy_node_id` back onto each failure-mode entry shard-by-shard via Read + Edit. (Taxonomy runs before grading so `taxonomy_node_id` can be spliced onto each grader.) When it returns, **run post-subagent filesystem verification** (see Constraints) on `taxonomy.yaml` (parses, has `taxonomy:`) before locking; re-dispatch once on a miss.
+**D.4 — Taxonomy.** One subagent reads every failure-modes shard, clusters all failure modes (single_call + chain) into a 2-level taxonomy with 6–15 top-level nodes, writes `taxonomy.yaml`, and patches `taxonomy_node_id` back onto each failure-mode entry shard-by-shard via Read + Edit. (Single_call graders were already emitted at Phase C with `taxonomy_node_id: ""`; their taxonomy is resolved at the final gate via their `failure_mode_id` → the patched FM entry, so it is *not* re-spliced onto them here. Only chain graders — synthesized next at D.5, after this clustering — carry the value spliced directly.) When it returns, **run post-subagent filesystem verification** (see Constraints) on `taxonomy.yaml` (parses, has `taxonomy:`) before locking; re-dispatch once on a miss.
 
 **D.5 — Grader synthesis for chains** (skip if no chains). Same fan-out pattern as C.4, applied to chain-scope failure modes that are not deferred.
 

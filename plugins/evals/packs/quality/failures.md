@@ -1,10 +1,10 @@
 # quality pack — failure synthesis
 
-The quality pack is the baseline. **Most failures produced at step 4 are quality failures** — Layer A/B coverage from `prompts/hypothesize_failures.md`. This file specifies how to tag them and how to specialize them based on the interview.
+The quality pack is the baseline. **Most failures produced at step 4 are quality failures** — Layer A/B coverage from `prompts/per_site_kit.md`. This file specifies how to tag them and how to specialize them based on the interview.
 
 ## Default tagging
 
-For each baseline Layer A or Layer B failure produced by `hypothesize_failures.md`:
+For each baseline Layer A or Layer B failure produced by `per_site_kit.md`:
 
 ```yaml
 pack_ids: [quality]
@@ -79,7 +79,7 @@ Use `user.constraints` to inform Layer B audience-fit failures:
 
 ## Output
 
-Emit contributions as part of the regular step-4 output, with `pack_ids: [quality]` set. Quality failures dominate step 4.6 dedup as anchors — other packs (security, brand) often merge into the quality failure where there's overlap, since quality is the most common pack and its failure name is usually the most generic.
+Emit contributions as part of the regular step-4 output, in the **canonical failure-mode entry shape** documented in `prompts/per_site_kit.md` (§ "Required fields" / "single_call entry") — every entry must carry the full schema (`id`, `scope`, **`call_site_id`**, `chain_id: null`, `name`, `description`, `severity`, `layer`, `pack_ids`, `compliance_tags`, `taxonomy_node_id: ""`, `grader_id`, `grader_deferred`), not just `pack_ids`. Quality failures dominate step 4.6 dedup as anchors — other packs (security, brand) often merge into the quality failure where there's overlap, since quality is the most common pack and its failure name is usually the most generic.
 
 ## Anti-patterns
 

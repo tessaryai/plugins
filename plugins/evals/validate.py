@@ -631,18 +631,40 @@ def _bundle_duplicate_ids(graders: Sequence[tuple[Path, Grader]]) -> list[str]:
     return errors
 
 
-def _bundle_taxonomy_assigned(graders: Sequence[tuple[Path, Grader]]) -> list[str]:
-    """Non-partial only: every failure-catching grader must carry a non-empty
+def _bundle_taxonomy_assigned(
+    graders: Sequence[tuple[Path, Grader]], pipeline: Pipeline
+) -> list[str]:
+    """Non-partial only: every failure-catching grader must resolve to a non-empty
     `taxonomy_node_id` by the final gate. Mid-run (partial) the taxonomy is not yet
-    built (Phase D), so this is skipped there — see REQUIRED_SCALAR_FIELDS note."""
+    built (Phase D), so this is skipped there — see REQUIRED_SCALAR_FIELDS note.
+
+    Single_call graders are emitted at Phase C (before taxonomy clustering at D), so
+    they carry `taxonomy_node_id: ""`; Phase D patches the *failure-mode entry* shards,
+    not the graders. We therefore resolve a grader's taxonomy through its
+    `failure_mode_id` → the FM entry's `taxonomy_node_id` (which D.4 fills reliably).
+    A value spliced directly onto the grader (chain graders, post-taxonomy at D.5) is
+    honored too. A grader is taxonomy-assigned iff either it or its FM entry has a
+    non-empty `taxonomy_node_id`. Score graders are exempt."""
+    fm_taxonomy: dict[str, Any] = {
+        fm.get("id"): fm.get("taxonomy_node_id")
+        for fm in pipeline.get("failure_modes") or []
+        if isinstance(fm, dict) and _is_nonempty_str(fm.get("id"))
+    }
     errors: list[str] = []
     for path, g in graders:
         if g.get("kind") == "score":
             continue
         if _is_nonempty_str(g.get("_validation_error")):
             continue
-        if not _is_nonempty_str(g.get("taxonomy_node_id")):
-            errors.append(f"{path}: missing or empty required field: taxonomy_node_id")
+        if _is_nonempty_str(g.get("taxonomy_node_id")):
+            continue
+        if _is_nonempty_str(fm_taxonomy.get(g.get("failure_mode_id"))):
+            continue
+        errors.append(
+            f"{path}: failure-catching grader has no taxonomy_node_id and its "
+            f"failure_mode_id {g.get('failure_mode_id')!r} resolves to no FM entry "
+            f"with a non-empty taxonomy_node_id"
+        )
     return errors
 
 
@@ -1063,7 +1085,8 @@ def _run_bundle(evals_dir: Path, calibration_csv: Path | None,
         bundle_errors += coverage_msgs
         # taxonomy_node_id is only available once Phase D has clustered; enforce its
         # presence on failure-catching graders only at the final non-partial gate.
-        bundle_errors += _bundle_taxonomy_assigned(graders)
+        # Resolved via the grader's failure_mode_id → FM entry (D.4 patches entries).
+        bundle_errors += _bundle_taxonomy_assigned(graders, pipeline)
         bundle_warnings = []
 
     lock_path = evals_dir / ".synth-lock.yaml"

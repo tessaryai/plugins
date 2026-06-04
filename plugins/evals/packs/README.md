@@ -45,15 +45,15 @@ The interview prints a transparency line per question so the user sees what was 
 
 ### `failures.md`
 
-Read by step 4 after the interview is complete. Produces failure modes in the same YAML form as [`prompts/hypothesize_failures.md`](../prompts/hypothesize_failures.md), but with `pack_ids: [<pack_id>]` and `compliance_tags: [...]` set on every entry. Contributions are *additive* to baseline failures — overlaps are resolved at step 4.6 dedup, not in the pack file.
+Read by step 4 after the interview is complete. Produces failure modes in the canonical entry shape documented in [`prompts/per_site_kit.md`](../prompts/per_site_kit.md) (§ "Required fields"), but with `pack_ids: [<pack_id>]` and `compliance_tags: [...]` set on every entry. Contributions are *additive* to baseline failures — overlaps are resolved at step 4.6 dedup, not in the pack file.
 
 ## Pack identity is a tag, not part of failure-mode IDs
 
-Failure mode IDs remain `<call_site_id>::<failure_name>` regardless of which pack contributed. A failure can carry multiple `pack_ids` (e.g. `ai_disclosure_omitted` is both `brand` and `security`). The only exception is the rare "conflict suffix" case at step 4.6 where two packs propose the same name with materially different rubrics — see SKILL.md § Step 4.6.
+Failure mode IDs remain `<call_site_id>::<failure_name>` regardless of which pack contributed. A failure can carry multiple `pack_ids` (e.g. `ai_disclosure_omitted` is both `brand` and `security`). The only exception is the rare "conflict suffix" case during dedup where two packs propose the same name with materially different rubrics — see SKILL.md § Step C.2 (single_call) / Step D.2 (chains).
 
 ## User-supplied packs
 
-Drop a `pack.yaml` + `interview.md` + `failures.md` under `<repo>/.tessary/packs/<pack_id>/` and the orchestrator discovers it at step 0.5. User packs with the same `id` as a bundled pack **override** the bundled version. Each pack is content-hashed (SHA-256 of pack.yaml + interview.md + failures.md, first 16 hex chars) and recorded in `pipeline.packs[].content_digest` so re-runs detect when a pack itself has changed.
+Drop a `pack.yaml` + `interview.md` + `failures.md` under `<repo>/.tessary/packs/<pack_id>/` and the orchestrator discovers it at step 0.5. User packs with the same `id` as a bundled pack **override** the bundled version. Each pack is content-hashed (SHA-256 of pack.yaml + interview.md + failures.md, first 16 hex chars) and recorded as `content_digest` on the pack's entry in the sharded `pipeline/packs.yaml` so re-runs detect when a pack itself has changed.
 
 ## Validating packs
 

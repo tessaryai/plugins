@@ -9,7 +9,9 @@ call_sites / packs / chains need a targeted-fix subagent.
 
 Usage:
     python3 audit.py .tessary/
-    python3 audit.py .tessary/ --json   # JSON output (default is human + JSON)
+    python3 audit.py .tessary/ --json      # JSON output (default is human + JSON)
+    python3 audit.py .tessary/ --partial   # mid-synthesis: report items but exit 0,
+                                           # and suppress checks needing the full site set
 
 Exit codes:
     0 -- audit passed (no items)

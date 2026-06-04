@@ -6,7 +6,7 @@ This is the OSS fallback grader-author. It implements the contract in `../../con
 
 It is **deliberately minimal**. It produces graders that pass `validate.py` and are readable for review. For `kind=llm_judge`/`score` the judge body is platform-deferred (v8), so this author only writes the definition; for `deterministic`/`execution`/`agentic` it authors the body, but with generic, light-touch checks a dedicated authoring skill would sharpen.
 
-> **No `self_tests` (v7).** This author does not emit per-grader self-test cases. A grader's behavior is calibrated platform-side against **golden datasets** — real captured spans associated with the grader and labeled per `(grader, dataset_item)` in evals-platform — not against hand-authored samples in the grader file. Author only the verdict body, `applies_when`, `confidence`, and `rationale`.
+> **No `self_tests` (v7).** This author does not emit per-grader self-test cases. A grader's behavior is calibrated platform-side against **golden datasets** — real captured spans associated with the grader and labeled per `(grader, dataset_item)` in evals-platform — not against hand-authored samples in the grader file. Author only the verdict body, `applies_when` (failure-catching kinds only — never on `kind=score`, which always applies and which `validate.py` rejects if it carries `applies_when`), `confidence`, and `rationale`.
 
 ## Invocation
 

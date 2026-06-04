@@ -126,13 +126,25 @@ chains:
 
 chain_failure_modes:
   - id: <chain_id>::<failure_name>
-    chain_id: <chain_id>
+    scope: chain
+    call_site_id: null        # REQUIRED — chain failures are not bound to one site
+    chain_id: <chain_id>      # REQUIRED for chain scope — dedup/importer key on it
     name: <snake_case>
     description: <one or two sentences, specific to this chain>
     severity: <low | medium | high>
     layer: null               # layer is single-call concept; null for chain failures
-    scope: chain
+    pack_ids: []              # pack ids that contributed this entry, if any
+    compliance_tags: []       # e.g. [HIPAA] for pack-contributed entries
+    taxonomy_node_id: ""      # leave empty — Phase D (D.4) taxonomy patches it
+    grader_id: null           # set in D.3 (null while deferred)
+    grader_deferred: false    # orchestrator sets in D.3
 ```
+
+Carry the **full 11-field entry schema** shown above — the same canonical chain entry
+documented in `prompts/per_site_kit.md` (§ "chain entry") and authoritative in
+`output_format.md` (`.tessary/pipeline/failure_modes/_chains.yaml`). Omitting
+`call_site_id`, `chain_id`, `pack_ids`, `compliance_tags`, `grader_id`, or
+`grader_deferred` makes the entry undedupable and the bundle unimportable.
 
 ## Anti-patterns
 

@@ -98,7 +98,7 @@ This isn't really a failure-mode hypothesis — it's a guardrail anchored to cur
 
 ## Output
 
-Emit as regular step-4 contributions with `pack_ids: [reliability]`. Step 4.6 dedup rarely affects reliability failures (the failure names are operationally specific and don't usually collide with quality/security).
+Emit as regular step-4 contributions in the **canonical failure-mode entry shape** documented in `prompts/per_site_kit.md` (§ "Required fields" / "single_call entry") — every entry must carry the full schema (`id`, `scope`, **`call_site_id`**, `chain_id: null`, `name`, `description`, `severity`, `layer`, `pack_ids`, `compliance_tags`, `taxonomy_node_id: ""`, `grader_id`, `grader_deferred`), not just `pack_ids`. Step 4.6 dedup rarely affects reliability failures (the failure names are operationally specific and don't usually collide with quality/security).
 
 ## Anti-patterns
 

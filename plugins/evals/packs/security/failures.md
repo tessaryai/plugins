@@ -93,7 +93,7 @@ For each call site whose surface is in the user-facing set (`in-product chat`, `
 
 ## Output
 
-Emit your contributions to step 4 in the same YAML form as `prompts/hypothesize_failures.md`, but with `pack_ids: [security]` and `compliance_tags: [...]` set on every entry. Step 4.6 (dedup & merge) will reconcile overlaps with baseline failures and other packs.
+Emit your contributions to step 4 in the **canonical failure-mode entry shape** documented in `prompts/per_site_kit.md` (§ "Required fields" / "single_call entry"), but with `pack_ids: [security]` and `compliance_tags: [...]` set on every entry. Every entry must carry the full schema — `id`, `scope`, **`call_site_id`** (never omit it), `chain_id: null`, `name`, `description`, `severity`, `layer`, `pack_ids`, `compliance_tags`, `taxonomy_node_id: ""` (Phase D patches it), `grader_id`, `grader_deferred` — not just the pack-specific `pack_ids`/`compliance_tags`/`layer` shown in the tables above. Step 4.6 (dedup & merge) will reconcile overlaps with baseline failures and other packs.
 
 ## Anti-patterns
 
