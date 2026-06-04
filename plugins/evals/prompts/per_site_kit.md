@@ -56,7 +56,7 @@ failure_modes:
     name: <Short human label>
     description: <Cross-call relationship that breaks>
     severity: high
-    layer: B
+    layer: null                             # layer is a single-call concept; null for chain failures
     pack_ids: []
     compliance_tags: []
     taxonomy_node_id: ""
