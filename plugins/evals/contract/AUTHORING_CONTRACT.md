@@ -1,10 +1,17 @@
-# Grader-author contract (v7)
+# Grader-author contract (v8)
 
 This document defines the interface between **synthesize-graders** (the orchestrator) and any **grader author** invoked during the grader-synthesis phase. It exists so that the author is swappable: the bundled `authors/default/` is the OSS fallback; closed-source or third-party authors (e.g. `evals-prompt`) declare conformance to this contract and become drop-in replacements.
 
 - **Authoritative schema**: [`grader.schema.json`](./grader.schema.json) — the on-disk grader YAML.
 - **Authoritative enforcer**: `validate.py` (at the plugin root) — runs the schema rules plus cross-field invariants, per-file and `--bundle` cross-references.
-- **Contract version**: 7. v7 **removes per-grader `self_tests` entirely** (§ "What changed in v7"): the author no longer emits hand-authored self-test cases, the `self_test_pass_rate` / `self_test_variance` calibration fields, or the `applies_when ↔ not_applicable` self-test invariant. A grader's behavior is now validated **platform-side against golden datasets** — reusable, real captured spans associated with the grader and labeled per `(grader, dataset_item)` in evals-platform. The author emits only the verdict body, `applies_when`, `confidence`, and `rationale`.
+- **Contract version**: 8. v8 **defers judge-prompt authoring to the platform** for `kind=llm_judge` and `kind=score` (§ "What changed in v8"): the author emits the grader *definition* (kind, `applies_when`, `rubric_levels`+`score_scale` for score, `confidence`, `rationale`) plus a top-level `_body_source: platform` marker, and does **not** author `judge_prompt`/`rubric`. The platform expands the verdict body on import. `kind=deterministic`/`execution`/`agentic` bodies are unchanged — still plugin-authored inline. v8 also adds an orchestrator-owned call-site field **`expected_spans`** (the telemetry nomenclature the discovery step reads out of the call site's code); see `output_format.md`.
+
+## What changed in v8
+
+- **Judge-prompt authoring moves to the platform for `llm_judge` / `score`.** For these two kinds the author now emits only the *definition* — `kind`, `applies_when` (llm_judge only), `rubric_levels`+`score_scale` (score only), `confidence`, `rationale` — plus a top-level marker **`_body_source: platform`**, and does **NOT** emit `judge_prompt` or `rubric`. On import the platform synthesizes the runtime verdict body (the judge system prompt, the rubric prose / scoring instruction) from the definition. This keeps the judge-prompt craft (injection hardening, output-JSON contract, scoring discipline) in one place, owned by the platform, rather than re-authored per grader by every plugin author.
+- **`_body_source: platform` is the deferral marker.** Its only legal value is `platform`. It is valid **only** on `kind=llm_judge` / `kind=score`. When present, the grader **must not** carry a non-empty `judge_prompt`/`rubric` (`validate.py` flags an author that set the marker but forgot to actually drop the body). When **absent**, the v7 rule still holds — `kind=llm_judge` requires inline `judge_prompt`+`rubric`, `kind=score` requires inline `judge_prompt` — so deterministic/execution/agentic graders and any legacy inline-body llm_judge/score files keep validating unchanged.
+- **`kind=deterministic`/`execution`/`agentic` are untouched.** Their bodies (`deterministic_check`, `execution_spec`, `agent_spec`) remain fully plugin-authored. `_body_source` does not apply to them.
+- **New orchestrator-owned call-site field `expected_spans`.** The discovery step that locates each call site in code (writing `surrounding_code`/`file_hint`/`line_hint`) now also extracts the telemetry nomenclature the instrumentation emits — OTel `start_span("…")`, Langfuse `name=` / `@observe(name=)`, the enclosing function name (the SDK default span name), etc. — and records it as a best-effort `expected_spans` list on the call-site shard so the platform can bind a grader to the right captured spans/traces. This is an **orchestrator** field; authors do not write it. See `output_format.md` § call_site and `prompts/per_site_kit.md` § 1.
 
 ## What changed in v7
 
@@ -55,10 +62,12 @@ This document defines the interface between **synthesize-graders** (the orchestr
 | `owner`, `block_on_fail`, `dataset_refs` | orchestrator (sourced from call-site observed stats / curator input) |
 | `cost_budget_tokens`, `latency_budget_ms_p95` | orchestrator (default: p95 stats from observed); author may override |
 | `_meta` | orchestrator |
+| `expected_spans` | orchestrator (discovery step — telemetry nomenclature read from the call site's code; written on the call-site shard, consumed by the platform) |
 | `kind` | **author** |
+| `_body_source` | **author** (v8 — set to `platform` for `kind=llm_judge`/`score` to defer the body) |
 | `applies_when` | **author** (always LLM-evaluated at runtime) |
-| `judge_prompt` | **author** (when `kind=llm_judge`) |
-| `rubric` | **author** (when `kind=llm_judge`) |
+| `judge_prompt` | platform (expanded after import — v8; was author ≤ v7) |
+| `rubric` | platform (expanded after import — v8; was author ≤ v7) |
 | `deterministic_check` | **author** (when `kind=deterministic`) |
 | `execution_spec` | **author** (when `kind=execution`) |
 | `agent_spec` | **author** (when `kind=agentic`) |
@@ -125,13 +134,15 @@ Raw YAML, ready for the orchestrator to splice into the on-disk grader file. **N
 
 ```yaml
 kind: llm_judge | deterministic | execution | agentic
+_body_source: platform           # v8 — REQUIRED for kind=llm_judge (and kind=score). Marks the
+                                 # verdict body as platform-deferred; the platform expands
+                                 # judge_prompt/rubric on import. Do NOT also emit judge_prompt/rubric.
+                                 # Omit entirely for deterministic/execution/agentic.
 applies_when: |                  # OMIT entirely when always applicable. Always LLM-evaluated:
                                  # inline for llm_judge/score, a separate LLM gate for deterministic.
   natural-language predicate deciding whether the check is in scope
-judge_prompt: |                  # required for kind=llm_judge
-  the full system prompt the LLM judge runs at runtime
-rubric: |                        # required for kind=llm_judge
-  - bulleted pass/fail criteria
+# judge_prompt / rubric are NO LONGER author-emitted (v8): for kind=llm_judge the author sets
+# `_body_source: platform` above and the platform authors the judge body on import.
 deterministic_check: |           # required for kind=deterministic. GATE-FREE: implement only the
                                  # failure check; assume the input is in scope (the applies_when LLM
                                  # gate filters out-of-scope outputs first). For scope=trace, reason
@@ -155,7 +166,7 @@ rationale: <string>              # one sentence — user impact, not mechanics
 ### Invariants the author must satisfy
 
 1. **Gate-free deterministic body** (v6): `applies_when` is always evaluated by an LLM — never compiled. Do **not** emit `applies_when_check`, and do **not** make `deterministic_check` decide applicability (it must assume the input is in scope; the LLM gate filters out-of-scope outputs first). `validate.py` flags a stray `applies_when_check`.
-2. **`kind` body match**: `kind=llm_judge` requires `judge_prompt` + `rubric`; `kind=deterministic` requires `deterministic_check`; `kind=execution` requires `execution_spec`; `kind=agentic` requires `agent_spec` (and no `judge_prompt`/`rubric`).
+2. **`kind` body match (v8)**: `kind=llm_judge` emits `_body_source: platform` and **no** `judge_prompt`/`rubric` (the platform expands the body on import); `kind=score` emits `_body_source: platform` and **no** `judge_prompt` (it still emits `rubric_levels`+`score_scale`, which define the score axis, not the judge prose); `kind=deterministic` requires `deterministic_check`; `kind=execution` requires `execution_spec`; `kind=agentic` requires `agent_spec` (and no `judge_prompt`/`rubric`). `_body_source` is valid **only** on `llm_judge`/`score`; setting it elsewhere is a validation error. (Pre-v8 files with an inline `judge_prompt`+`rubric` and no `_body_source` still validate — the requirement only relaxes *when* the marker is present.)
 3. **Locked fields**: if `existing_grader.locked_fields` is present on the input, the returned YAML must reproduce the listed fields **verbatim** (the orchestrator double-checks and rejects mutated locked fields).
 
 Everything else (id shape, taxonomy node, cross-reference against `pipeline.yaml`, `_meta` provenance) is the orchestrator's responsibility.
@@ -168,9 +179,12 @@ produces the **same author-owned fields as a single_call grader** (any failure-c
 difference is purely in how the platform feeds the grader at runtime (the prior n-1 turns as context
 plus the final turn it judges), not in anything the author writes.
 
-For a **trace `llm_judge`** grader, write the `judge_prompt` so it judges the final turn **in the context of** the prior conversation — e.g.
-"Given the conversation so far, does the final assistant turn stay consistent with commitments and
-constraints established earlier?" That contextual framing is the whole point of the scope.
+For a **trace `llm_judge`** grader, the body is platform-deferred (v8): emit `_body_source: platform`
+and capture the contextual framing in `applies_when` + the failure-mode definition the platform receives —
+the platform authors a judge prompt that judges the final turn **in the context of** the prior conversation
+(e.g. "Given the conversation so far, does the final assistant turn stay consistent with commitments and
+constraints established earlier?"). That contextual framing is the whole point of the scope; the author no
+longer hand-writes the judge prompt.
 
 For a **trace `deterministic`** grader, the `deterministic_check` runs against the structured trace —
 `input.messages` (each turn `{ role, content, tool_uses: [{ name, input }] }`) and `input.tool_uses`
@@ -242,13 +256,12 @@ product_context: { ... }       # optional, same as above
 existing_grader: { ... }       # optional, on regeneration
 ```
 
-The author returns the score-grader author-owned fields:
+The author returns the score-grader author-owned fields (v8 — `judge_prompt` is platform-deferred):
 
 ```yaml
 kind: score
-judge_prompt: |                # the prompt the judge runs; it must instruct the judge to
-                               # return one integer level in [score_scale.min, max] + a
-                               # one-line justification, scoring strictly against rubric_levels
+_body_source: platform         # v8 — the platform authors the scoring judge prompt on import
+                               # from the rubric_levels/score_scale below. Do NOT emit judge_prompt.
 rubric_levels:                 # carry forward (or sharpen) the dimension's anchored levels
   "5": <string>
   "4": <string>
@@ -282,7 +295,7 @@ An author conforms to this contract when:
 1. It accepts the input schema above (extra fields ignored).
 2. It returns YAML matching the author-owned fields above.
 3. Its output passes `validate.py` once the orchestrator splices in the orchestrator-owned fields.
-4. It declares the contract version it conforms to via `contract_version:` — in its SKILL.md frontmatter for skill-based authors, or in its top-level markdown for bundled-procedure authors. The **current contract version is 7**; an author fully caught up declares `7`. The version requirement is a **minimum, evaluated per feature**: the orchestrator requires *at least* `3` for `kind: score`, and *at least* `4` for `scope: trace` or `kind: agentic`. v6 is NOT transparent for deterministic graders with a gate: a `< 6` author still emits the removed `applies_when_check` and may bake applicability into `deterministic_check`, which now fails `validate.py` / produces a double-gate. So for `kind: deterministic` with an `applies_when`, the orchestrator requires `6`. **v7 is author-transparent in the safe direction**: it only *removes* the self-test fields, so a `< 7` author that still emits `self_tests` is no longer conformant in form, but the orchestrator simply drops any stray `self_tests` it returns (the platform ignores the key). New authors must declare `7` and emit no self-tests.
+4. It declares the contract version it conforms to via `contract_version:` — in its SKILL.md frontmatter for skill-based authors, or in its top-level markdown for bundled-procedure authors. The **current contract version is 8**; an author fully caught up declares `8`. The version requirement is a **minimum, evaluated per feature**: the orchestrator requires *at least* `3` for `kind: score`, and *at least* `4` for `scope: trace` or `kind: agentic`. v6 is NOT transparent for deterministic graders with a gate: a `< 6` author still emits the removed `applies_when_check` and may bake applicability into `deterministic_check`, which now fails `validate.py` / produces a double-gate. So for `kind: deterministic` with an `applies_when`, the orchestrator requires `6`. **v7 is author-transparent in the safe direction**: it only *removes* the self-test fields, so a `< 7` author that still emits `self_tests` is no longer conformant in form, but the orchestrator simply drops any stray `self_tests` it returns (the platform ignores the key). **v8 is NOT transparent for `kind: llm_judge`/`score`**: a `< 8` author still hand-writes `judge_prompt`/`rubric` and does not emit `_body_source: platform`, so its output is the old inline-body shape (which still *validates* — the marker only relaxes requirements — but is not the platform-deferred shape v8 wants). So whenever the orchestrator wants a platform-deferred body for an `llm_judge`/`score` grader it requires `8`; deterministic/execution/agentic graders stay author-transparent at `< 8`. New authors must declare `8` and defer the body for `llm_judge`/`score`.
 
 The orchestrator discovers authors by **two distinct invocation models**:
 

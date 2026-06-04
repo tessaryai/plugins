@@ -211,6 +211,16 @@ Send **one message with two Agent tool calls** so they run in parallel.
 
      For `cli_agent`/`http`/`sandbox_agent`, record `file_hint`/`line_hint` of the spawn/request, set `provider` from the binary/host when identifiable (`claude`→`anthropic`, `ollama`→`ollama`, else `other`), set `system_prompt: null` when none is visible in-repo, and write a `use_case` describing what the agent is asked to *do* (e.g. `Run the test suite and fix failures`, `Summarize a PR diff`). These indirect sites are often the **highest-risk** calls precisely because they run un-prompted, un-schema'd, and sometimes in a sandbox — do not skip them because they don't look like an SDK call.
 
+     **Extract `expected_spans` (telemetry nomenclature) while you have the code open — schema 0.12.0, OPTIONAL/best-effort.** From the same code you read around each call site (and store as `surrounding_code`), read out what the instrumentation *names* this operation, so the platform can later bind a grader to the right captured spans/traces. Look for explicit instrumentation: OTel `start_span("…")` / `tracer.start_as_current_span("…")`; Langfuse `name=` / `@observe(name=)` / `update_current_observation(name=)`; logger/tracer names; the **enclosing function name** (the SDK default span name when nothing else is set); and provider-SDK default naming. Write each as one `expected_spans` entry with the four fields:
+       ```yaml
+       expected_spans:
+         - match_field: name            # one of: name | model | trace_id | metadata.<key>
+           match_pattern: "checkout_summary"   # exact string or glob (* / ?)
+           kind: span                   # span | trace
+           confidence: high             # high (explicit name=/start_span literal) | medium (enclosing fn / convention) | low (guess)
+       ```
+     Use `match_field: model` for a pinned model literal, `metadata.<key>` for an explicit metadata/tag the code attaches, `trace_id` only when the code sets a trace-level identifier. **Omit `expected_spans` entirely (or write `[]`) when no instrumentation hint is visible** — never invent a name. This is low-risk metadata: a wrong or missing entry only weakens span binding, it never blocks grading.
+
      **Split on runtime dispatch — a single physical call location is not always a single call site.** A call site is one *(intent, system prompt, output schema)* combination, not one line of code. When a call location selects its prompt or schema from a registry / map / enum / `match` keyed on a parameter, follow the dispatch and emit **one call site per branch** — each branch has its own failure surface and deserves its own graders. Signals that a call location fans out and must be split:
      - the system prompt is loaded by a variable key (`load_prompt(gate.system_prompt_path)`, `PROMPTS[kind]`, `f"{name}.txt"`) rather than a fixed literal;
      - the response schema is chosen per branch (`schema = gate.response_schema`, `SCHEMAS[kind]`);
@@ -219,7 +229,7 @@ Send **one message with two Agent tool calls** so they run in parallel.
 
      Enumerate the branch keys from the registry definition, the enum, or the call sites that pass the parameter. If a branch set is unbounded or you cannot enumerate it, emit one call site and note the limitation in `use_case`. Conversely, do **not** over-split: parameters that only vary content (the user's text, a temperature, a retry count) are the *same* call site — split only when the prompt or schema or declared trace identity changes per branch.
 
-   Returns a manifest: a list of `{id, use_case, invocation, provider, sample_count, has_system_prompt, redaction_state, file_hint?}` and the overall `runtime.redaction_state` (worst case across sites). `invocation` is one of `sdk | cli_agent | http | sandbox_agent` (default `sdk`).
+   Returns a manifest: a list of `{id, use_case, invocation, provider, sample_count, has_system_prompt, redaction_state, file_hint?, expected_spans_count?}` and the overall `runtime.redaction_state` (worst case across sites). `invocation` is one of `sdk | cli_agent | http | sandbox_agent` (default `sdk`); `expected_spans_count` is the number of telemetry matchers extracted for the site (0 / omit when none found).
 
    **`use_case` is the call site's display name — write it factually.** It names *what the call produces*, in a short noun phrase (≈3–6 words). State the operation and its object; nothing else.
    - **Drop transport/implementation descriptors** — how the call is delivered or stored is not what it does: no `stream`/`streaming`, `async`, `batched`, `cached`, `via cron`, `background worker`, `structured`, `JSON`.
@@ -505,8 +515,10 @@ PART 1 — FAILURE-MODE GRADERS. For each failure mode where grader_deferred is 
 1. If a grader file already exists, load it; pass _meta.locked_fields to the author
    as existing_grader.
 2. Author body via the selected author (pass the failure_mode block). Author-owned
-   output shape: $PLUGIN/contract/AUTHORING_CONTRACT.md. Pick scope and kind from the
-   failure mode:
+   output shape: $PLUGIN/contract/AUTHORING_CONTRACT.md. **v8: for kind=llm_judge the
+   author emits `_body_source: platform` and NO judge_prompt/rubric — the platform
+   expands the judge body on import; for kind=deterministic/execution/agentic the body
+   is plugin-authored exactly as before.** Pick scope and kind from the failure mode:
    - **scope** — `single_call` by default; **`trace`** when the failure can only be judged
      with conversation history (the failure description says so — cross-turn coherence on
      `conversational_turn`/`agent_step` sites). A trace grader is judged against the final
@@ -517,11 +529,13 @@ PART 1 — FAILURE-MODE GRADERS. For each failure mode where grader_deferred is 
      inspecting the result the agent produced (run `git diff`/tests in a sandbox), typically
      on `sandbox_agent`/`cli_agent` sites. An agentic grader carries an `agent_spec`
      (harness=opencode, sandbox, allowed_tools, task_prompt, verdict_contract, budgets);
-     it is binary pass/fail and needs no judge_prompt/rubric.
+     it is binary pass/fail and needs no judge_prompt/rubric (and no `_body_source`).
+     A `kind=llm_judge` grader is platform-deferred (v8): the author returns
+     `_body_source: platform` and the definition, not a hand-written judge_prompt/rubric.
 3. Splice orchestrator-owned fields onto the body (id, scope, failure_mode_id,
    call_site_id|chain_id, name, taxonomy_node_id; owner=null; block_on_fail=null;
    cost/latency budgets from observed.*; dataset_refs; _meta provenance with
-   author_contract_version = the version the producing author declared (7 for the
+   author_contract_version = the version the producing author declared (8 for the
    evals-prompt skill and the bundled default author)).
 4. Write to .tessary/graders/<grader_id_safe>.yaml.
 5. Validate: python3 "$PLUGIN/validate.py" .tessary/graders/<file>.yaml --pipeline .tessary/
@@ -533,13 +547,14 @@ PART 1 — FAILURE-MODE GRADERS. For each failure mode where grader_deferred is 
 PART 2 — QUALITY-DIMENSION SCORE GRADERS. For EVERY quality dimension in the
 quality-dimensions shard (none are deferred):
 1. Pass the quality_dimension block to the author (see AUTHORING_CONTRACT § "Score
-   graders"). The author returns kind: score with judge_prompt, rubric_levels,
-   and score_scale.
+   graders"). The author returns kind: score with `_body_source: platform`,
+   rubric_levels, and score_scale — and NO judge_prompt (v8: the platform expands the
+   scoring judge prompt on import from the rubric_levels/score_scale definition).
 2. Splice orchestrator-owned fields (id = <quality_dimension_id>::grader, scope,
    quality_dimension_id, call_site_id|chain_id, name, eval propagation; owner=null;
    block_on_fail=FALSE — score graders are report-only trends; dataset_refs;
    _meta provenance with author_contract_version = the version the producing author
-   declared (7 for evals-prompt and the bundled default)). Do NOT set
+   declared (8 for evals-prompt and the bundled default)). Do NOT set
    failure_mode_id or taxonomy_node_id on score graders.
 3. Write and validate (same retry loop). No self-test calibration (v7).
 

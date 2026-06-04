@@ -52,7 +52,7 @@ the assembled view is never written back to disk during synthesis.
 ## `.tessary/pipeline/meta.yaml`
 
 ```yaml
-version: "0.11.0"
+version: "0.12.0"
 product_hint: <string | null>
 
 runtime:
@@ -74,7 +74,7 @@ progress:                                 # added in schema 0.7.0 (phased synthe
 
 `version` is the synthesizer's on-disk schema version, not the plugin version.
 Bump only when the shard layout or shard schemas change. Current schema is
-`0.11.0` (0.7.0 added the `progress` block here, the `priorities.yaml` shard, and
+`0.12.0` (0.7.0 added the `progress` block here, the `priorities.yaml` shard, and
 the `grader_deferred` field on failure modes; 0.8.0 added the `quality_dimensions/`
 shard and the `kind: score` grader for continuous 1–5 quality scoring; 0.9.0 added
 the `invocation` field on call sites so indirect LLM calls — agent CLIs, raw HTTP,
@@ -83,7 +83,10 @@ added `scope: trace` graders (grade the final turn of a multi-turn session given
 prior n-1 messages), the `kind: agentic` grader (binary verdict from an agent in a
 sandbox via `agent_spec`), and the agent-session dataset row shape; 0.11.0 added the
 `default_grade_mode` field on call sites so multi-turn sites are flagged at discovery
-and their graders default to `scope: trace`).
+and their graders default to `scope: trace`; 0.12.0 added the `expected_spans` call-site
+field (telemetry nomenclature read from the call site's code, for platform span binding)
+and the grader `_body_source: platform` marker that defers `judge_prompt`/`rubric`
+authoring for `kind=llm_judge`/`score` to the platform — contract v8).
 
 ## `.tessary/pipeline/priorities.yaml`
 
@@ -186,6 +189,20 @@ sample_count: <int>
 # Path B (static repo)
 file_hint: <string | null>
 line_hint: <int | null>
+surrounding_code: <string | null>  # optional; the code snippet around the call site the discovery
+                                   # step read to derive shape/intent/constraints and expected_spans.
+
+# Telemetry nomenclature the call site's instrumentation emits (schema 0.12.0). OPTIONAL,
+# best-effort, orchestrator-owned — written by the discovery step from explicit instrumentation
+# visible in `surrounding_code` (OTel start_span("…")/start_as_current_span, Langfuse name= /
+# @observe(name=) / update_current_observation(name=), logger/tracer names, the enclosing function
+# name = the SDK default span name, provider-SDK default naming). Omitted / empty when no hint is
+# found. The platform uses it to bind a grader to the right captured spans/traces.
+expected_spans:
+  - match_field: <name | model | trace_id | metadata.<key>>  # what the matcher keys on
+    match_pattern: <string>          # exact string or glob (* / ?), e.g. "checkout_summary"
+    kind: <span | trace>             # whether the match identifies a span or a whole trace
+    confidence: <high | medium | low>
 
 # Path A (traces)
 source_spans:
@@ -343,12 +360,16 @@ chain_id: <string | null>            # required when scope == chain
 name: <string>
 
 kind: <llm_judge | deterministic | execution | agentic>
+_body_source: platform              # v8 — present on kind=llm_judge / score: the verdict body
+                                     # (judge_prompt/rubric) is DEFERRED to the platform, which
+                                     # expands it on import. Omit for deterministic/execution/agentic.
 applies_when: <string | null>       # always LLM-evaluated (inline for judge/score; a
                                      # separate LLM gate for deterministic). No applies_when_check (v6).
 
 # kind == llm_judge:
-judge_prompt: <string>
-rubric: <string>
+# judge_prompt / rubric are NOT emitted by the plugin in v8 — they carry `_body_source: platform`
+# and the platform authors the judge body on import. (Pre-v8 files may still carry an inline
+# judge_prompt+rubric with no _body_source; that shape still validates.)
 
 # kind == deterministic:
 deterministic_check: <string>
@@ -388,7 +409,7 @@ dataset_refs:
 
 _meta:
   author: <string>
-  author_contract_version: 7
+  author_contract_version: 8
   synthesized_at: <iso8601>
   synth_inputs_digest: <hex>
   locked_fields: [<field>, ...]

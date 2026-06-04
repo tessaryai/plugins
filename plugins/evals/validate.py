@@ -66,6 +66,11 @@ import pipeline_io  # noqa: E402
 # ----------------------------------------------------------------------------
 
 VALID_KINDS: Final[frozenset[str]] = frozenset({"llm_judge", "deterministic", "execution", "score", "agentic"})
+# Kinds whose verdict body (judge_prompt / rubric) may be deferred to the platform
+# via the v8 `_body_source: platform` marker. Deterministic/execution/agentic bodies
+# are always plugin-authored and never deferrable.
+BODY_DEFERRABLE_KINDS: Final[frozenset[str]] = frozenset({"llm_judge", "score"})
+VALID_BODY_SOURCES: Final[frozenset[str]] = frozenset({"platform"})
 FAILURE_KINDS: Final[frozenset[str]] = frozenset({"llm_judge", "deterministic", "execution", "agentic"})
 VALID_SCOPES: Final[frozenset[str]] = frozenset({"single_call", "chain", "trace"})
 # scope=trace anchors to a single call site (like single_call).
@@ -110,6 +115,13 @@ def _normalize_applies_when(value: Any) -> str | None:
     return value if isinstance(value, str) else None
 
 
+def _is_platform_deferred(g: Grader) -> bool:
+    """v8: a kind=llm_judge / score grader whose verdict body the platform expands
+    on import. The author emits the definition + `_body_source: platform` and omits
+    the judge_prompt / rubric; absent means the body is plugin-authored inline (v7)."""
+    return g.get("_body_source") == "platform"
+
+
 # ----------------------------------------------------------------------------
 # Per-rule checks. Each returns a list of error strings; callers concatenate.
 # ----------------------------------------------------------------------------
@@ -149,13 +161,43 @@ def _check_scope_routing(g: Grader, scope: str | None) -> list[str]:
     return errors
 
 
+def _check_body_source(g: Grader, kind: str | None) -> list[str]:
+    """v8: validate the `_body_source` marker. It must be a known value, may appear
+    only on body-deferrable kinds (llm_judge / score), and — when present — must not
+    co-exist with an inline judge_prompt / rubric (catch authors that set the marker
+    but forgot to actually drop the body)."""
+    errors: list[str] = []
+    src = g.get("_body_source")
+    if src is None:
+        return errors
+    if src not in VALID_BODY_SOURCES:
+        errors.append(f"_body_source must be one of {sorted(VALID_BODY_SOURCES)}; got {src!r}")
+        return errors
+    if kind not in BODY_DEFERRABLE_KINDS:
+        errors.append(f"_body_source is only valid for kind in {sorted(BODY_DEFERRABLE_KINDS)}; "
+                      f"got kind={kind!r}")
+        return errors
+    # Platform-deferred bodies MUST be empty — the platform authors them on import.
+    if _is_nonempty_str(g.get("judge_prompt")):
+        errors.append("_body_source=platform defers the body to the platform, so judge_prompt "
+                      "must be omitted/empty (the author did not actually defer it)")
+    if _is_nonempty_str(g.get("rubric")):
+        errors.append("_body_source=platform defers the body to the platform, so rubric "
+                      "must be omitted/empty (the author did not actually defer it)")
+    return errors
+
+
 def _check_kind_body(g: Grader, kind: str | None) -> list[str]:
     errors: list[str] = []
     if kind == "llm_judge":
-        if not _is_nonempty_str(g.get("judge_prompt")):
-            errors.append("kind=llm_judge requires non-empty judge_prompt")
-        if not _is_nonempty_str(g.get("rubric")):
-            errors.append("kind=llm_judge requires non-empty rubric")
+        # v8: when the body is platform-deferred the author emits only the definition
+        # (the platform expands judge_prompt/rubric on import), so skip the non-empty
+        # body checks. _check_body_source already verified the body is actually empty.
+        if not _is_platform_deferred(g):
+            if not _is_nonempty_str(g.get("judge_prompt")):
+                errors.append("kind=llm_judge requires non-empty judge_prompt")
+            if not _is_nonempty_str(g.get("rubric")):
+                errors.append("kind=llm_judge requires non-empty rubric")
     elif kind == "deterministic":
         if not _is_nonempty_str(g.get("deterministic_check")):
             errors.append("kind=deterministic requires non-empty deterministic_check")
@@ -296,7 +338,10 @@ def _score_scale(g: Grader) -> tuple[int, int] | None:
 
 def _check_score_body(g: Grader) -> list[str]:
     errors: list[str] = []
-    if not _is_nonempty_str(g.get("judge_prompt")):
+    # v8: a platform-deferred score grader emits the definition (rubric_levels +
+    # score_scale) but not the judge_prompt — the platform expands it on import.
+    # _check_body_source already verified no stray judge_prompt/rubric is carried.
+    if not _is_platform_deferred(g) and not _is_nonempty_str(g.get("judge_prompt")):
         errors.append("kind=score requires non-empty judge_prompt")
     scale = _score_scale(g)
     if scale is None:
@@ -333,6 +378,7 @@ def _validate_score_grader(g: Grader, pipeline: Pipeline | None) -> list[str]:
     errors += _check_enums(g)
     scope = g.get("scope") if g.get("scope") in VALID_SCOPES else None
     errors += _check_scope_routing(g, scope)
+    errors += _check_body_source(g, "score")
     errors += _check_score_body(g)
     errors += _check_meta(g)
     if g.get("applies_when") not in (None, ""):
@@ -360,6 +406,7 @@ def validate_grader(g: Grader, pipeline: Pipeline | None = None) -> list[str]:
     kind = g.get("kind") if g.get("kind") in VALID_KINDS else None
 
     errors += _check_scope_routing(g, scope)
+    errors += _check_body_source(g, kind)
     errors += _check_kind_body(g, kind)
     errors += _check_applies_when(g)
     errors += _check_meta(g)
@@ -449,6 +496,15 @@ VALID_GRADE_MODES: Final[frozenset[str]] = frozenset({
     "per_turn", "per_conversation",
 })
 
+# Telemetry-nomenclature matchers a call site may declare under `expected_spans`
+# (schema 0.12.0). `match_field` selects what the instrumentation emits; metadata
+# keys are addressed as the literal prefix `metadata.` + an arbitrary key.
+VALID_EXPECTED_SPAN_FIELDS: Final[frozenset[str]] = frozenset({
+    "name", "model", "trace_id",
+})
+VALID_EXPECTED_SPAN_KINDS: Final[frozenset[str]] = frozenset({"span", "trace"})
+VALID_EXPECTED_SPAN_CONFIDENCE: Final[frozenset[str]] = frozenset({"high", "medium", "low"})
+
 
 def _bundle_invocation_enum(pipeline: Pipeline) -> list[str]:
     """If a call site declares `invocation`, it must be a known kind.
@@ -479,6 +535,63 @@ def _bundle_grade_mode_enum(pipeline: Pipeline) -> list[str]:
             errors.append(f"call_site {cs.get('id')!r} has invalid default_grade_mode "
                           f"{mode!r}; expected one of {sorted(VALID_GRADE_MODES)}")
     return errors
+
+
+def _bundle_expected_spans(pipeline: Pipeline) -> list[str]:
+    """If a call site declares `expected_spans` (schema 0.12.0), validate each entry.
+
+    `expected_spans` is an OPTIONAL, best-effort, orchestrator-owned list of telemetry
+    matchers extracted from the call site's code (OTel span names, Langfuse names,
+    enclosing function name, etc.) so the platform can bind graders to the right
+    captured spans/traces. Absent / empty is always allowed. Each entry must carry the
+    four fields with valid enum values:
+      match_field   one of name | model | trace_id | metadata.<key>
+      match_pattern non-empty string (exact or glob)
+      kind          span | trace
+      confidence    high | medium | low
+    """
+    errors: list[str] = []
+    for cs in pipeline.get("call_sites") or []:
+        if not isinstance(cs, dict):
+            continue
+        spans = cs.get("expected_spans")
+        if spans is None:
+            continue
+        cid = cs.get("id")
+        if not isinstance(spans, list):
+            errors.append(f"call_site {cid!r} expected_spans must be a list when present")
+            continue
+        for i, entry in enumerate(spans):
+            where = f"call_site {cid!r} expected_spans[{i}]"
+            if not isinstance(entry, dict):
+                errors.append(f"{where} must be a mapping")
+                continue
+            mf = entry.get("match_field")
+            if not _is_valid_match_field(mf):
+                errors.append(f"{where} has invalid match_field {mf!r}; expected one of "
+                              f"{sorted(VALID_EXPECTED_SPAN_FIELDS)} or 'metadata.<key>'")
+            if not _is_nonempty_str(entry.get("match_pattern")):
+                errors.append(f"{where} requires a non-empty match_pattern")
+            kind = entry.get("kind")
+            if kind not in VALID_EXPECTED_SPAN_KINDS:
+                errors.append(f"{where} has invalid kind {kind!r}; expected one of "
+                              f"{sorted(VALID_EXPECTED_SPAN_KINDS)}")
+            conf = entry.get("confidence")
+            if conf not in VALID_EXPECTED_SPAN_CONFIDENCE:
+                errors.append(f"{where} has invalid confidence {conf!r}; expected one of "
+                              f"{sorted(VALID_EXPECTED_SPAN_CONFIDENCE)}")
+    return errors
+
+
+def _is_valid_match_field(value: Any) -> bool:
+    """`match_field` is one of the fixed scalar fields or a `metadata.<key>` selector."""
+    if value in VALID_EXPECTED_SPAN_FIELDS:
+        return True
+    return (
+        isinstance(value, str)
+        and value.startswith("metadata.")
+        and value[len("metadata."):].strip() != ""
+    )
 
 
 def _bundle_quality_coverage(pipeline: Pipeline) -> list[str]:
@@ -915,6 +1028,7 @@ def _run_bundle(evals_dir: Path, calibration_csv: Path | None,
     bundle_errors += _bundle_quality_coverage(pipeline)
     bundle_errors += _bundle_invocation_enum(pipeline)
     bundle_errors += _bundle_grade_mode_enum(pipeline)
+    bundle_errors += _bundle_expected_spans(pipeline)
     bundle_errors += _bundle_duplicate_ids(graders)
     bundle_errors += _bundle_taxonomy_reachability(pipeline)
     bundle_errors += _bundle_chain_acyclic(pipeline)

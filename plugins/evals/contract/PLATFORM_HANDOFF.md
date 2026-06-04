@@ -1,5 +1,46 @@
 # Platform handoff — v0.10 / v0.11 grader contract additions
 
+> ## v0.15 / contract v8 — judge-prompt authoring moves to the platform (read first)
+>
+> Two changes ship in contract **v8** (schema `$id` → `grader.v8.json`, on-disk schema → `0.12.0`):
+>
+> ### 1. `_body_source: platform` — the platform now expands the judge body on import
+> For `kind=llm_judge` and `kind=score`, the plugin **no longer authors `judge_prompt`/`rubric`**.
+> Instead the grader carries a top-level marker `_body_source: platform` and only the *definition*:
+> `kind`, `applies_when` (llm_judge), `rubric_levels`+`score_scale` (score), `confidence`, `rationale`.
+> **The platform must, on grader import, synthesize the runtime verdict body** from that definition:
+> - **llm_judge** → build the judge system prompt (injection-hardened output block, the in-scope
+>   `applies_when` gate inline, the JSON verdict contract `{applicable, passed, score, rationale}`)
+>   plus the pass/fail `rubric`, from the failure-mode definition the grader links to.
+> - **score** → build the scoring judge prompt that returns one integer in `[score_scale.min, max]`
+>   + a one-line justification, scored strictly against `rubric_levels`.
+>
+> Semantics: `_body_source`'s only legal value is `platform`; it appears **only** on `llm_judge`/`score`.
+> When **absent**, the grader carries an inline `judge_prompt`/`rubric` (the ≤ v7 shape) — keep
+> consuming those directly. So the platform's import path is: *if `_body_source == "platform"` and the
+> body is empty, expand it; otherwise use the inline body as before.* `validate.py` guarantees a
+> deferred grader never also carries a non-empty inline body, so the two paths never conflict.
+> `_body_source` is a plain TEXT field; no migration required (store it on the grader payload).
+>
+> ### 2. New call-site field `expected_spans` — telemetry nomenclature from the code
+> The discovery step now reads the instrumentation nomenclature out of each call site's code and
+> records it on the **call-site shard** (not the grader). The platform should consume it to **bind a
+> grader to the right captured spans/traces** when associating golden datasets / live runs. Shape:
+> ```yaml
+> expected_spans:
+>   - match_field: name            # one of: name | model | trace_id | metadata.<key>
+>     match_pattern: "checkout_summary"   # exact string or glob (* / ?)
+>     kind: span                   # span | trace
+>     confidence: high             # high | medium | low
+> ```
+> It is **optional / best-effort** — derived from explicit instrumentation (OTel `start_span("…")`,
+> Langfuse `name=` / `@observe(name=)`, enclosing function name, provider-SDK default naming) and
+> **omitted/empty when no hint is found**. Treat it as a matching *hint*, never a hard requirement:
+> match by `match_field`/`match_pattern` (glob), preferring higher-`confidence` entries; fall back to
+> existing span-binding when the list is empty. Plain TEXT/JSON on the call site; no migration required.
+>
+> ---
+
 This document is for the **evals-platform** team (the runner that executes graders this plugin
 synthesizes). It lists exactly what the platform must implement to consume the additive
 contract changes introduced in plugin v0.10–v0.11 / on-disk schema `0.10.0`–`0.11.0`:

@@ -22,7 +22,7 @@ Failure modes and quality dimensions are two different axes and must not be conf
 
 ## Outputs you produce
 
-**A. Patch the call-site shard in place** (Read + Edit, *not* Write — preserve the static fields step 1 wrote). Add four fields: `shape`, `shape_confidence`, `intent`, `constraints` — plus `default_grade_mode` when the site is multi-turn (see § 1.5).
+**A. Patch the call-site shard in place** (Read + Edit, *not* Write — preserve the static fields step 1 wrote). Add four fields: `shape`, `shape_confidence`, `intent`, `constraints` — plus `default_grade_mode` when the site is multi-turn (see § 1.5), and `expected_spans` when the code shows instrumentation nomenclature and step 1 did not already record it (see § 1.6).
 
 **B. Write `.tessary/pipeline/failure_modes/<call_site_id_safe>.yaml`** with top-level key `failure_modes:` and a canonical-sorted list. Leave `taxonomy_node_id` empty — step 5 patches it back.
 
@@ -90,6 +90,32 @@ invoked repeatedly within one session and what matters is the final turn given t
 This is the site-level default; the platform lets a human override it per call site. Setting
 `per_conversation` is what tells the orchestrator to author this site's cross-turn graders as
 `scope: trace` rather than `single_call`.
+
+## 1.6 Expected spans (telemetry nomenclature — OPTIONAL, best-effort)
+
+Step 1 (call-site discovery) normally records `expected_spans` while it reads the call site's
+code (schema 0.12.0). If the shard you own is **missing** `expected_spans` but the `surrounding_code`
+you have shows explicit instrumentation, backfill it here; otherwise leave it alone. Derive entries
+from instrumentation visible in the code only:
+
+- OTel `start_span("…")` / `tracer.start_as_current_span("…")` → `match_field: name`, the literal.
+- Langfuse `name=` / `@observe(name=)` / `update_current_observation(name=)` → `match_field: name`.
+- A pinned model literal → `match_field: model`; an explicit metadata/tag the code attaches →
+  `match_field: metadata.<key>`; a trace-level identifier the code sets → `match_field: trace_id`.
+- The **enclosing function name** (the SDK default span name when nothing else is set) → `match_field:
+  name`, `confidence: medium`.
+
+```yaml
+expected_spans:
+  - match_field: name            # name | model | trace_id | metadata.<key>
+    match_pattern: "checkout_summary"   # exact string or glob (* / ?)
+    kind: span                   # span | trace
+    confidence: high             # high (explicit literal) | medium (convention) | low (guess)
+```
+
+**Omit `expected_spans` entirely when no instrumentation hint is visible — never invent a name.**
+This is low-risk: a missing or wrong entry only weakens the platform's span binding, it never blocks
+grading.
 
 ---
 
