@@ -308,8 +308,10 @@ Write `.tessary/pipeline/packs.yaml`:
 
 ```bash
 python3 - <<'PY'
-import sys; sys.path.insert(0, "$PLUGIN"); import pipeline_io, json
-pipeline_io.write_packs(".tessary", json.loads('''<packs json>'''))
+import sys; sys.path.insert(0, "$PLUGIN")
+from pathlib import Path
+import pipeline_io, json
+pipeline_io.write_packs(Path(".tessary"), json.loads('''<packs json>'''))
 PY
 ```
 

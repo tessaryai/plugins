@@ -448,6 +448,10 @@ def _cli(argv: list[str]) -> int:
     p_stamp.add_argument("--author", required=True)
     p_stamp.add_argument("--synth-inputs-digest", required=True)
     p_stamp.add_argument("--author-contract-version", type=int, default=8)
+    # Accepted and ignored (stamp-meta operates on an absolute/explicit path);
+    # mirrors the sibling subcommands so the documented orchestrator invocation
+    # works verbatim.
+    p_stamp.add_argument("--evals-dir", default=".tessary")
 
     args = ap.parse_args(argv)
 

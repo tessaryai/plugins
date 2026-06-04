@@ -48,6 +48,7 @@ failure_modes:
 
 ```yaml
 # chain entry — chain_id set, call_site_id null (used only by the chain subagent)
+failure_modes:
   - id: <chain_id>::<short_snake_name>
     scope: chain
     call_site_id: null
