@@ -3,6 +3,25 @@
 All notable changes to the `crew` plugin are documented here. This project
 follows [semantic versioning](https://semver.org/).
 
+## [0.6.1] — 2026-06-04
+
+### Changed
+
+- **Tighter review calibration.** `review-rigor` now tells reviewers to **reject** unrealistic
+  edge cases, speculative "what if" risks with no concrete trigger, and findings whose only fix is
+  a broad rewrite — these are noise, not findings. Security review is calibrated the same way: flag
+  only a concrete, actionable risk or a removed safety check, never to look thorough, and never in
+  a way that cripples legitimate functionality.
+- **Confirm contracts before flagging.** When a finding hinges on a library or external API's
+  behavior, reviewers must confirm it against that dependency's docs, types, or source rather than
+  guessing at a contract they can verify.
+- **Smallest fix at the right boundary.** Every finding now carries the minimal constructive fix at
+  the correct ownership boundary — no refactor unless it clearly eliminates the bug class — so the
+  review→fix loop isn't handed a worse change to make.
+- **Sweep the bug class.** When a confirmed finding reveals a repeated pattern, `review-pr` scans
+  the rest of the diff for sibling instances and flags them together as one finding with every
+  `file:line`, instead of leaving the fix loop to rediscover them one round at a time.
+
 ## [0.6.0] — 2026-06-03
 
 ### Added
