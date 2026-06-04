@@ -82,7 +82,9 @@ the baseline:
 - **Correctness & safety** — obvious bugs, unhandled errors, race conditions, resource
   leaks, off-by-one / null handling.
 - **Security** — injection (string-built queries/commands), secrets committed or logged,
-  unvalidated input on a trust boundary, auth/permission gaps.
+  unvalidated input on a trust boundary, auth/permission gaps. Calibrate: flag a security finding
+  only when the change creates a **concrete, actionable risk** or removes a real safety check — not
+  to look thorough. Security review should not cripple legitimate functionality.
 - **Consistency** — follows the patterns and layering the surrounding code uses.
 - **Tests & docs** — behavior changes covered by tests; user-facing changes documented,
   per the project's norms.
@@ -97,6 +99,11 @@ Classify each finding: **blocker** (must fix), **warning** (should fix), or **su
 surrounding context to confirm the problem is real (`review-rigor.md`). Drop or downgrade any
 finding you can't confirm against the code — a false blocker requests changes a human must
 refute, or sends the review→fix loop chasing a non-bug.
+
+**Sweep the bug class.** When a confirmed finding reveals a repeated pattern (a missing guard, an
+un-updated caller, an unsafe idiom), scan the rest of the diff for **sibling instances** and flag
+them together as one finding with every `file:line`. Don't flag instance #1 and leave the fix loop
+to rediscover the rest one round at a time.
 
 ## 3. Clean up your own stale reviews
 

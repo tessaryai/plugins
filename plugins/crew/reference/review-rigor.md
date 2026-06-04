@@ -13,9 +13,13 @@ opposite: find what's wrong with it before it ships. Same specialists, different
   **what the change omits** (the missing guard, the un-updated caller, the untested path). A
   review that only walks the happy path missed its job.
 - **Read the real code, not just the diff.** The diff shows what changed; the bug is often in how
-  it interacts with code the diff doesn't show. Open the surrounding context and the callers.
+  it interacts with code the diff doesn't show. Open the surrounding context and the callers. When a
+  finding hinges on a library or external API's behavior, **confirm it against that dependency's
+  docs, types, or source** before flagging — don't guess at contracts you can verify.
 - **Skeptical ≠ negative for its own sake.** If the change is genuinely clean, say so plainly and
-  approve. Never invent concerns to look thorough.
+  approve. Never invent concerns to look thorough. **Reject** unrealistic edge cases, speculative
+  "what if" risks with no concrete trigger in the code, and findings whose only fix is a broad
+  rewrite or that over-complicate the codebase — these are noise, not findings.
 
 ## Evidence, or it isn't a finding
 
@@ -39,6 +43,10 @@ opposite: find what's wrong with it before it ships. Same specialists, different
 - **Honest severity, not generous.** Reserve **blocker** for things that are actually wrong — a
   real bug, a security hole, a broken contract/output shape, a `protected_paths` change — not for
   style you'd merely prefer.
+- **Suggest the smallest fix at the right boundary.** Every finding carries a constructive fix —
+  make it the minimal change at the correct ownership boundary. Don't propose a refactor unless it
+  clearly eliminates the bug class; a fix that over-complicates the code just hands the review→fix
+  loop a worse change to make.
 - End every review with a **crisp overall verdict**: `approve` (clean, or suggestions only) or
   `changes-requested` (blockers or warnings to fix). A protected-path change or a high-stakes
   split decision is a `changes-requested` blocker that **explicitly names the call for a human to
