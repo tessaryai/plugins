@@ -77,9 +77,6 @@ BODY_DEFERRABLE_KINDS: Final[frozenset[str]] = frozenset({"llm_judge", "score"})
 #   human                 — HUMAN-EDITED: a human edited a materialized body in-repo; the
 #                           inline body MUST be PRESENT and propagates back upstream.
 VALID_BODY_SOURCES: Final[frozenset[str]] = frozenset({"platform", "platform-materialized", "human"})
-# The two values that mean "the verdict body is materialized in-repo and must be present"
-# (the inverse of `platform`, which requires the body empty).
-MATERIALIZED_BODY_SOURCES: Final[frozenset[str]] = frozenset({"platform-materialized", "human"})
 FAILURE_KINDS: Final[frozenset[str]] = frozenset({"llm_judge", "deterministic", "execution", "agentic"})
 VALID_SCOPES: Final[frozenset[str]] = frozenset({"single_call", "chain", "trace"})
 # scope=trace anchors to a single call site (like single_call).
@@ -128,14 +125,6 @@ def _is_platform_deferred(g: Grader) -> bool:
     platform` and omits the judge_prompt / rubric. Matches ONLY the literal "platform"
     — the v9 materialized values are NOT deferred (they require a present body)."""
     return g.get("_body_source") == "platform"
-
-
-def _is_body_materialized(g: Grader) -> bool:
-    """MATERIALIZED / HUMAN-EDITED states (v9): the verdict body has been synced back
-    into the repo (`platform-materialized`) or edited in-repo by a human (`human`).
-    In both the inline judge_prompt (+ rubric for llm_judge) MUST be present — the
-    inverse of the deferred state. Absent `_body_source` is the legacy inline shape."""
-    return g.get("_body_source") in MATERIALIZED_BODY_SOURCES
 
 
 # ----------------------------------------------------------------------------
