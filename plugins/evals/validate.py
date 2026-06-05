@@ -67,10 +67,19 @@ import pipeline_io  # noqa: E402
 
 VALID_KINDS: Final[frozenset[str]] = frozenset({"llm_judge", "deterministic", "execution", "score", "agentic"})
 # Kinds whose verdict body (judge_prompt / rubric) may be deferred to the platform
-# via the v8 `_body_source: platform` marker. Deterministic/execution/agentic bodies
-# are always plugin-authored and never deferrable.
+# via the `_body_source` marker. Deterministic/execution/agentic bodies are always
+# plugin-authored and never carry the marker.
 BODY_DEFERRABLE_KINDS: Final[frozenset[str]] = frozenset({"llm_judge", "score"})
-VALID_BODY_SOURCES: Final[frozenset[str]] = frozenset({"platform"})
+# v9 widens the enum to the three-state body lifecycle:
+#   platform              — DEFERRED: body empty, the platform expands it on import (v8).
+#   platform-materialized — MATERIALIZED: the platform synced a generated body back into
+#                           the repo; the inline body MUST be PRESENT (and is frozen).
+#   human                 — HUMAN-EDITED: a human edited a materialized body in-repo; the
+#                           inline body MUST be PRESENT and propagates back upstream.
+VALID_BODY_SOURCES: Final[frozenset[str]] = frozenset({"platform", "platform-materialized", "human"})
+# The two values that mean "the verdict body is materialized in-repo and must be present"
+# (the inverse of `platform`, which requires the body empty).
+MATERIALIZED_BODY_SOURCES: Final[frozenset[str]] = frozenset({"platform-materialized", "human"})
 FAILURE_KINDS: Final[frozenset[str]] = frozenset({"llm_judge", "deterministic", "execution", "agentic"})
 VALID_SCOPES: Final[frozenset[str]] = frozenset({"single_call", "chain", "trace"})
 # scope=trace anchors to a single call site (like single_call).
@@ -113,18 +122,20 @@ def _is_nonempty_str(value: Any) -> bool:
     return isinstance(value, str) and value.strip() != ""
 
 
-def _normalize_applies_when(value: Any) -> str | None:
-    """Empty string is treated as null per contract."""
-    if isinstance(value, str) and value.strip() == "":
-        return None
-    return value if isinstance(value, str) else None
-
-
 def _is_platform_deferred(g: Grader) -> bool:
-    """v8: a kind=llm_judge / score grader whose verdict body the platform expands
-    on import. The author emits the definition + `_body_source: platform` and omits
-    the judge_prompt / rubric; absent means the body is plugin-authored inline (v7)."""
+    """DEFERRED state (v8): a kind=llm_judge / score grader whose verdict body the
+    platform expands on import. The author emits the definition + `_body_source:
+    platform` and omits the judge_prompt / rubric. Matches ONLY the literal "platform"
+    — the v9 materialized values are NOT deferred (they require a present body)."""
     return g.get("_body_source") == "platform"
+
+
+def _is_body_materialized(g: Grader) -> bool:
+    """MATERIALIZED / HUMAN-EDITED states (v9): the verdict body has been synced back
+    into the repo (`platform-materialized`) or edited in-repo by a human (`human`).
+    In both the inline judge_prompt (+ rubric for llm_judge) MUST be present — the
+    inverse of the deferred state. Absent `_body_source` is the legacy inline shape."""
+    return g.get("_body_source") in MATERIALIZED_BODY_SOURCES
 
 
 # ----------------------------------------------------------------------------
@@ -167,10 +178,18 @@ def _check_scope_routing(g: Grader, scope: str | None) -> list[str]:
 
 
 def _check_body_source(g: Grader, kind: str | None) -> list[str]:
-    """v8: validate the `_body_source` marker. It must be a known value, may appear
-    only on body-deferrable kinds (llm_judge / score), and — when present — must not
-    co-exist with an inline judge_prompt / rubric (catch authors that set the marker
-    but forgot to actually drop the body)."""
+    """Validate the `_body_source` marker across the v9 three-state lifecycle. It must
+    be a known value and may appear only on body-deferrable kinds (llm_judge / score).
+    Then it gates the body presence by state:
+      - platform (DEFERRED)              → body MUST be empty (the platform expands it
+                                            on import; a non-empty body means the author
+                                            did not actually defer it).
+      - platform-materialized / human    → body MUST be PRESENT (the platform synced a
+        (MATERIALIZED / HUMAN-EDITED)       generated body back, or a human edited it).
+                                            An empty body is a corrupt/half-synced file.
+    The present-body requirement here is the inverse of the deferred require-empty rule;
+    `_check_kind_body` / `_check_score_body` also enforce the present body as the normal
+    body check (since materialized states are not deferred), so the two are consistent."""
     errors: list[str] = []
     src = g.get("_body_source")
     if src is None:
@@ -182,22 +201,34 @@ def _check_body_source(g: Grader, kind: str | None) -> list[str]:
         errors.append(f"_body_source is only valid for kind in {sorted(BODY_DEFERRABLE_KINDS)}; "
                       f"got kind={kind!r}")
         return errors
-    # Platform-deferred bodies MUST be empty — the platform authors them on import.
-    if _is_nonempty_str(g.get("judge_prompt")):
-        errors.append("_body_source=platform defers the body to the platform, so judge_prompt "
-                      "must be omitted/empty (the author did not actually defer it)")
-    if _is_nonempty_str(g.get("rubric")):
-        errors.append("_body_source=platform defers the body to the platform, so rubric "
-                      "must be omitted/empty (the author did not actually defer it)")
+    if src == "platform":
+        # DEFERRED: the platform authors the body on import, so it MUST be empty.
+        if _is_nonempty_str(g.get("judge_prompt")):
+            errors.append("_body_source=platform defers the body to the platform, so judge_prompt "
+                          "must be omitted/empty (the author did not actually defer it)")
+        if _is_nonempty_str(g.get("rubric")):
+            errors.append("_body_source=platform defers the body to the platform, so rubric "
+                          "must be omitted/empty (the author did not actually defer it)")
+    else:
+        # MATERIALIZED / HUMAN-EDITED: the body lives in-repo and MUST be present.
+        if not _is_nonempty_str(g.get("judge_prompt")):
+            errors.append(f"_body_source={src} requires a present (non-empty) judge_prompt — a "
+                          f"materialized/human body must carry the body in-repo (empty = corrupt sync)")
+        if kind == "llm_judge" and not _is_nonempty_str(g.get("rubric")):
+            errors.append(f"_body_source={src} requires a present (non-empty) rubric for kind=llm_judge "
+                          f"(empty = corrupt sync)")
     return errors
 
 
 def _check_kind_body(g: Grader, kind: str | None) -> list[str]:
     errors: list[str] = []
     if kind == "llm_judge":
-        # v8: when the body is platform-deferred the author emits only the definition
-        # (the platform expands judge_prompt/rubric on import), so skip the non-empty
-        # body checks. _check_body_source already verified the body is actually empty.
+        # v8/v9: when the body is platform-DEFERRED (_body_source == "platform") the
+        # author emits only the definition (the platform expands judge_prompt/rubric on
+        # import), so skip the non-empty body checks — _check_body_source already verified
+        # the body is actually empty. For every other state (legacy inline, AND the v9
+        # materialized/human states, which are not deferred) the body MUST be present, so
+        # this non-empty check runs and enforces it.
         if not _is_platform_deferred(g):
             if not _is_nonempty_str(g.get("judge_prompt")):
                 errors.append("kind=llm_judge requires non-empty judge_prompt")
@@ -240,18 +271,16 @@ def _check_agentic_body(g: Grader) -> list[str]:
 def _check_applies_when(g: Grader) -> list[str]:
     """applies_when is free-form and ALWAYS LLM-evaluated at runtime (v6). For a
     deterministic grader the platform runs a separate LLM applicability gate before
-    the gate-free deterministic_check; there is no code-evaluable mirror to author."""
+    the gate-free deterministic_check; there is no code-evaluable mirror to author.
+
+    `applies_when_check` (the v2 code-evaluable mirror, feature-removed in v6) is fully
+    dropped from the contract in v9 — the validator no longer special-cases it. A stray
+    key on a legacy file is now simply ignored (the schema has no additionalProperties
+    constraint and the platform never read it)."""
     errors: list[str] = []
     raw = g.get("applies_when")
     if raw is not None and not isinstance(raw, str):
         errors.append("applies_when must be a string or null")
-
-    # applies_when_check was removed in v6 (the gate is never compiled). validate.py
-    # flags it as an error so authors drop it; the JSON schema still tolerates the key
-    # structurally (deprecated) and the platform ignores it, so legacy files don't crash.
-    if _normalize_applies_when(g.get("applies_when_check")):
-        errors.append("applies_when_check was removed in v6 — applies_when is now always "
-                      "evaluated by an LLM, so the deterministic body is gate-free. Drop applies_when_check.")
     return errors
 
 
@@ -286,7 +315,55 @@ def _check_meta(g: Grader) -> list[str]:
     human_edited = meta.get("human_edited")
     if human_edited is not None and not isinstance(human_edited, bool):
         errors.append("_meta.human_edited must be a boolean when present")
+    # v9 body-lifecycle provenance — both optional, present only on materialized/human bodies.
+    if meta.get("materialized_at") is not None and not _is_nonempty_str(meta.get("materialized_at")):
+        errors.append("_meta.materialized_at must be a non-empty string when present")
+    if meta.get("body_digest") is not None and not _is_nonempty_str(meta.get("body_digest")):
+        errors.append("_meta.body_digest must be a non-empty string when present")
+    errors += _check_body_digest(g, meta)
     return errors
+
+
+def _canonical_body_digest(g: Grader) -> str:
+    """Canonical SHA-256 over a grader's verdict body, used for v9 human-edit detection.
+
+    Canonicalization (documented in grader.schema.json `_meta.body_digest`): take
+    judge_prompt, then '\\n' + rubric when the rubric is present (llm_judge), strip
+    trailing whitespace from every line, and strip leading/trailing blank lines — so
+    trivial reformatting (a trailing space, an extra blank line) does not falsely read
+    as a human edit, while any substantive change does."""
+    parts = [g.get("judge_prompt") or ""]
+    rubric = g.get("rubric")
+    if _is_nonempty_str(rubric):
+        parts.append(rubric)
+    raw = "\n".join(parts)
+    lines = [ln.rstrip() for ln in raw.split("\n")]
+    while lines and lines[0] == "":
+        lines.pop(0)
+    while lines and lines[-1] == "":
+        lines.pop()
+    return _sha256_hex("\n".join(lines))
+
+
+def _check_body_digest(g: Grader, meta: Mapping[str, Any]) -> list[str]:
+    """v9 human-edit detection. A `platform-materialized` grader whose recomputed body
+    digest no longer matches the recorded `_meta.body_digest` has been edited in-repo by
+    a human. The file must then be PROMOTED to `_body_source: human` with
+    `_meta.human_edited: true` so the next platform sync propagates the revision upstream.
+    The validator surfaces this as an actionable error (the plugin ships no client tooling
+    to mutate the file; the platform's GitHub-integration sync or a human applies the flip).
+    A `human` grader whose digest is stale is fine — it is already marked, awaiting sync."""
+    if g.get("_body_source") != "platform-materialized":
+        return []
+    recorded = meta.get("body_digest")
+    if not _is_nonempty_str(recorded):
+        return []
+    if _canonical_body_digest(g) != recorded:
+        return ["_body_source=platform-materialized but the body digest no longer matches "
+                "_meta.body_digest — the materialized body was edited in-repo. Promote it to "
+                "_body_source: human and set _meta.human_edited: true so the edit syncs back "
+                "upstream (the platform's GitHub sync or a curator applies this)."]
+    return []
 
 
 def _check_pipeline_refs(
@@ -343,9 +420,11 @@ def _score_scale(g: Grader) -> tuple[int, int] | None:
 
 def _check_score_body(g: Grader) -> list[str]:
     errors: list[str] = []
-    # v8: a platform-deferred score grader emits the definition (rubric_levels +
+    # v8: a platform-DEFERRED score grader emits the definition (rubric_levels +
     # score_scale) but not the judge_prompt — the platform expands it on import.
-    # _check_body_source already verified no stray judge_prompt/rubric is carried.
+    # _check_body_source already verified no stray judge_prompt is carried. v9: the
+    # materialized/human states are not deferred, so this present-judge_prompt check
+    # runs for them too (a materialized score body must carry its judge_prompt).
     if not _is_platform_deferred(g) and not _is_nonempty_str(g.get("judge_prompt")):
         errors.append("kind=score requires non-empty judge_prompt")
     scale = _score_scale(g)
@@ -509,6 +588,10 @@ VALID_EXPECTED_SPAN_FIELDS: Final[frozenset[str]] = frozenset({
 })
 VALID_EXPECTED_SPAN_KINDS: Final[frozenset[str]] = frozenset({"span", "trace"})
 VALID_EXPECTED_SPAN_CONFIDENCE: Final[frozenset[str]] = frozenset({"high", "medium", "low"})
+# v9 provenance. `observed` = the span name was read from real OTel/trace telemetry (a
+# verified fact); `inferred` = guessed from static source (the v8 best-effort path).
+# Absent defaults to `inferred`, so every legacy (v8) entry validates unchanged.
+VALID_EXPECTED_SPAN_SOURCE: Final[frozenset[str]] = frozenset({"observed", "inferred"})
 
 
 def _bundle_invocation_enum(pipeline: Pipeline) -> list[str]:
@@ -548,12 +631,16 @@ def _bundle_expected_spans(pipeline: Pipeline) -> list[str]:
     `expected_spans` is an OPTIONAL, best-effort, orchestrator-owned list of telemetry
     matchers extracted from the call site's code (OTel span names, Langfuse names,
     enclosing function name, etc.) so the platform can bind graders to the right
-    captured spans/traces. Absent / empty is always allowed. Each entry must carry the
-    four fields with valid enum values:
+    captured spans/traces. Absent / empty is always allowed. Each entry carries:
       match_field   one of name | model | trace_id | metadata.<key>
       match_pattern non-empty string (exact or glob)
       kind          span | trace
-      confidence    high | medium | low
+      source        observed | inferred  (v9; absent ⇒ inferred — legacy entries pass)
+      confidence    high | medium | low  (REQUIRED for inferred entries; OPTIONAL/moot
+                                          for observed entries — an observed span name is
+                                          a verified fact, not a guess)
+    v9: an `observed` entry was read from real telemetry, so the platform trusts it
+    unconditionally and only ranks `inferred` entries by `confidence`.
     """
     errors: list[str] = []
     for cs in pipeline.get("call_sites") or []:
@@ -581,10 +668,22 @@ def _bundle_expected_spans(pipeline: Pipeline) -> list[str]:
             if kind not in VALID_EXPECTED_SPAN_KINDS:
                 errors.append(f"{where} has invalid kind {kind!r}; expected one of "
                               f"{sorted(VALID_EXPECTED_SPAN_KINDS)}")
+            # v9 source provenance — absent defaults to inferred (legacy behavior).
+            source = entry.get("source")
+            if source is not None and source not in VALID_EXPECTED_SPAN_SOURCE:
+                errors.append(f"{where} has invalid source {source!r}; expected one of "
+                              f"{sorted(VALID_EXPECTED_SPAN_SOURCE)}")
+            is_observed = source == "observed"
             conf = entry.get("confidence")
-            if conf not in VALID_EXPECTED_SPAN_CONFIDENCE:
+            # confidence is moot for an observed (verified) entry, so it is optional there;
+            # for inferred (the default, incl. all legacy entries) it stays required.
+            if conf is None and is_observed:
+                pass
+            elif conf not in VALID_EXPECTED_SPAN_CONFIDENCE:
+                hint = (" (optional for source=observed)" if is_observed else
+                        " (required for inferred entries)")
                 errors.append(f"{where} has invalid confidence {conf!r}; expected one of "
-                              f"{sorted(VALID_EXPECTED_SPAN_CONFIDENCE)}")
+                              f"{sorted(VALID_EXPECTED_SPAN_CONFIDENCE)}{hint}")
     return errors
 
 

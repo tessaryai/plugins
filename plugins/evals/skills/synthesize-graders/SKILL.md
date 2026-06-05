@@ -95,7 +95,19 @@ If `.tessary/` already exists in the target repo, load `.tessary/.synth-lock.yam
 *every shard* under `pipeline/` *and* every grader. Triage:
 
 1. **Load locks.** For each grader file, verify its current SHA against the
-   lock. Read `_meta.locked_fields` and `_meta.human_edited` per file.
+   lock. Read `_meta.locked_fields`, `_meta.human_edited`, and `_body_source` per file.
+   **Materialized/human bodies are frozen (v9).** If a grader's `_body_source` is
+   `platform-materialized` or `human`, its verdict body (`judge_prompt`, and `rubric`
+   for `llm_judge`) is **frozen** — never re-author or overwrite it. Carry the existing
+   `judge_prompt`/`rubric` + `_body_source` + `_meta` (incl. `materialized_at` /
+   `body_digest`) forward verbatim, even under `--force` (which may refresh
+   orchestrator-owned fields like `id` / `dataset_refs` but must never touch a
+   materialized body). These files land with `_meta.locked_fields: [judge_prompt, rubric]`
+   (llm_judge) or `[judge_prompt]` (score), so the SHA-lock already tolerates their
+   on-disk divergence. If `validate.py` reports a `body_digest` mismatch on a
+   `platform-materialized` grader, a human edited it: promote it to `_body_source: human`
+   and set `_meta.human_edited: true` (the platform's GitHub sync, or a curator, applies
+   this) so the edit propagates upstream — do not regenerate the body.
 2. **Decide the safe path.** Shards under `pipeline/` are orchestrator-owned;
    re-runs overwrite them. Grader files are the human-curatable surface:
    - No grader is `human_edited` and no grader diverges from the lock →
@@ -196,6 +208,37 @@ Phase E (on demand): /evals:synthesize-graders --complete <id>
 
 ### Phase A — Discovery
 
+#### A.0 — Solicit telemetry (optional, skippable; v9)
+
+Before dispatching discovery, optionally solicit real OpenTelemetry / trace data so span names
+are **observed, not guessed**. This runs once, and is purely additive — it never changes the
+graders produced, only whether `expected_spans` are verified.
+
+- **If `--traces` (or an agent-session JSONL) was already supplied** → skip the prompt entirely and
+  go straight to Path A, which now emits `source: observed` `expected_spans` from the real spans.
+- **If no traces were supplied AND the run is interactive** → emit ONE short, skippable prompt:
+
+  > *Optional: paste or point me at OpenTelemetry data so span names are exact instead of inferred
+  > from code. I accept any of: an OTLP/JSON or OTLP-export `traces.jsonl` (the `--traces` format);
+  > a flat span-name list (one `name` per line, optionally `name<TAB>kind<TAB>metadata.key=val`); or
+  > a Langfuse / Phoenix / Jaeger export. Press enter / "skip" to proceed from source code only.*
+
+  - If the user provides full traces → treat as Path A (verified-span extraction).
+  - If the user provides a flat span-name list → run Path B discovery, then match each provided name
+    to a discovered call site by use-case / enclosing-function correspondence and write it as a
+    `source: observed` `name` matcher (superseding any inferred guess for that site); surface any
+    names that did not map back to the user rather than dropping them silently.
+  - No answer / "skip" → proceed exactly as today: Path B inference, `source: inferred`, real
+    `confidence`. Backward-compatible verbatim.
+
+- **MUST be a NO-OP in any non-interactive / subagent / unattended run** — never block the autonomous
+  flow on this prompt. When no interactive gate is available (the same condition the site-1 publish
+  gate uses), skip A.0 silently and proceed to Path B as today. Graceful degradation is the rule:
+  the absence of solicited telemetry only means `expected_spans` stay best-effort `inferred`, which
+  the platform already tolerates.
+
+Then run discovery:
+
 Send **one message with two Agent tool calls** so they run in parallel.
 
 1. **Product profile subagent** (`subagent_type: Explore`) — pass `$PLUGIN/prompts/analyze_product.md`, the target repo path, and the absolute `.tessary/` path. Writes `.tessary/pipeline/product_profile.yaml` and `.tessary/pipeline/invariants.yaml`. Returns a manifest with domain, regulatory regimes, data sensitivity kinds, invariant counts, and `coverage_deferred: true` (because call-site discovery may still be running).
@@ -205,6 +248,8 @@ Send **one message with two Agent tool calls** so they run in parallel.
    **Your deliverable is the shard files on disk, not the manifest.** Write each `.tessary/pipeline/call_sites/<id>.yaml` (and any `.tessary/datasets/<id>.jsonl`) directly to disk; the manifest only *summarizes* what you wrote. Before returning, list each file you wrote and confirm it exists — a manifest that names files it did not write is a failure. (Mirrors `analyze_product.md` — "write the shards directly, return a tiny manifest".)
 
    - **Path A — traces provided**: `subagent_type: general-purpose`. Parse the JSONL (OTLP/JSON or flat Python SDK exporter shape), normalize spans, group by normalized system-prompt hash, write one `.tessary/pipeline/call_sites/<id>.yaml` per group and `.tessary/datasets/<id>.jsonl` per group. Span taxonomy and observability stats (`observed.*` p50/p95/error_rate/refusal_rate/cost) are required. Stratified sampling at up to 10 representative spans per site. Set `invocation: sdk` by default; if span attributes show the model was reached via a shelled-out agent CLI, a raw HTTP gateway, or a sandbox runner (e.g. a `gen_ai.system` / command attribute naming `claude`, `ollama`, an `http.url` to a model host, or a sandbox span parent), set the matching `invocation` instead. Also set `default_grade_mode: per_conversation` when the group is **multi-turn** — ≥ 2 spans for this site share a `trace_id` (or session id) — so its cross-turn graders default to `scope: trace`; otherwise leave it `per_turn` (omit).
+
+     **Emit VERIFIED `expected_spans` from the real spans (v9).** You have the ground-truth telemetry in hand, so write the observed names rather than guessing. For each call-site group, take the span `name` actually present on the grouped spans and write an `expected_spans` entry `{match_field: name, match_pattern: <observed literal>, kind: span, source: observed}` — **no `confidence`** (an observed name is a verified fact, not a guess). Also emit `{match_field: model, match_pattern: <gen_ai.request.model literal>, kind: span, source: observed}` when the spans carry a model, and a `{match_field: metadata.<key>, ..., source: observed}` entry for any stable metadata/tag key present across the group's spans. A `source: observed` entry **supersedes** (replaces, not appends) any Path-B `inferred` guess for the same call site, so the platform's matcher never sees a verified name competing with a guess. Omit entirely when a group's spans carry no usable name.
    - **Path A-agent — agent-session transcripts provided**: a variant of Path A for Claude Code / opencode session JSONL (and similar agent runners). These are conversation transcripts, not OTLP spans: each line is a turn carrying `tool_use`/`tool_result` blocks, file edits, and bash commands. `subagent_type: general-purpose`. Reconstruct the ordered turn+tool sequence per session and group sessions by the agent's task/system identity into call sites (`invocation: cli_agent` or `sandbox_agent`). Write the captured turns to `.tessary/datasets/<id>.jsonl` using the **agent-session row shape** (see `output_format.md`): a `messages` array of `{role, content, tool_calls?, tool_results?}`, plus an optional per-turn `repo_state: {commit?, git_diff?}` so the **git diff between two turns** is captured as text and becomes a gradeable artifact. Sessions reconstructed this way are the natural input for `scope: trace` graders (prior turns → final turn) and `kind: agentic` graders (which re-inspect the repo state). A site reconstructed from multi-turn sessions (≥ 2 turns) is multi-turn by definition — set `default_grade_mode: per_conversation` on its shard.
    - **Path B — static repo**: `subagent_type: Explore`. Grep for LLM-call patterns; write one shard per discovered call site.
 
@@ -216,15 +261,16 @@ Send **one message with two Agent tool calls** so they run in parallel.
 
      For `cli_agent`/`http`/`sandbox_agent`, record `file_hint`/`line_hint` of the spawn/request, set `provider` from the binary/host when identifiable (`claude`→`anthropic`, `ollama`→`ollama`, else `other`), set `system_prompt: null` when none is visible in-repo, and write a `use_case` describing what the agent is asked to *do* (e.g. `Run the test suite and fix failures`, `Summarize a PR diff`). These indirect sites are often the **highest-risk** calls precisely because they run un-prompted, un-schema'd, and sometimes in a sandbox — do not skip them because they don't look like an SDK call.
 
-     **Extract `expected_spans` (telemetry nomenclature) while you have the code open — schema 0.12.0, OPTIONAL/best-effort.** From the same code you read around each call site (and store as `surrounding_code`), read out what the instrumentation *names* this operation, so the platform can later bind a grader to the right captured spans/traces. Look for explicit instrumentation: OTel `start_span("…")` / `tracer.start_as_current_span("…")`; Langfuse `name=` / `@observe(name=)` / `update_current_observation(name=)`; logger/tracer names; the **enclosing function name** (the SDK default span name when nothing else is set); and provider-SDK default naming. Write each as one `expected_spans` entry with the four fields:
+     **Extract `expected_spans` (telemetry nomenclature) while you have the code open — schema 0.12.0, OPTIONAL/best-effort.** From the same code you read around each call site (and store as `surrounding_code`), read out what the instrumentation *names* this operation, so the platform can later bind a grader to the right captured spans/traces. Look for explicit instrumentation: OTel `start_span("…")` / `tracer.start_as_current_span("…")`; Langfuse `name=` / `@observe(name=)` / `update_current_observation(name=)`; logger/tracer names; the **enclosing function name** (the SDK default span name when nothing else is set); and provider-SDK default naming. Write each as one `expected_spans` entry (Path B → `source: inferred`):
        ```yaml
        expected_spans:
          - match_field: name            # one of: name | model | trace_id | metadata.<key>
            match_pattern: "checkout_summary"   # exact string or glob (* / ?)
            kind: span                   # span | trace
+           source: inferred             # v9 — Path B is static-code inference, so ALWAYS `inferred`
            confidence: high             # high (explicit name=/start_span literal) | medium (enclosing fn / convention) | low (guess)
        ```
-     Use `match_field: model` for a pinned model literal, `metadata.<key>` for an explicit metadata/tag the code attaches, `trace_id` only when the code sets a trace-level identifier. **Omit `expected_spans` entirely (or write `[]`) when no instrumentation hint is visible** — never invent a name. This is low-risk metadata: a wrong or missing entry only weakens span binding, it never blocks grading.
+     Use `match_field: model` for a pinned model literal, `metadata.<key>` for an explicit metadata/tag the code attaches, `trace_id` only when the code sets a trace-level identifier. **Path B is static inference, so every entry it writes is `source: inferred`** (never `observed` — that is reserved for entries grounded in real telemetry; see Path A and step A.0). **Omit `expected_spans` entirely (or write `[]`) when no instrumentation hint is visible** — never invent a name. This is low-risk metadata: a wrong or missing entry only weakens span binding, it never blocks grading.
 
      **Confidence rubric — grep-verify before you stamp (do not over-claim).** A `high` confidence span matcher should be trustworthy, so:
      - assign `confidence: high` **only when the literal `match_pattern` string is found verbatim in source** — grep-confirm it appears in a `start_span("…")` / `tracer.start_as_current_span("…")` / `spanBuilder("…")` / Langfuse `name="…"` literal before stamping `high`;
@@ -283,13 +329,13 @@ python3 - <<'PY'
 import sys; sys.path.insert(0, "$PLUGIN")
 from pathlib import Path
 import pipeline_io
-pipeline_io.write_meta(Path(".tessary"), "0.12.0", "<product_hint or None>", {},
+pipeline_io.write_meta(Path(".tessary"), "0.13.0", "<product_hint or None>", {},
                        progress={"sites_completed": 0, "sites_total": <N>})
 PY
 python3 "$PLUGIN/pipeline_io.py" lock A .tessary/pipeline/meta.yaml --evals-dir .tessary
 ```
 
-The seed is later overwritten by `finalize.py`, which **preserves** this `0.12.0` version and the `product_hint` when run flag-bare (see Step C.5) — so the version never regresses.
+The seed is later overwritten by `finalize.py`, which **preserves** this `0.13.0` version and the `product_hint` when run flag-bare (see Step C.5) — so the version never regresses.
 
 ### Phase B — Triage
 
@@ -564,7 +610,10 @@ CONTEXT
 PART 1 — FAILURE-MODE GRADERS. For each failure mode where grader_deferred is falsy
 (skip deferred ones):
 1. If a grader file already exists, load it; pass _meta.locked_fields to the author
-   as existing_grader.
+   as existing_grader. **v9 freeze:** if the existing grader's `_body_source` is
+   `platform-materialized` or `human`, SKIP body authoring entirely — carry its
+   `judge_prompt`/`rubric` + `_body_source` + `_meta` forward verbatim and go to the
+   splice step; the materialized body is frozen and must never be regenerated.
 2. Author body via the selected author (pass the failure_mode block). Author-owned
    output shape: $PLUGIN/contract/AUTHORING_CONTRACT.md. **v8: for kind=llm_judge the
    author emits `_body_source: platform` and NO judge_prompt/rubric — the platform
@@ -584,8 +633,9 @@ PART 1 — FAILURE-MODE GRADERS. For each failure mode where grader_deferred is 
      A `kind=llm_judge` grader is platform-deferred (v8): the author returns
      `_body_source: platform` and the definition, not a hand-written judge_prompt/rubric.
 3. Splice orchestrator-owned fields onto the body (id, scope, failure_mode_id,
-   call_site_id|chain_id, name, taxonomy_node_id; owner=null; block_on_fail=null;
-   cost/latency budgets from observed.*; dataset_refs).
+   call_site_id|chain_id, name, taxonomy_node_id; block_on_fail=null; dataset_refs).
+   (v9 removed the grader-level owner, cost_budget_tokens, and latency_budget_ms_p95 —
+   do not splice them.)
    Do NOT write `_meta` — it is orchestrator-owned and stamped after you return
    (see "Step C.4/D.5 — orchestrator stamps _meta" below). Leave it absent.
 4. Write to .tessary/graders/<grader_id_safe>.yaml.
@@ -601,9 +651,13 @@ quality-dimensions shard (none are deferred):
    graders"). The author returns kind: score with `_body_source: platform`,
    rubric_levels, and score_scale — and NO judge_prompt (v8: the platform expands the
    scoring judge prompt on import from the rubric_levels/score_scale definition).
+   **v9 freeze:** if the existing score grader's `_body_source` is `platform-materialized`
+   or `human`, SKIP body authoring — carry its `judge_prompt` + `_body_source` + `_meta`
+   forward verbatim (its body is frozen); still refresh orchestrator-owned fields.
 2. Splice orchestrator-owned fields (id = <quality_dimension_id>::grader, scope,
-   quality_dimension_id, call_site_id|chain_id, name, eval propagation; owner=null;
+   quality_dimension_id, call_site_id|chain_id, name, eval propagation;
    block_on_fail=FALSE — score graders are report-only trends; dataset_refs).
+   (v9 removed grader-level owner / cost / latency budgets — do not splice them.)
    Do NOT write `_meta` (orchestrator-stamped after you return), and do NOT set
    failure_mode_id or taxonomy_node_id on score graders.
 3. Write and validate (same retry loop). No self-test calibration (v7).

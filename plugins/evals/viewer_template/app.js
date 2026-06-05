@@ -675,15 +675,12 @@
     openModal({ kicker: 'Grader', title, chips, body });
   }
 
-  // Operational fields (owner, block_on_fail, cost/latency budgets, dataset refs).
-  // All optional — render only when any field is populated.
+  // Operational fields (block_on_fail, dataset refs). v9 removed owner and the
+  // cost/latency budgets. All optional — render only when any field is populated.
   function renderOperationalBlock(g) {
     const refs = Array.isArray(g.dataset_refs) ? g.dataset_refs : [];
     const cells = [
-      ['owner',                  g.owner],
       ['block on fail',          g.block_on_fail == null ? null : String(g.block_on_fail)],
-      ['cost budget (tokens)',   g.cost_budget_tokens],
-      ['p95 latency budget (ms)', g.latency_budget_ms_p95],
     ].filter(([, v]) => v !== null && v !== undefined);
     if (!cells.length && !refs.length) return '';
     const cellsHtml = cells.length ? `<dl class="op-grid">${cells.map(([k, v]) => `

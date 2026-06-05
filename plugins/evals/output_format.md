@@ -52,7 +52,7 @@ the assembled view is never written back to disk during synthesis.
 ## `.tessary/pipeline/meta.yaml`
 
 ```yaml
-version: "0.12.0"
+version: "0.13.0"
 product_hint: <string | null>
 
 runtime:
@@ -74,7 +74,7 @@ progress:                                 # added in schema 0.7.0 (phased synthe
 
 `version` is the synthesizer's on-disk schema version, not the plugin version.
 Bump only when the shard layout or shard schemas change. Current schema is
-`0.12.0` (0.7.0 added the `progress` block here, the `priorities.yaml` shard, and
+`0.13.0` (0.7.0 added the `progress` block here, the `priorities.yaml` shard, and
 the `grader_deferred` field on failure modes; 0.8.0 added the `quality_dimensions/`
 shard and the `kind: score` grader for continuous 1–5 quality scoring; 0.9.0 added
 the `invocation` field on call sites so indirect LLM calls — agent CLIs, raw HTTP,
@@ -86,7 +86,13 @@ sandbox via `agent_spec`), and the agent-session dataset row shape; 0.11.0 added
 and their graders default to `scope: trace`; 0.12.0 added the `expected_spans` call-site
 field (telemetry nomenclature read from the call site's code, for platform span binding)
 and the grader `_body_source: platform` marker that defers `judge_prompt`/`rubric`
-authoring for `kind=llm_judge`/`score` to the platform — contract v8).
+authoring for `kind=llm_judge`/`score` to the platform — contract v8; 0.13.0 widened
+`_body_source` to the three-state body lifecycle {platform, platform-materialized, human}
+(the platform materializes the verdict body back into the repo via a GitHub PR, and a human
+edit promotes it to `human`), added the optional `_meta.materialized_at`/`body_digest`, added
+the `source: observed | inferred` provenance field on `expected_spans` entries, and removed
+the redundant grader fields `owner`/`cost_budget_tokens`/`latency_budget_ms_p95`/grader-level
+`compliance_tags`/`applies_when_check` — contract v9).
 
 ## `.tessary/pipeline/priorities.yaml`
 
@@ -200,16 +206,22 @@ surrounding_code: <string | null>  # optional; the code snippet around the call 
                                    # step read to derive shape/intent/constraints and expected_spans.
 
 # Telemetry nomenclature the call site's instrumentation emits (schema 0.12.0). OPTIONAL,
-# best-effort, orchestrator-owned — written by the discovery step from explicit instrumentation
-# visible in `surrounding_code` (OTel start_span("…")/start_as_current_span, Langfuse name= /
-# @observe(name=) / update_current_observation(name=), logger/tracer names, the enclosing function
-# name = the SDK default span name, provider-SDK default naming). Omitted / empty when no hint is
-# found. The platform uses it to bind a grader to the right captured spans/traces.
+# best-effort, orchestrator-owned — written by the discovery step. Two provenances (v9, `source`):
+# INFERRED (default) from explicit instrumentation visible in `surrounding_code` (OTel
+# start_span("…")/start_as_current_span, Langfuse name= / @observe(name=) /
+# update_current_observation(name=), logger/tracer names, the enclosing function name = the SDK
+# default span name, provider-SDK default naming); OBSERVED from real OTel/trace telemetry the user
+# provided (Path A) — the span name is then a verified fact. Omitted / empty when no hint is found.
+# The platform uses it to bind a grader to the right captured spans/traces.
 expected_spans:
   - match_field: <name | model | trace_id | metadata.<key>>  # what the matcher keys on
     match_pattern: <string>          # exact string or glob (* / ?), e.g. "checkout_summary"
     kind: <span | trace>             # whether the match identifies a span or a whole trace
-    confidence: <high | medium | low>
+    source: <observed | inferred>    # v9 — observed: read from real telemetry (verified); inferred
+                                     # (default when absent): guessed from static source. A verified
+                                     # OBSERVED entry supersedes any INFERRED guess for the same site.
+    confidence: <high | medium | low>  # REQUIRED for inferred entries; optional/moot for observed
+                                     # (a verified span name has no uncertainty)
 
 # Path A (traces)
 source_spans:
@@ -367,16 +379,25 @@ chain_id: <string | null>            # required when scope == chain
 name: <string>
 
 kind: <llm_judge | deterministic | execution | agentic>
-_body_source: platform              # v8 — present on kind=llm_judge / score: the verdict body
-                                     # (judge_prompt/rubric) is DEFERRED to the platform, which
-                                     # expands it on import. Omit for deterministic/execution/agentic.
+_body_source: <platform | platform-materialized | human>   # present on kind=llm_judge / score only.
+                                     # platform (v8) — body DEFERRED, judge_prompt/rubric empty; the
+                                     #   platform expands it on import.
+                                     # platform-materialized (v9) — the platform synced the generated
+                                     #   body back into this repo; judge_prompt(/rubric) is PRESENT and
+                                     #   frozen (_meta.locked_fields), with _meta.materialized_at/body_digest.
+                                     # human (v9) — a human edited a materialized body; PRESENT and the
+                                     #   new authoritative body that syncs back upstream.
+                                     # Omit for deterministic/execution/agentic.
 applies_when: <string | null>       # always LLM-evaluated (inline for judge/score; a
                                      # separate LLM gate for deterministic). No applies_when_check (v6).
 
 # kind == llm_judge:
-# judge_prompt / rubric are NOT emitted by the plugin in v8 — they carry `_body_source: platform`
-# and the platform authors the judge body on import. (Pre-v8 files may still carry an inline
-# judge_prompt+rubric with no _body_source; that shape still validates.)
+# judge_prompt / rubric are NOT emitted by the plugin for a fresh deferral (v8) — they carry
+# `_body_source: platform` and the platform authors the judge body on import. (Pre-v8 files may
+# still carry an inline judge_prompt+rubric with no _body_source; that shape still validates.)
+# v9: once the platform materializes the body back into the repo, the file carries a PRESENT
+# judge_prompt+rubric with `_body_source: platform-materialized` (or `human` after a human edit) —
+# frozen, never re-authored.
 
 # kind == deterministic:
 deterministic_check: <string>
@@ -401,12 +422,10 @@ confidence: <high | medium | low>
 rationale: <string>
 taxonomy_node_id: <string>
 
-owner: <string | null>
 block_on_fail: <bool | null>
-cost_budget_tokens: <int | null>
-latency_budget_ms_p95: <int | null>
 pack_ids: [<string>, ...]
-compliance_tags: [<string>, ...]
+# v9 removed the grader-level owner, cost_budget_tokens, latency_budget_ms_p95, and
+# compliance_tags fields. (The FAILURE-MODE-level compliance_tags is unchanged.)
 dataset_refs:
   - trace_id: <hex>
     span_id: <hex>
@@ -423,6 +442,10 @@ _meta:                              # optional block; when present, author /
   synth_inputs_digest: <hex>
   locked_fields: [<field>, ...]
   human_edited: <bool>
+  materialized_at: <iso8601>         # v9 — set by the platform sync-back when the body was
+                                     # materialized into this repo (present on materialized/human bodies)
+  body_digest: <hex>                 # v9 — canonical SHA-256 of the materialized body; a mismatch on
+                                     # _body_source: platform-materialized signals a human edit (→ promote to human)
 
 # Present only when validate.py was unable to produce a clean grader after 3 retries.
 _validation_error: <string | null>

@@ -1,6 +1,6 @@
 # default — bundled grader author for synthesize-graders (v8)
 
-This is the OSS fallback grader-author. It implements the contract in `../../contract/AUTHORING_CONTRACT.md` (v8) and is selected when no higher-priority author skill (e.g. `evals-prompt`) is available in the session.
+This is the OSS fallback grader-author. It implements the contract in `../../contract/AUTHORING_CONTRACT.md` and is selected when no higher-priority author skill (e.g. `evals-prompt`) is available in the session. It declares `author_contract_version: 8`: the contract is at **v9**, but v9 is author-transparent (its changes — redundant-field removal, the platform-driven body-materialization states, and the orchestrator-owned `expected_spans.source` field — impose no new author obligation), so a v8-conformant author is fully conformant under v9 and keeps declaring `8`.
 
 > **Judge body is platform-deferred (v8).** For `kind=llm_judge` and `kind=score` this author no longer writes the `judge_prompt` / `rubric`. It emits the grader *definition* — `kind`, `applies_when` (llm_judge), `rubric_levels`+`score_scale` (score), `confidence`, `rationale` — plus a top-level marker **`_body_source: platform`**, and the platform synthesizes the runtime judge body on import. `kind=deterministic`/`execution`/`agentic` bodies are unchanged (still authored here). Skip steps 3–4 below for `llm_judge`; emit `_body_source: platform` instead.
 
@@ -40,7 +40,7 @@ When the input is a `quality_dimension` (not a `failure_mode`), always use `kind
 
 If the failure mode's description names a precondition for the failure to be possible (e.g. "memory citation" only applies when the output claims to recall earlier info; "tool argument validity" only applies when the output contains a tool_call), set `applies_when` to a one-sentence predicate phrased as a positive condition on the output. Otherwise omit the field entirely.
 
-`applies_when` is **always evaluated by an LLM** at runtime (v6): inline in the judge prompt for `kind=llm_judge`/`score`, and via a separate LLM applicability gate for `kind=deterministic`. So there is **no** `applies_when_check` to write (it was removed in v6 — `validate.py` flags it), and a `deterministic_check` must be **gate-free**: implement only the failure check and assume the input is in scope; the gate filters out-of-scope outputs first.
+`applies_when` is **always evaluated by an LLM** at runtime (v6): inline in the judge prompt for `kind=llm_judge`/`score`, and via a separate LLM applicability gate for `kind=deterministic`. So there is **no** `applies_when_check` to write (it was removed in v6 and fully dropped from the contract in v9), and a `deterministic_check` must be **gate-free**: implement only the failure check and assume the input is in scope; the gate filters out-of-scope outputs first.
 
 ### 3–4. Defer the judge body to the platform (only when `kind=llm_judge`) — v8
 
@@ -126,7 +126,7 @@ On retry, the input carries `validator_feedback.errors`. Read every error, ident
 | `kind=llm_judge requires non-empty judge_prompt` / `rubric` | v8: do not author these — set `_body_source: platform` so the platform expands the body on import. (Only seen if you also omitted the marker.) |
 | `_body_source=platform defers the body ... judge_prompt`/`rubric` `must be omitted/empty` | You set `_body_source: platform` but still emitted a `judge_prompt`/`rubric`. Delete the body; keep only the definition + marker. |
 | `_body_source is only valid for kind in ['llm_judge', 'score']` | You put `_body_source` on a deterministic/execution/agentic grader. Remove it — only `llm_judge`/`score` defer the body. |
-| `applies_when_check was removed in v6` | Delete `applies_when_check`; keep the `deterministic_check` gate-free (the applies_when LLM gate handles scope). |
+| `_body_source=platform-materialized`/`human` `requires a present (non-empty) judge_prompt`/`rubric` | A materialized/human body must carry the body in-repo; an empty body means a corrupt/half-synced file. (You should not be authoring these states — they are produced by the platform sync-back; carry the existing body forward verbatim.) |
 | `kind=agentic requires a non-empty agent_spec mapping` | Emit `agent_spec` per § 6b; remove any `judge_prompt`/`rubric`. |
 | `agent_spec.harness must be 'opencode'` / `sandbox` / `task_prompt` / `verdict_contract` ... | Fill the missing/invalid `agent_spec` field per § 6b. |
 | `locked field <X> was mutated from existing_grader` | Restore `<X>` verbatim from `existing_grader.<X>`. |

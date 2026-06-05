@@ -1,5 +1,69 @@
 # Platform handoff — v0.10 / v0.11 grader contract additions
 
+> ## contract v9 — body lifecycle (materialize-back) + OTel-grounded expected_spans (read first)
+>
+> Three changes ship in contract **v9** (schema `$id` → `grader.v9.json`, on-disk schema → `0.13.0`).
+> All are **additive and backward-compatible**: every existing v8 grader/bundle stores and validates
+> unchanged, and a platform that ignores the new fields behaves exactly as it does today. The fields
+> remain plain TEXT/JSON — **no DB migration required**.
+>
+> ### 1. `_body_source` is now a three-state body lifecycle, with bidirectional sync-back
+> The grader verdict body (`judge_prompt`, + `rubric` for `llm_judge`) moves through three states.
+> `_body_source` is widened from the single v8 value `platform` to `platform | platform-materialized |
+> human`:
+>
+> | State | `_body_source` | body | meaning |
+> |---|---|---|---|
+> | DEFERRED | `platform` | empty | author deferred it; the platform expands it on import (v8, unchanged) |
+> | MATERIALIZED | `platform-materialized` | **present** | the platform generated the body and **synced it back into the repo** |
+> | HUMAN-EDITED | `human` | **present** | a human edited the materialized body in-repo; this is the new authoritative body |
+>
+> **Import path (extends the v8 path):**
+> - `platform` + empty body → expand the body as today (§ v8.1 below). The repo is the source of truth,
+>   so after expansion the platform **materializes the body back** (next bullet).
+> - `platform-materialized` + present body → **use the body as-is; do NOT re-expand.** The repo copy is
+>   canonical. If a `body_digest` is present, you may verify it.
+> - `human` + present body → **use the body as-is and treat it as the new authoritative body**, replacing
+>   any prior platform expansion. This is the upstream sync of a human edit.
+>
+> **Materialize-back transport = a platform-raised GitHub PR (repo = source of truth).** When the platform
+> expands a deferred body, its **GitHub integration opens a PR against the repo** that, for each expanded
+> grader, writes the `judge_prompt`(+`rubric`), sets `_body_source: platform-materialized`, and stamps
+> `_meta.materialized_at` (ISO-8601), `_meta.body_digest` (see below), and
+> `_meta.locked_fields: [judge_prompt, rubric]` (llm_judge) / `[judge_prompt]` (score). Merging the PR is
+> the materialize-back. **The plugin ships no client/pull tooling** — the platform is the only writer of
+> the materialize-back PR; the plugin only defines/validates the on-disk states and freezes the body.
+>
+> **Upstream sync of a human edit.** `_meta.body_digest` is a canonical SHA-256 over the materialized body
+> (normalized: per-line trailing whitespace stripped, leading/trailing blank lines stripped; for `llm_judge`
+> the digest covers `judge_prompt` + `"\n"` + `rubric`). When a human edits a `platform-materialized` body
+> in-repo, the recomputed digest no longer matches `_meta.body_digest`; the file is promoted to
+> `_body_source: human` + `_meta.human_edited: true` (by a curator or the platform's sync) so the next
+> sync carries the human revision upstream as the authoritative body. `validate.py` surfaces a stale
+> digest on a `platform-materialized` grader as an actionable error prompting this promotion.
+>
+> **Open item for the platform team (Open decision #3 in the design):** decide whether a `human`-sourced
+> body is trusted verbatim or re-hardened (injection-hardening / JSON-contract re-check) on upstream sync.
+> This contract leaves that to the platform.
+>
+> ### 2. `expected_spans` gains `source: observed | inferred` (call-site shard)
+> Each `expected_spans` entry may now carry `source` (default `inferred` when absent — so every v8 entry is
+> unchanged). `observed` means the span name was read from **real OTel/trace telemetry** (a verified fact);
+> `inferred` is the v8 best-effort static-code guess. The platform should **trust `source: observed`
+> entries unconditionally** for span binding and **rank by `confidence` only among `inferred` entries**
+> (`confidence` is moot/optional on observed entries — a verified name has no uncertainty). A platform that
+> ignores `source` keeps ranking everything by `confidence`, exactly as today — fully backward-compatible.
+>
+> ### 3. Three redundant grader fields removed
+> `owner`, `cost_budget_tokens`, `latency_budget_ms_p95`, and the **grader-level** `compliance_tags` are
+> removed from the grader schema (`applies_when_check`, dead since v6, is also fully dropped). The
+> **failure-mode-level** `compliance_tags` is unchanged and still consumed. **ACTION / confirm:** the
+> in-repo audit found the importer reads only the FM-level `compliance_tags` and does not read the
+> grader-level `owner` / cost / latency budgets; please confirm the importer does not consume these
+> grader-level fields before relying on their removal. Their absence is otherwise inert (optional fields).
+>
+> ---
+>
 > ## v0.15 / contract v8 — judge-prompt authoring moves to the platform (read first)
 >
 > Two changes ship in contract **v8** (schema `$id` → `grader.v8.json`, on-disk schema → `0.12.0`):

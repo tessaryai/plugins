@@ -1,10 +1,16 @@
-# Grader-author contract (v8)
+# Grader-author contract (v9)
 
 This document defines the interface between **synthesize-graders** (the orchestrator) and any **grader author** invoked during the grader-synthesis phase. It exists so that the author is swappable: the bundled `authors/default/` is the OSS fallback; closed-source or third-party authors (e.g. `evals-prompt`) declare conformance to this contract and become drop-in replacements.
 
 - **Authoritative schema**: [`grader.schema.json`](./grader.schema.json) — the on-disk grader YAML.
 - **Authoritative enforcer**: `validate.py` (at the plugin root) — runs the schema rules plus cross-field invariants, per-file and `--bundle` cross-references.
-- **Contract version**: 8. v8 **defers judge-prompt authoring to the platform** for `kind=llm_judge` and `kind=score` (§ "What changed in v8"): the author emits the grader *definition* (kind, `applies_when`, `rubric_levels`+`score_scale` for score, `confidence`, `rationale`) plus a top-level `_body_source: platform` marker, and does **not** author `judge_prompt`/`rubric`. The platform expands the verdict body on import. `kind=deterministic`/`execution`/`agentic` bodies are unchanged — still plugin-authored inline. v8 also adds an orchestrator-owned call-site field **`expected_spans`** (the telemetry nomenclature the discovery step reads out of the call site's code); see `output_format.md`.
+- **Contract version**: 9. **v9 is author-transparent** — it does not change what a grader author emits for a fresh synthesis (a deferred body is still `_body_source: platform` + empty body; the v9-removed fields were orchestrator-owned or never author-emitted; the materialized/human body states are produced by the platform's sync-back, never by an author). So an author that already conforms to v8 conforms to v9 unchanged, and `_meta.author_contract_version` stays `8` for those authors (see § "Declaring conformance"). v8 **defers judge-prompt authoring to the platform** for `kind=llm_judge`/`score`: the author emits the grader *definition* (kind, `applies_when`, `rubric_levels`+`score_scale` for score, `confidence`, `rationale`) plus a top-level `_body_source: platform` marker, and does **not** author `judge_prompt`/`rubric`. The platform expands the verdict body on import. `kind=deterministic`/`execution`/`agentic` bodies are unchanged — still plugin-authored inline.
+
+## What changed in v9
+
+- **Three redundant grader fields removed.** `owner`, `cost_budget_tokens`, and `latency_budget_ms_p95` are gone from the grader schema (they were write-only / orchestrator-default and unread by the platform importer), along with the grader-level `compliance_tags` (the **failure-mode-level** `compliance_tags` is unchanged and still consumed). The long-dead `applies_when_check` (feature-removed in v6) is fully dropped — `validate.py` no longer special-cases it; a stray key on a legacy file is simply ignored. None were author-emitted, so authors are unaffected.
+- **Grader body LIFECYCLE — `_body_source` is now a three-state enum.** `platform` (DEFERRED, body empty, as v8) is joined by `platform-materialized` (the platform generated the body and synced it back into the repo via its GitHub integration — the inline `judge_prompt`/`rubric` is now PRESENT and frozen) and `human` (a human edited a materialized body in-repo — also PRESENT, and the new authoritative body that syncs back upstream). The materialized/human states are produced by the platform sync-back and by human curation, **never by an author**: a fresh author still emits only `platform` + empty body. `_meta` gains optional `materialized_at` + `body_digest` (a canonical body hash; a mismatch on a `platform-materialized` grader signals a human edit and must promote it to `human` + `human_edited: true`). The freeze: a `platform-materialized`/`human` body must never be re-authored or overwritten by synthesis — it is carried forward verbatim, locked via `_meta.locked_fields: [judge_prompt(, rubric)]`.
+- **`expected_spans` gains `source: observed | inferred`** (call-site shard; default `inferred`). An `observed` entry was read from real OTel/trace telemetry and is a verified fact, so the platform trusts it unconditionally and `confidence` is moot/optional for it; `inferred` is the v8 best-effort guess where `confidence` still ranks. Orchestrator-owned; authors do not write it.
 
 ## What changed in v8
 
@@ -23,7 +29,7 @@ This document defines the interface between **synthesize-graders** (the orchestr
 ## What changed in v6
 
 - **`applies_when` is always evaluated by an LLM at runtime.** For `kind=llm_judge`/`score` it rides inline in the judge prompt, as before. For `kind=deterministic` the platform now runs a **separate LLM applicability gate** before the body and skips out-of-scope outputs — so the `deterministic_check` is **gate-free**: it must implement only the failure check and assume the input is in scope (never decide applicability itself).
-- **`applies_when_check` is removed.** It was the code-evaluable mirror compiled into a deterministic body; the gate is never compiled now, so do not emit it. `validate.py` flags it.
+- **`applies_when_check` is removed.** It was the code-evaluable mirror compiled into a deterministic body; the gate is never compiled now, so do not emit it. (v9: the field is fully dropped from the contract — `validate.py` no longer flags it; a stray key on a legacy file is ignored.)
 - **Trace deterministic checks receive structured input.** A `scope: trace` deterministic check runs against `input.messages` (turns of `{ role, content, tool_uses: [{ name, input }] }`) and `input.tool_uses` (every tool call across turns, flattened) — not just a flattened transcript string. The platform supplies this structured shape from the golden dataset's real trace spans.
 
 ## What changed in v5
@@ -45,9 +51,9 @@ This document defines the interface between **synthesize-graders** (the orchestr
 
 ## What changed in v2
 
-- `applies_when_check` is a new author-owned field: a code-evaluable mirror of `applies_when` required when `kind=deterministic` AND `applies_when` is non-empty. (`applies_when_check` was later removed in v6; the per-grader self-test fields were removed in v7.)
+- `applies_when_check` was a new author-owned field: a code-evaluable mirror of `applies_when` required when `kind=deterministic` AND `applies_when` is non-empty. (`applies_when_check` was feature-removed in v6 and dropped from the contract entirely in v9; the per-grader self-test fields were removed in v7.)
 - The orchestrator writes a `_meta` provenance block onto every grader file and respects `_meta.locked_fields` on re-run. Authors should not touch `_meta`.
-- Per-grader operational fields (`owner`, `block_on_fail`, `cost_budget_tokens`, `latency_budget_ms_p95`, `dataset_refs`) are optional and orchestrator-owned by default; authors may emit `cost_budget_tokens` / `latency_budget_ms_p95` if they can reason about them, but the orchestrator fills in operational fields from the call site's `observed.*` stats when authors omit them.
+- Per-grader operational fields (`block_on_fail`, `dataset_refs`) are optional and orchestrator-owned. (v9 removed the formerly-listed `owner`, `cost_budget_tokens`, and `latency_budget_ms_p95`.)
 
 ## Roles
 
@@ -59,15 +65,14 @@ This document defines the interface between **synthesize-graders** (the orchestr
 | `call_site_id` / `chain_id` | orchestrator |
 | `name` | orchestrator |
 | `taxonomy_node_id` | orchestrator (Phase D taxonomy clustering — patched onto graders/entries after single_call grader synthesis; empty until then) |
-| `owner`, `block_on_fail`, `dataset_refs` | orchestrator (sourced from call-site observed stats / curator input) |
-| `cost_budget_tokens`, `latency_budget_ms_p95` | orchestrator (default: p95 stats from observed); author may override |
-| `_meta` | orchestrator |
-| `expected_spans` | orchestrator (discovery step — telemetry nomenclature read from the call site's code; written on the call-site shard, consumed by the platform) |
+| `block_on_fail`, `dataset_refs` | orchestrator (sourced from call-site observed stats / curator input) |
+| `_meta` | orchestrator (incl. v9 `materialized_at` / `body_digest`, set by the platform sync-back) |
+| `expected_spans` | orchestrator (discovery step — telemetry nomenclature read from the call site's code; written on the call-site shard, consumed by the platform; v9 `source: observed` set when grounded in real telemetry) |
 | `kind` | **author** |
-| `_body_source` | **author** (v8 — set to `platform` for `kind=llm_judge`/`score` to defer the body) |
+| `_body_source` | **author** sets `platform` to defer (v8); the platform sync-back sets `platform-materialized`, and a human edit promotes to `human` (v9) |
 | `applies_when` | **author** (always LLM-evaluated at runtime) |
-| `judge_prompt` | platform (expanded after import — v8; was author ≤ v7) |
-| `rubric` | platform (expanded after import — v8; was author ≤ v7) |
+| `judge_prompt` | platform (expanded after import — v8; **materialized back into the repo, then human when edited** — v9; was author ≤ v7) |
+| `rubric` | platform (expanded after import — v8; **materialized back into the repo, then human when edited** — v9; was author ≤ v7) |
 | `deterministic_check` | **author** (when `kind=deterministic`) |
 | `execution_spec` | **author** (when `kind=execution`) |
 | `agent_spec` | **author** (when `kind=agentic`) |
@@ -295,7 +300,7 @@ An author conforms to this contract when:
 1. It accepts the input schema above (extra fields ignored).
 2. It returns YAML matching the author-owned fields above.
 3. Its output passes `validate.py` once the orchestrator splices in the orchestrator-owned fields.
-4. It declares the contract version it conforms to via `contract_version:` — in its SKILL.md frontmatter for skill-based authors, or in its top-level markdown for bundled-procedure authors. The **current contract version is 8**; an author fully caught up declares `8`. The version requirement is a **minimum, evaluated per feature**: the orchestrator requires *at least* `3` for `kind: score`, and *at least* `4` for `scope: trace` or `kind: agentic`. v6 is NOT transparent for deterministic graders with a gate: a `< 6` author still emits the removed `applies_when_check` and may bake applicability into `deterministic_check`, which now fails `validate.py` / produces a double-gate. So for `kind: deterministic` with an `applies_when`, the orchestrator requires `6`. **v7 is author-transparent in the safe direction**: it only *removes* the self-test fields, so a `< 7` author that still emits `self_tests` is no longer conformant in form, but the orchestrator simply drops any stray `self_tests` it returns (the platform ignores the key). **v8 is NOT transparent for `kind: llm_judge`/`score`**: a `< 8` author still hand-writes `judge_prompt`/`rubric` and does not emit `_body_source: platform`, so its output is the old inline-body shape (which still *validates* — the marker only relaxes requirements — but is not the platform-deferred shape v8 wants). So whenever the orchestrator wants a platform-deferred body for an `llm_judge`/`score` grader it requires `8`; deterministic/execution/agentic graders stay author-transparent at `< 8`. New authors must declare `8` and defer the body for `llm_judge`/`score`.
+4. It declares the contract version it conforms to via `contract_version:` — in its SKILL.md frontmatter for skill-based authors, or in its top-level markdown for bundled-procedure authors. The **current contract version is 8**; an author fully caught up declares `8`. The version requirement is a **minimum, evaluated per feature**: the orchestrator requires *at least* `3` for `kind: score`, and *at least* `4` for `scope: trace` or `kind: agentic`. v6 is NOT transparent for deterministic graders with a gate: a `< 6` author still emits the removed `applies_when_check` and may bake applicability into `deterministic_check`, which now fails `validate.py` / produces a double-gate. So for `kind: deterministic` with an `applies_when`, the orchestrator requires `6`. **v7 is author-transparent in the safe direction**: it only *removes* the self-test fields, so a `< 7` author that still emits `self_tests` is no longer conformant in form, but the orchestrator simply drops any stray `self_tests` it returns (the platform ignores the key). **v8 is NOT transparent for `kind: llm_judge`/`score`**: a `< 8` author still hand-writes `judge_prompt`/`rubric` and does not emit `_body_source: platform`, so its output is the old inline-body shape (which still *validates* — the marker only relaxes requirements — but is not the platform-deferred shape v8 wants). So whenever the orchestrator wants a platform-deferred body for an `llm_judge`/`score` grader it requires `8`; deterministic/execution/agentic graders stay author-transparent at `< 8`. New authors must declare `8` and defer the body for `llm_judge`/`score`. **v9 is fully author-transparent**: it removes three orchestrator-owned/never-emitted fields, adds the platform-driven body-materialization states (produced by the platform sync-back, never by an author), and adds the orchestrator-owned `expected_spans.source` field — none of which changes what an author emits for a fresh synthesis. So the contract version is `9` but the **author** contract version a conformant author declares stays `8` (`_meta.author_contract_version: 8`); there is no `9` author obligation, and the orchestrator does not require `9` of any author. (Should a future change add an author obligation, the per-feature minimum convention above applies.)
 
 The orchestrator discovers authors by **two distinct invocation models**:
 

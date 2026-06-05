@@ -148,8 +148,15 @@ expected_spans:
   - match_field: name            # name | model | trace_id | metadata.<key>
     match_pattern: "checkout_summary"   # exact string or glob (* / ?)
     kind: span                   # span | trace
+    source: inferred             # v9 — backfill from static code is always `inferred` (a guess);
+                                 # `observed` is reserved for entries grounded in real telemetry (Path A).
     confidence: high             # high (explicit literal) | medium (convention) | low (guess)
 ```
+
+Entries you backfill here from static code are **`source: inferred`** — never stamp `observed` (that
+provenance means a real span confirmed the name; only Path A / solicited telemetry can do that). If the
+shard already carries an `observed` entry for a matcher, **do not overwrite it** with an inferred guess —
+a verified entry supersedes a guess, not the reverse.
 
 **Omit `expected_spans` entirely when no instrumentation hint is visible — never invent a name.**
 This is low-risk: a missing or wrong entry only weakens the platform's span binding, it never blocks

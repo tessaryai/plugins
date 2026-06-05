@@ -13,7 +13,7 @@ under .tessary/graders/, then:
 
 Usage:
     python3 finalize.py .tessary/ \
-        [--version 0.12.0] \
+        [--version 0.13.0] \
         [--product-hint "<string>"] \
         [--runtime-yaml runtime.yaml] \
         [--inputs-digest <hex>] \
@@ -50,9 +50,9 @@ import pipeline_io  # noqa: E402
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 
-# On-disk schema version (see output_format.md / contract v8). Used when no
+# On-disk schema version (see output_format.md / contract v9). Used when no
 # --version is passed and meta.yaml has no prior version to preserve.
-DEFAULT_VERSION = "0.12.0"
+DEFAULT_VERSION = "0.13.0"
 
 
 def _sha256_hex(text: str) -> str:
@@ -423,7 +423,7 @@ def main() -> int:
     ap.add_argument("evals_dir", help="Path to the .tessary/ directory.")
     ap.add_argument("--version", default=None,
                     help="On-disk schema version written into meta.yaml. When omitted, "
-                         "preserves the existing meta.yaml version, else defaults to 0.12.0.")
+                         "preserves the existing meta.yaml version, else defaults to 0.13.0.")
     ap.add_argument("--product-hint", default=None)
     ap.add_argument("--runtime-yaml", default=None,
                     help="Optional YAML file with runtime fields to embed in meta.yaml.")
