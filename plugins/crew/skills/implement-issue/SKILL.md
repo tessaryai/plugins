@@ -85,16 +85,21 @@ If the team can't converge after two rounds, pick the smallest-blast-radius appr
 
 ## 5. Implement
 
-1. **Set up the branch/worktree:**
+1. **Set up the branch/workspace:**
    - **GitHub mode:** create branch `crew/issue-<N>-<slug>` in the working tree.
-   - **Local mode:** create/locate the isolated worktree per `local.isolation`
-     (work-model.md §4) and record the branch + worktree path in `task.md`. Do all edits
-     **inside the worktree** — never the user's main checkout.
+   - **Local mode:** create/locate the isolated workspace per `local.isolation`
+     (work-model.md §4) and record the isolation mechanism, branch/bookmark, and workspace
+     path in `task.md`. Do all edits **inside the workspace** — never the user's main
+     checkout. Under **jj**, the workspace is a **stack**: start your work as a new jj change
+     stacked on the base, with one bookmark for this logical feature set (§4.1).
 2. Write the change, following the project's conventions and the synthesized approach.
 3. Validate with the configured commands when present: `commands.install` → relevant
    `commands.lint` / `commands.typecheck` / `commands.test` (in local mode, run these inside
-   the worktree). Fix what you broke.
-4. Commit your change (only crew's own files, by explicit path — never `git add -A`).
+   the workspace). Fix what you broke.
+4. Commit your change (only crew's own files, by explicit path — never `git add -A`). Under
+   **jj**, keep the commits for this feature set under its bookmark; let jj own history (no
+   `git rebase`/`git commit --amend`). If a later step adds a *separate* logical feature set
+   in the same workspace, stack it on top with a new bookmark rather than mixing it in.
 
 ## 6. Persist the result (never merge)
 

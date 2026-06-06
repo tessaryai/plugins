@@ -25,7 +25,8 @@ And it works in two **modes**, chosen automatically:
 - **Local mode** — hand it a freeform task (`/crew:run "add a --json flag to
   export"`) and crew works entirely on your checkout — no `gh`, no remote, no
   issue required. It tracks the task in a local ledger and writes code in an
-  isolated git worktree, leaving a review-ready branch.
+  isolated workspace (a jj workspace when jj is available, else a git worktree),
+  leaving a review-ready branch or stack.
 
 > This release is **local-first**: every capability runs inside your own Claude
 > Code session against your checked-out repo. GitHub Actions packaging is planned
@@ -150,7 +151,7 @@ review_standards: { source: "AGENTS.md" }
 orchestrator: { max_items: 5, concurrency: 2, auto_merge: false, scale_out: 8 }
 knowledge: { dir: "docs/knowledge" }
 ledger: { dir: ".crew" }          # local mode: per-task state
-local: { isolation: auto }        # auto | kosho | git-worktree | none
+local: { isolation: auto }        # auto | jj | kosho | git-worktree | none
 ```
 
 See `templates/crew.config.example.yaml` for the fully annotated version.
@@ -160,18 +161,25 @@ See `templates/crew.config.example.yaml` for the fully annotated version.
 `mode: auto` (default) picks **github** when you pass an issue/PR number (or run
 with no task in an authed repo) and **local** for a freeform task. In local mode
 crew tracks each task under `ledger.dir` (`.crew/`) and isolates the code it
-writes in a git worktree, governed by `local.isolation`:
+writes in a dedicated workspace, governed by `local.isolation`:
 
-- **`auto`** — use `kosho` worktrees if installed, else fall back to native
-  `git worktree` (zero install — works for everyone).
-- **`kosho`** / **`git-worktree`** — force one mechanism.
+- **`auto`** — prefer **jj** if installed, else **kosho** worktrees, else native
+  **`git worktree`** (zero install — works for everyone).
+- **`jj`** — a **jj workspace** under `.crew/workspaces/`. jj is preferred because
+  it gives crew first-class **stacked changes**: it keeps one bookmark per logical
+  feature set, stacked on the last, so crew can carry a large task across many
+  changes over a long run (submit the stack with a tool like `jst`). crew
+  **colocates jj at your repo root** (`.jj/` beside `.git/`) on first use if it
+  isn't already; git stays the source of truth.
+- **`kosho`** / **`git-worktree`** — force one git-native mechanism.
 - **`none`** — commit on a `crew/<slug>` branch in your working tree (with a
   dirty-tree guard).
 
-crew never touches your main working tree in worktree modes, and never merges —
-you review the branch and merge yourself. Add `.crew/` (the ledger, which also
-holds local worktrees) and `.kosho/` to `.gitignore` (`/crew:init-config` offers
-to do this).
+crew never touches your main working tree in workspace modes, and never merges —
+you review the branch/stack and merge yourself. Add `.crew/` (the ledger, which
+also holds local git worktrees and jj workspaces) and `.kosho/` to `.gitignore`
+(`/crew:init-config` offers to do this); the colocated `.jj/` store goes in your
+**global** git excludes.
 
 ## Safety model
 
@@ -193,7 +201,10 @@ to do this).
 - Claude Code with this plugin installed
 - `git`
 - `gh` (GitHub CLI), authenticated — **only for GitHub mode**
-- `kosho` — optional; local mode uses it when present, else native `git worktree`
+- `jj` (Jujutsu) — optional but preferred for local mode; gives crew stacked
+  changes (colocated at your repo root). Falls back to `kosho`, then `git worktree`
+- `jj-stack` (`jst`) — optional; submits a jj stack as linked PRs (needs a GitHub remote)
+- `kosho` — optional; local mode uses it when `jj` is absent, else native `git worktree`
 - Your project's own lint/test tooling (auto-detected, or set in `crew.config.yaml`)
 
 ## License

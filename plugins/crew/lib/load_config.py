@@ -32,7 +32,7 @@ DEFAULTS = {
     "mode": "auto",
     "project": {"name": None, "docs_index": None},
     "ledger": {"dir": ".crew"},
-    "local": {"isolation": "auto"},  # auto | kosho | git-worktree | none
+    "local": {"isolation": "auto"},  # auto | jj | kosho | git-worktree | none
     "labels": {
         "bug": "bug",
         "task": "task",
@@ -44,6 +44,8 @@ DEFAULTS = {
     },
     "guardrails": {
         "protected_paths": [
+            # DB schema migrations. Dir name varies by tool (Liquibase: changelog/,
+            # Flyway: db/migration/) — /crew:init-config tunes this to the repo.
             "**/migrations/**",
             "**/*.tf",
             "Dockerfile*",

@@ -66,16 +66,19 @@ Collect their guidance. (Skip personas with no relevant comments.)
 ## 4. Apply the changes
 
 1. Get onto the branch — github: `gh pr checkout <N>`; local: work in the task's existing
-   worktree (from `task.md`).
+   workspace (from `task.md`'s `worktree`/`isolation`). Under **jj**, apply fixes to the
+   relevant feature set's change/bookmark in the stack; descendants auto-rebase — let jj own
+   history (no `git rebase`/`amend`). Run `jj workspace update-stale` first if the workspace
+   reports a stale working copy (work-model.md §4.1).
 2. Make the changes addressing the feedback. **Sanity-check each finding against the actual code
    first** — if a finding doesn't hold up on re-reading (a false positive, a concern the code
    already covers), answer it with the refutation in your summary rather than forcing a change.
    **Re-check guardrails** — never touch
    `protected_paths`; if feedback demands it, escalate instead (github: `labels.needs_human`;
    local: `ESCALATION.md`).
-3. Validate with the configured `commands.*` (local: inside the worktree).
+3. Validate with the configured `commands.*` (local: inside the workspace).
 4. Commit your fixes (only crew's own files). **GitHub mode:** push to the PR branch.
-   **Local mode:** the commit on the branch is the deliverable — do not push.
+   **Local mode:** the commit on the branch/stack is the deliverable — do not push.
 
 ## 5. Summarize
 

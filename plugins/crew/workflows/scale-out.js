@@ -3,7 +3,7 @@ export const meta = {
   description: 'Fan an approved crew decomposition plan across subagents — one branch/PR per unit, each implemented then reviewed; never merges.',
   whenToUse: 'Invoked by /crew:run only after the user confirms scale-out for a huge-scope task (see reference/scale-out.md). Not run directly.',
   phases: [
-    { title: 'Implement', detail: 'one agent per unit, in its own worktree' },
+    { title: 'Implement', detail: 'one agent per unit, in its own isolated workspace' },
     { title: 'Review', detail: 'review each implemented unit against the project standards' },
   ],
 }
@@ -19,16 +19,25 @@ export const meta = {
 //     pluginRoot: "/abs/path/to/plugins/crew",   // resolved ${CLAUDE_PLUGIN_ROOT}
 //     mode: "github" | "local",
 //     units: [{ id, slug, description, primitive, target }],
+//     isolation?: "jj" | "kosho" | "git-worktree" | "none",  // resolved local.isolation
 //     maxReviewIterations?: number,               // informational; the cap lives in crew.config.yaml
 //   }
 //
-// Each unit becomes one independent pipeline: implement (in its own worktree) →
-// review. One branch/PR per unit. crew NEVER merges, at any scale.
+// Each unit becomes one independent pipeline: implement (isolated) → review. One
+// branch/PR per unit. crew NEVER merges, at any scale.
+//
+// Isolation: for git-native mechanisms (kosho/git-worktree/none, or github mode) we
+// use the harness `isolation: 'worktree'` so parallel edits never collide. Under
+// **jj**, colocated jj at the repo root makes `git worktree add` fail (detached HEAD),
+// so we DON'T use the harness worktree — instead each unit-agent creates its own jj
+// workspace per work-model.md §4.1, defensively running `jj workspace update-stale`
+// (parallel workspaces share one backend). Units are disjoint in files by construction.
 // Dependencies are NOT handled here — the orchestrator runs dependent units in a
 // separate confirmed wave, or uses the dynamic fallback (see reference/scale-out.md).
 // ---------------------------------------------------------------------------
 
-const { pluginRoot, mode, units } = args
+const { pluginRoot, mode, units, isolation } = args
+const useJj = isolation === 'jj'
 
 // Structured result of an implement (or other mutating) primitive on one unit.
 const UNIT_RESULT = {
@@ -79,16 +88,23 @@ const dispatch = (u, primitive, extra = '') =>
   `Report back: what you did, the PR URL or branch name, the files you touched, and whether ` +
   `you escalated (needs_human label / ESCALATION.md).`
 
-log(`scale-out: ${units.length} unit(s), mode=${mode}`)
+log(`scale-out: ${units.length} unit(s), mode=${mode}, isolation=${isolation || 'worktree'}`)
+
+// Under jj the agent makes its own workspace (harness git-worktree breaks on colocated jj);
+// otherwise the harness worktree provides per-unit isolation.
+const jjExtra =
+  'This repo uses jj for isolation: create your own jj workspace for this unit per ' +
+  'work-model.md §4.1 (do NOT rely on a git worktree), and run `jj workspace update-stale` ' +
+  'first if the working copy reports stale.'
 
 const results = await pipeline(
   units,
-  // Stage 1 — implement the unit, isolated in its own worktree so parallel edits never collide.
+  // Stage 1 — implement the unit, isolated so parallel edits never collide.
   (u) =>
-    agent(dispatch(u, u.primitive), {
+    agent(dispatch(u, u.primitive, useJj ? jjExtra : ''), {
       label: `impl:${u.slug}`,
       phase: 'Implement',
-      isolation: 'worktree',
+      ...(useJj ? {} : { isolation: 'worktree' }),
       schema: UNIT_RESULT,
     }),
   // Stage 2 — review the implemented branch. Skip units that escalated or failed in stage 1.

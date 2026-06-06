@@ -3,6 +3,38 @@
 All notable changes to the `crew` plugin are documented here. This project
 follows [semantic versioning](https://semver.org/).
 
+## [0.7.0] — 2026-06-06
+
+### Added
+
+- **jj (Jujutsu) is now the preferred local-mode isolation.** `local.isolation: auto`
+  resolves **jj → kosho → git-worktree** (was kosho → git-worktree). jj gives crew
+  first-class **stacked changes** so it can carry a large task across many changes over a long
+  run. A new explicit `local.isolation: jj` is also accepted. (work-model.md §4 / §4.1.)
+- **jj workspaces + stacking (work-model.md §4.1).** In a jj workspace crew always starts as a
+  **stack** and adds **one bookmark per logical feature set**, stacked on the previous one —
+  it still commits separately per change, but only opens a new bookmark when a new logical
+  feature set begins. crew lets jj own history (no `git rebase`/`amend`) and recovers stale
+  working copies with `jj workspace update-stale`. Submit the stack with a tool like `jst`.
+- **Auto-colocation.** When jj is installed but the repo isn't colocated, crew runs
+  `jj git init --colocate` at the repo root and adds `.jj/` to the user's **global** git
+  excludes; git stays the source of truth. If colocation fails, crew falls back to kosho →
+  git-worktree rather than stopping.
+
+### Changed
+
+- **Scale-out honors jj.** The orchestrator passes the resolved `isolation` into
+  `workflows/scale-out.js`. Under jj, each unit-agent creates its own jj workspace (a harness
+  `git worktree add` fails on colocated jj — detached HEAD) and runs `jj workspace
+  update-stale` defensively; git-native isolation still uses the harness worktree. Units must
+  stay disjoint in files so concurrent workspaces never stale each other.
+- The local ledger now also holds jj workspaces under `.crew/workspaces/`; `task.md` records
+  the resolved `isolation` mechanism and (for jj) the bookmark `stack`.
+- **Migration-path guardrail is tool-aware.** The default `protected_paths` still ships
+  `**/migrations/**`, but `/crew:init-config` now detects the repo's actual DB-migration
+  mechanism and protects its real directory (Liquibase `changelog/`, Flyway `db/migration/`,
+  etc.) — without over-matching a docs `CHANGELOG.md`. Config comments call out the variance.
+
 ## [0.6.1] — 2026-06-04
 
 ### Changed

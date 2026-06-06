@@ -32,6 +32,9 @@ labels:
 guardrails:
   # crew refuses to modify files matching these globs and escalates instead.
   protected_paths:
+    # DB schema migrations. The dir name varies by tool — Rails/Django/Alembic use
+    # migrations/, Liquibase uses changelog/ (or db/changelog/), Flyway db/migration/.
+    # Replace this with the glob your repo actually uses (`/crew:init-config` detects it).
     - "**/migrations/**"
     - "**/*.tf"
     - "Dockerfile*"
@@ -77,8 +80,12 @@ ledger:
   # Where crew tracks local tasks (one folder per task). Gitignore this.
   dir: ".crew"
 local:
-  # How crew isolates the code it writes in local mode:
-  #   auto         — use kosho if installed, else native `git worktree` (default)
+  # How crew isolates the code it writes in local mode, in preference order:
+  #   auto         — jj if installed (stacked changes), else kosho, else native
+  #                  `git worktree` (default)
+  #   jj           — jj workspace (.crew/workspaces/); colocates jj at the repo
+  #                  root if needed, and stacks one bookmark per logical feature
+  #                  set so crew can carry a large task across many changes
   #   kosho        — always use kosho worktrees (.kosho/)
   #   git-worktree — always use native `git worktree` (<ledger.dir>/worktrees/)
   #   none         — commit on a crew/<slug> branch in the main working tree

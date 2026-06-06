@@ -157,8 +157,9 @@ There are two execution modes:
 - **Scale-out (only when step 3 escalated and the user confirmed).** Build the decomposition
   into `args` and invoke the shipped Workflow once —
   `Workflow({ scriptPath: "${CLAUDE_PLUGIN_ROOT}/workflows/scale-out.js", args })` — exactly as
-  `reference/scale-out.md` specifies. It runs an implement→review pipeline per unit in isolated
-  worktrees and notifies you on completion; then synthesize its results (scale-out.md §6).
+  `reference/scale-out.md` specifies (in local mode, pass the resolved `local.isolation` so jj
+  units use their own workspace). It runs an implement→review pipeline per unit in isolated
+  workspaces and notifies you on completion; then synthesize its results (scale-out.md §6).
 
 For each step, spawn a `general-purpose` `Task` whose prompt is:
 
