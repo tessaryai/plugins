@@ -15,9 +15,13 @@ Shard paths under `.tessary/pipeline/`:
     invariants.yaml                 -> implicit_invariants, invariant_coverage
     chains.yaml                     -> chains[]
     taxonomy.yaml                   -> taxonomy[]
-    call_sites/<id_safe>.yaml       -> one call_site mapping per file
-    failure_modes/<id_safe>.yaml    -> {failure_modes: [...]} per call site
+    call_sites/<id_path>.yaml       -> one call_site mapping per file
+    failure_modes/<id_path>.yaml    -> {failure_modes: [...]} per call site
     failure_modes/_chains.yaml      -> {failure_modes: [...]} for chain scope
+
+Filenames nest the canonical `::`-delimited id as folders (`::` -> `/`), so a
+call site `sha::a1b2` is written to `call_sites/sha/a1b2.yaml`. Grader files drop
+the redundant trailing `::grader` and nest the rest (see `grader_rel_path`).
 """
 from __future__ import annotations
 
@@ -34,9 +38,42 @@ except ImportError:
     sys.exit(2)
 
 
-# Filenames substitute `::` -> `__`. Mirrors the grader-filename convention.
-def id_safe(ident: str) -> str:
-    return ident.replace("::", "__")
+# Filenames nest the canonical `::`-delimited id as folders (`::` -> `/`).
+# Mirrors the grader-filename convention.
+def id_path(ident: str) -> str:
+    return ident.replace("::", "/")
+
+
+# Grader files drop the redundant trailing `::grader` and nest the rest, so the
+# grader `checkout::wrong_total::grader` is written to
+# `graders/checkout/wrong_total.yaml`. The canonical `id:` inside the file keeps `::`.
+GRADER_ID_SUFFIX = "::grader"
+
+
+def grader_rel_path(grader_id: str) -> str:
+    """Path relative to `.tessary/` for a grader given its canonical `::` id."""
+    stem = grader_id
+    if stem.endswith(GRADER_ID_SUFFIX):
+        stem = stem[: -len(GRADER_ID_SUFFIX)]
+    return f"graders/{id_path(stem)}.yaml"
+
+
+def grader_lock_key(rel: str) -> str:
+    """Lock key for a grader: its path under `graders/` minus the `.yaml` suffix.
+
+    Keying by the nested path (not `Path(rel).stem`) keeps keys unique once
+    grader filenames nest into folders. Accepts a rel path with or without the
+    leading `graders/`.
+    """
+    key = rel[len("graders/"):] if rel.startswith("graders/") else rel
+    if key.endswith(".yaml"):
+        key = key[: -len(".yaml")]
+    return key
+
+
+def grader_id_from_rel_path(rel: str) -> str:
+    """Inverse of `grader_rel_path`: canonical `::` grader id from its path."""
+    return f"{grader_lock_key(rel).replace('/', '::')}{GRADER_ID_SUFFIX}"
 
 
 def pipeline_dir(evals_dir: Path) -> Path:
@@ -133,7 +170,7 @@ def load_pipeline(evals_dir: Path) -> dict[str, Any]:
     # Call sites: one file per site.
     sites_dir = p / "call_sites"
     if sites_dir.is_dir():
-        for site_path in sorted(sites_dir.glob("*.yaml")):
+        for site_path in sorted(sites_dir.rglob("*.yaml")):
             site = _expect_mapping(_load_yaml(site_path), site_path)
             if site:
                 out["call_sites"].append(site)
@@ -141,7 +178,7 @@ def load_pipeline(evals_dir: Path) -> dict[str, Any]:
     # Failure modes: one file per call site + one `_chains.yaml` for chain scope.
     fms_dir = p / "failure_modes"
     if fms_dir.is_dir():
-        for fm_path in sorted(fms_dir.glob("*.yaml")):
+        for fm_path in sorted(fms_dir.rglob("*.yaml")):
             fm_doc = _expect_mapping(_load_yaml(fm_path), fm_path)
             shard = _expect_list(fm_doc.get("failure_modes"), "failure_modes", fm_path)
             out["failure_modes"].extend(shard)
@@ -149,7 +186,7 @@ def load_pipeline(evals_dir: Path) -> dict[str, Any]:
     # Quality dimensions: one file per call site (judgment sites only).
     qd_dir = p / "quality_dimensions"
     if qd_dir.is_dir():
-        for qd_path in sorted(qd_dir.glob("*.yaml")):
+        for qd_path in sorted(qd_dir.rglob("*.yaml")):
             qd_doc = _expect_mapping(_load_yaml(qd_path), qd_path)
             shard = _expect_list(
                 qd_doc.get("quality_dimensions"), "quality_dimensions", qd_path
@@ -224,14 +261,14 @@ def write_call_site(evals_dir: Path, site: Mapping[str, Any]) -> Path:
     sid = site.get("id")
     if not isinstance(sid, str) or not sid:
         raise ValueError("call_site missing id")
-    path = pipeline_dir(evals_dir) / "call_sites" / f"{id_safe(sid)}.yaml"
+    path = pipeline_dir(evals_dir) / "call_sites" / f"{id_path(sid)}.yaml"
     _dump(path, dict(site))
     return path
 
 
 def write_failure_modes_for_site(evals_dir: Path, call_site_id: str,
                                  failure_modes: list[Mapping[str, Any]]) -> Path:
-    path = pipeline_dir(evals_dir) / "failure_modes" / f"{id_safe(call_site_id)}.yaml"
+    path = pipeline_dir(evals_dir) / "failure_modes" / f"{id_path(call_site_id)}.yaml"
     _dump(path, {"failure_modes": list(failure_modes)})
     return path
 
@@ -245,7 +282,7 @@ def write_chain_failure_modes(evals_dir: Path,
 
 def write_quality_dimensions_for_site(evals_dir: Path, call_site_id: str,
                                       quality_dimensions: list[Mapping[str, Any]]) -> Path:
-    path = pipeline_dir(evals_dir) / "quality_dimensions" / f"{id_safe(call_site_id)}.yaml"
+    path = pipeline_dir(evals_dir) / "quality_dimensions" / f"{id_path(call_site_id)}.yaml"
     _dump(path, {"quality_dimensions": list(quality_dimensions)})
     return path
 
@@ -373,7 +410,7 @@ def lock_paths(evals_dir: Path, step: str, paths: Iterable[Path]) -> Path:
             out_list.append(rel)
         sha = _sha256(path)
         if rel.startswith("graders/"):
-            graders[Path(rel).stem] = sha
+            graders[grader_lock_key(rel)] = sha
         else:
             shards[rel] = sha
 
@@ -392,7 +429,7 @@ def file_locked(evals_dir: Path, path: Path) -> bool:
     except ValueError:
         return False
     recorded = (
-        lock.get("graders", {}).get(Path(rel).stem) if rel.startswith("graders/")
+        lock.get("graders", {}).get(grader_lock_key(rel)) if rel.startswith("graders/")
         else lock.get("shards", {}).get(rel)
     )
     if not isinstance(recorded, str):

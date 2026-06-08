@@ -15,13 +15,14 @@ diffs and the per-grader / bundle validators pass.
     packs.yaml                         # engaged packs + interview answers
     product_profile.yaml               # step-0 product profile
     invariants.yaml                    # implicit_invariants + invariant_coverage
-    call_sites/<id>.yaml               # one per call site
+    call_sites/<id_path>.yaml          # one per call site (`::` -> `/`)
     chains.yaml                        # all detected chains
-    failure_modes/<call_site_id>.yaml  # single_call failures for that site
+    failure_modes/<call_site_id_path>.yaml  # single_call failures for that site
     failure_modes/_chains.yaml         # chain failures (one file for all)
+    quality_dimensions/<call_site_id_path>.yaml  # 1-5 quality axes per judgment site
     taxonomy.yaml                      # full taxonomy tree
   graders/
-    <grader_id_safe>.yaml              # one per grader; id with `::` -> `__`
+    <call_site>/<failure>.yaml         # one per grader (`::` -> `/`, drop `::grader`)
   datasets/
     <call_site_id>.jsonl               # captured inputs (Path A only)
   report.md
@@ -29,15 +30,16 @@ diffs and the per-grader / bundle validators pass.
   .synth-lock.yaml                     # content hashes from the last run
 ```
 
-`<grader_id_safe>` is the canonical grader ID with `::` replaced by `__`.
-Example: a grader with `id: persona::memory_citation::grader` is written to
-`.tessary/graders/persona__memory_citation__grader.yaml`. The canonical ID *inside*
-the file still uses `::`.
+Filenames nest the canonical `::`-delimited ID as folders (`::` → `/`). Grader
+files additionally drop the redundant trailing `::grader`. Example: a grader with
+`id: persona::memory_citation::grader` is written to
+`.tessary/graders/persona/memory_citation.yaml`. The canonical ID *inside* the
+file still uses `::`.
 
-The same filename transformation applies to call-site shards
-(`call_sites/<id_safe>.yaml`, no `::` expected in practice but the substitution
-is applied defensively) and failure-mode shards
-(`failure_modes/<call_site_id_safe>.yaml`).
+The same `::` → `/` nesting applies to call-site shards
+(`call_sites/<id_path>.yaml` — e.g. a Path-A site `sha::a1b2` → `call_sites/sha/a1b2.yaml`),
+failure-mode shards (`failure_modes/<call_site_id_path>.yaml`), and quality-dimension
+shards (`quality_dimensions/<call_site_id_path>.yaml`).
 
 ## Loading the logical pipeline view
 
@@ -52,7 +54,7 @@ the assembled view is never written back to disk during synthesis.
 ## `.tessary/pipeline/meta.yaml`
 
 ```yaml
-version: "0.13.0"
+version: "0.14.0"
 product_hint: <string | null>
 
 runtime:
@@ -74,7 +76,7 @@ progress:                                 # added in schema 0.7.0 (phased synthe
 
 `version` is the synthesizer's on-disk schema version, not the plugin version.
 Bump only when the shard layout or shard schemas change. Current schema is
-`0.13.0` (0.7.0 added the `progress` block here, the `priorities.yaml` shard, and
+`0.14.0` (0.7.0 added the `progress` block here, the `priorities.yaml` shard, and
 the `grader_deferred` field on failure modes; 0.8.0 added the `quality_dimensions/`
 shard and the `kind: score` grader for continuous 1–5 quality scoring; 0.9.0 added
 the `invocation` field on call sites so indirect LLM calls — agent CLIs, raw HTTP,
@@ -92,7 +94,10 @@ authoring for `kind=llm_judge`/`score` to the platform — contract v8; 0.13.0 w
 edit promotes it to `human`), added the optional `_meta.materialized_at`/`body_digest`, added
 the `source: observed | inferred` provenance field on `expected_spans` entries, and removed
 the redundant grader fields `owner`/`cost_budget_tokens`/`latency_budget_ms_p95`/grader-level
-`compliance_tags`/`applies_when_check` — contract v9).
+`compliance_tags`/`applies_when_check` — contract v9; 0.14.0 nests shard filenames as folders
+(`::` → `/`) instead of flattening them to `__`, and grader files drop the redundant trailing
+`::grader` — purely an on-disk filename layout change; the grader contract stays v9 and shard
+*contents* are unchanged).
 
 ## `.tessary/pipeline/priorities.yaml`
 
@@ -365,7 +370,7 @@ taxonomy:
     example_chain_ids: [<string>, ...]
 ```
 
-## `.tessary/graders/<grader_id_safe>.yaml`
+## `.tessary/graders/<call_site>/<failure>.yaml`
 
 One file per grader. Required keys (see `contract/grader.schema.json` for the
 full schema):
@@ -519,11 +524,11 @@ shards:                              # SHA-256 of every pipeline/* shard file
   pipeline/invariants.yaml: <hex>
   pipeline/chains.yaml: <hex>
   pipeline/taxonomy.yaml: <hex>
-  pipeline/call_sites/<id>.yaml: <hex>
-  pipeline/failure_modes/<id>.yaml: <hex>
+  pipeline/call_sites/<id_path>.yaml: <hex>
+  pipeline/failure_modes/<id_path>.yaml: <hex>
   pipeline/failure_modes/_chains.yaml: <hex>
 graders:
-  <grader_id_safe>: <hex>
+  <call_site>/<failure>: <hex>          # grader path under graders/ minus `.yaml`
 ```
 
 On the next run, the orchestrator compares each grader file's current hash

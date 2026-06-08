@@ -1136,7 +1136,7 @@ def _run_bundle(evals_dir: Path, calibration_csv: Path | None,
     graders: list[tuple[Path, Grader]] = []
     per_file_errors: list[str] = []
     if graders_dir.is_dir():
-        for path in sorted(graders_dir.glob("*.yaml")):
+        for path in sorted(graders_dir.rglob("*.yaml")):
             g = _load_yaml(path, "grader")
             if not isinstance(g, dict):
                 per_file_errors.append(f"{path}: must be a YAML mapping at the top level")

@@ -21,13 +21,13 @@ Output goes to a directory in the **target repo's** working directory:
     priorities.yaml                   # ordered list of call_site_ids
     product_profile.yaml              # phase A
     invariants.yaml                   # implicit_invariants + invariant_coverage
-    call_sites/<id>.yaml              # one per call site
+    call_sites/<id_path>.yaml         # one per call site (`::` -> `/`)
     chains.yaml                       # all detected chains
-    failure_modes/<call_site_id>.yaml # single_call failures per site
+    failure_modes/<call_site_id_path>.yaml # single_call failures per site
     failure_modes/_chains.yaml        # chain failures
-    quality_dimensions/<call_site_id>.yaml # 1-5 quality axes per judgment site
+    quality_dimensions/<call_site_id_path>.yaml # 1-5 quality axes per judgment site
     taxonomy.yaml                     # taxonomy tree (populated at end of phase C)
-  graders/<grader_id_safe>.yaml       # one file per emitted (non-deferred) grader
+  graders/<call_site>/<failure>.yaml  # one per emitted grader (`::` -> `/`, drop `::grader`)
   datasets/<call_site_id>.jsonl       # captured inputs (Path A only)
   report.md                           # human-readable walkthrough
   index.html                          # self-contained visual viewer
@@ -329,13 +329,13 @@ python3 - <<'PY'
 import sys; sys.path.insert(0, "$PLUGIN")
 from pathlib import Path
 import pipeline_io
-pipeline_io.write_meta(Path(".tessary"), "0.13.0", "<product_hint or None>", {},
+pipeline_io.write_meta(Path(".tessary"), "0.14.0", "<product_hint or None>", {},
                        progress={"sites_completed": 0, "sites_total": <N>})
 PY
 python3 "$PLUGIN/pipeline_io.py" lock A .tessary/pipeline/meta.yaml --evals-dir .tessary
 ```
 
-The seed is later overwritten by `finalize.py`, which **preserves** this `0.13.0` version and the `product_hint` when run flag-bare (see Step C.5) — so the version never regresses.
+The seed is later overwritten by `finalize.py`, which **preserves** this `0.14.0` version and the `product_hint` when run flag-bare (see Step C.5) — so the version never regresses.
 
 ### Phase B — Triage
 
@@ -437,12 +437,12 @@ python3 "$PLUGIN/pipeline_io.py" lock C-fm-<id> .tessary/pipeline/failure_modes/
 - one per **non-deferred failure mode** → a failure-catching grader (`kind: llm_judge | deterministic | execution`);
 - one per **quality dimension** of this site → a `kind: score` grader (always — quality dimensions are never deferred).
 
-Author discovery and both per-grader templates are under "Grader subagent template" below. Before spawning each subagent, run `python3 "$PLUGIN/pipeline_io.py" check-file .tessary/graders/<grader_id_safe>.yaml --evals-dir .tessary` — if exit 0, skip (already emitted in a prior partial run).
+Author discovery and both per-grader templates are under "Grader subagent template" below. The grader's path is its id with the trailing `::grader` dropped and `::` → `/`, i.e. `.tessary/graders/<call_site>/<failure>.yaml` (see "Filenames" below). Before spawning each subagent, run `python3 "$PLUGIN/pipeline_io.py" check-file .tessary/graders/<call_site>/<failure>.yaml --evals-dir .tessary` — if exit 0, skip (already emitted in a prior partial run).
 
 **Step C.4 (and D.5) — orchestrator stamps `_meta`.** `_meta` is orchestrator-owned (contract Roles table), not authored by the subagent. After each grader file returns and **before** locking it, the orchestrator stamps the provenance block deterministically:
 
 ```bash
-python3 "$PLUGIN/pipeline_io.py" stamp-meta .tessary/graders/<grader_id_safe>.yaml \
+python3 "$PLUGIN/pipeline_io.py" stamp-meta .tessary/graders/<call_site>/<failure>.yaml \
   --author "<resolved author name>" --synth-inputs-digest "<digest>" \
   --author-contract-version 8 --evals-dir .tessary
 ```
@@ -638,7 +638,7 @@ PART 1 — FAILURE-MODE GRADERS. For each failure mode where grader_deferred is 
    do not splice them.)
    Do NOT write `_meta` — it is orchestrator-owned and stamped after you return
    (see "Step C.4/D.5 — orchestrator stamps _meta" below). Leave it absent.
-4. Write to .tessary/graders/<grader_id_safe>.yaml.
+4. Write to .tessary/graders/<call_site>/<failure>.yaml (grader id minus `::grader`, `::` → `/`).
 5. Validate: python3 "$PLUGIN/validate.py" .tessary/graders/<file>.yaml --pipeline .tessary/
    On failure, retry author up to 3x with validator_feedback; after 3 failures,
    write _validation_error and move on.
@@ -697,8 +697,11 @@ Unchanged from v0.3.
 - **Grader ID**: `<failure_mode_id>::grader`.
 - **Taxonomy node ID**: `tax::<slug>` or `tax::<parent>::<sub>`.
 
-Filenames substitute `::` → `__`. This applies to grader files and to shard
-files under `pipeline/call_sites/` and `pipeline/failure_modes/`.
+Filenames nest the canonical `::`-delimited id as folders (`::` → `/`). This applies
+to shard files under `pipeline/call_sites/`, `pipeline/failure_modes/`, and
+`pipeline/quality_dimensions/`. Grader files additionally drop the redundant trailing
+`::grader`, so `persona::memory_citation::grader` → `graders/persona/memory_citation.yaml`.
+The canonical id *inside* each file always keeps `::`.
 
 ## Constraints
 

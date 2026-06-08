@@ -13,7 +13,7 @@ under .tessary/graders/, then:
 
 Usage:
     python3 finalize.py .tessary/ \
-        [--version 0.13.0] \
+        [--version 0.14.0] \
         [--product-hint "<string>"] \
         [--runtime-yaml runtime.yaml] \
         [--inputs-digest <hex>] \
@@ -52,7 +52,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 
 # On-disk schema version (see output_format.md / contract v9). Used when no
 # --version is passed and meta.yaml has no prior version to preserve.
-DEFAULT_VERSION = "0.13.0"
+DEFAULT_VERSION = "0.14.0"
 
 
 def _sha256_hex(text: str) -> str:
@@ -345,7 +345,8 @@ def _compute_progress(pipeline: dict[str, Any],
     # sites have no FM entries → expected==0 → they were wrongly counted complete.
     fm_dir = pipeline_io.pipeline_dir(evals_dir) / "failure_modes"
     processed = {
-        p.stem.replace("__", "::") for p in fm_dir.glob("*.yaml")
+        p.relative_to(fm_dir).with_suffix("").as_posix().replace("/", "::")
+        for p in fm_dir.rglob("*.yaml")
         if p.name != "_chains.yaml"
     } if fm_dir.is_dir() else set()
 
@@ -395,8 +396,9 @@ def write_lock(evals_dir: Path, inputs_digest: str | None) -> Path:
     graders: dict[str, str] = {}
     graders_dir = evals_dir / "graders"
     if graders_dir.is_dir():
-        for gpath in sorted(graders_dir.glob("*.yaml")):
-            graders[gpath.stem] = _sha256_hex(gpath.read_text(encoding="utf-8"))
+        for gpath in sorted(graders_dir.rglob("*.yaml")):
+            key = pipeline_io.grader_lock_key(gpath.relative_to(evals_dir).as_posix())
+            graders[key] = _sha256_hex(gpath.read_text(encoding="utf-8"))
 
     lock = {
         "version": 1,
@@ -423,7 +425,7 @@ def main() -> int:
     ap.add_argument("evals_dir", help="Path to the .tessary/ directory.")
     ap.add_argument("--version", default=None,
                     help="On-disk schema version written into meta.yaml. When omitted, "
-                         "preserves the existing meta.yaml version, else defaults to 0.13.0.")
+                         "preserves the existing meta.yaml version, else defaults to 0.14.0.")
     ap.add_argument("--product-hint", default=None)
     ap.add_argument("--runtime-yaml", default=None,
                     help="Optional YAML file with runtime fields to embed in meta.yaml.")
@@ -452,11 +454,12 @@ def main() -> int:
     graders: list[dict[str, Any]] = []
     graders_dir = evals_dir / "graders"
     if graders_dir.is_dir():
-        for gpath in sorted(graders_dir.glob("*.yaml")):
+        for gpath in sorted(graders_dir.rglob("*.yaml")):
             try:
                 doc = yaml.safe_load(gpath.read_text(encoding="utf-8"))
             except yaml.YAMLError:
-                doc = {"id": gpath.stem, "_load_error": True}
+                rel = gpath.relative_to(evals_dir).as_posix()
+                doc = {"id": pipeline_io.grader_id_from_rel_path(rel), "_load_error": True}
             if isinstance(doc, dict):
                 graders.append(doc)
 
