@@ -4,7 +4,7 @@ viewer.py — build a self-contained HTML viewer for a synthesized eval pipeline
 
 Reads:
     <evals_dir>/pipeline/**/*.yaml  (v0.4 sharded layout — assembled via pipeline_io)
-    <evals_dir>/graders/*.yaml
+    <evals_dir>/graders/**/*.yaml
     <evals_dir>/report.md           (optional)
 
 Writes:
@@ -98,7 +98,7 @@ def _safe_url(url: str) -> str:
 
 
 def collect(evals_dir: Path) -> dict[str, Any]:
-    """Read pipeline.yaml + every graders/*.yaml + report.md from `evals_dir`.
+    """Read pipeline.yaml + every graders/**/*.yaml + report.md from `evals_dir`.
 
     Individual grader load failures are captured into a placeholder entry
     rather than aborting the run, so a malformed file doesn't lose the
@@ -122,11 +122,13 @@ def collect(evals_dir: Path) -> dict[str, Any]:
     graders: list[Mapping[str, Any]] = []
     graders_dir = evals_dir / "graders"
     if graders_dir.is_dir():
-        for gpath in sorted(graders_dir.glob("*.yaml")):
+        for gpath in sorted(graders_dir.rglob("*.yaml")):
             try:
                 graders.append(_load_yaml(gpath))
             except Exception as e:  # YAML errors, permission errors, etc.
-                graders.append({"id": gpath.stem, "_load_error": str(e)})
+                rel = gpath.relative_to(evals_dir).as_posix()
+                graders.append({"id": pipeline_io.grader_id_from_rel_path(rel),
+                                "_load_error": str(e)})
 
     report_path = evals_dir / "report.md"
     report_md = report_path.read_text(encoding="utf-8") if report_path.is_file() else ""

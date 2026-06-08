@@ -1,5 +1,15 @@
 # Platform handoff — v0.10 / v0.11 grader contract additions
 
+> ## on-disk schema 0.14.0 — nested shard filenames (read first)
+>
+> The bundle now **nests shard filenames as folders** (`::` → `/`) instead of flattening them to `__`,
+> and grader files drop the redundant trailing `::grader`. A grader `persona::memory_citation::grader`
+> is written to `graders/persona/memory_citation.yaml`; a Path-A call site `sha::a1b2` → `call_sites/sha/a1b2.yaml`.
+> The grader **contract stays v9** and shard *contents* are unchanged — only filenames move. The platform's
+> `BundleAssembler.classify()` already routes by substring (`contains("graders/")`, `contains("pipeline/call_sites/")`)
+> and reads the canonical `id` from inside each file, so **no import change is required** — it accepts the deeper
+> tree as-is. Hard cutover: the new plugin only writes this layout; users re-run synthesis (no migration).
+
 > ## contract v9 — body lifecycle (materialize-back) + OTel-grounded expected_spans (read first)
 >
 > Three changes ship in contract **v9** (schema `$id` → `grader.v9.json`, on-disk schema → `0.13.0`).

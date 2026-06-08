@@ -254,7 +254,7 @@ def main() -> int:
         print(f"dedup.py: {fms_dir} not found", file=sys.stderr)
         return 2
 
-    shards = sorted(fms_dir.glob("*.yaml"))
+    shards = sorted(fms_dir.rglob("*.yaml"))
     if not shards:
         print(f"dedup.py: no failure_mode shards under {fms_dir}", file=sys.stderr)
         return 2
@@ -288,13 +288,15 @@ def main() -> int:
         scope = fm.get("scope")
         if scope == "single_call":
             site = fm.get("call_site_id") or ""
-            shard_name = f"{pipeline_io.id_safe(site)}.yaml"
+            shard_name = f"{pipeline_io.id_path(site)}.yaml"
         else:
             shard_name = "_chains.yaml"
         routed[shard_name].append(fm)
 
-    # Overwrite every existing shard (even those that become empty).
-    existing_shard_names = {s.name for s in shards}
+    # Overwrite every existing shard (even those that become empty). Keys are
+    # shard paths relative to fms_dir (POSIX) so nested per-site shards don't
+    # collide on their leaf filename.
+    existing_shard_names = {s.relative_to(fms_dir).as_posix() for s in shards}
     target_names = existing_shard_names | set(routed.keys())
     for shard_name in target_names:
         _write_shard(fms_dir / shard_name, routed.get(shard_name, []))
