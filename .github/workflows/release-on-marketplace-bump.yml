@@ -1,0 +1,100 @@
+name: Release plugins on marketplace bump
+
+# When `.claude-plugin/marketplace.json` lands on main with a plugin `source.ref`
+# that has no matching git tag yet, cut that release: create the annotated tag
+# (the thing the marketplace actually resolves) and a GitHub Release with notes
+# from the plugin's CHANGELOG. This automates the manual "bump ref in a PR, then
+# tag the merge commit" step.
+#
+# Idempotent: a plugin whose ref already has a tag is skipped, so edits to
+# marketplace.json that don't bump a ref (e.g. a description tweak) do nothing.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".claude-plugin/marketplace.json"
+  workflow_dispatch: {} # allow a manual re-run if a release needs replaying
+
+permissions:
+  contents: write # push tags + create releases
+
+concurrency:
+  group: release-plugins
+  cancel-in-progress: false
+
+jobs:
+  release:
+    # Don't run on forks.
+    if: github.repository == 'tessaryai/plugins'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Tag and release plugins whose ref changed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          marketplace=".claude-plugin/marketplace.json"
+
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          released=0
+
+          # name \t path \t ref, one plugin per line (TSV is safe: no tabs in these fields).
+          while IFS=$'\t' read -r name path ref; do
+            [ -n "$ref" ] || { echo "::notice::$name has no source.ref — skipping"; continue; }
+
+            # Already released? Check the remote authoritatively.
+            if git ls-remote --exit-code --tags origin "refs/tags/$ref" >/dev/null 2>&1; then
+              echo "tag $ref already exists — skipping $name"
+              continue
+            fi
+
+            # Sanity gate: ref is "<name>-v<version>" and must match the plugin's plugin.json.
+            expected_version="${ref#"${name}-v"}"
+            if [ "$expected_version" = "$ref" ]; then
+              echo "::error::ref '$ref' does not match the expected '<name>-v<version>' form for plugin '$name'"
+              exit 1
+            fi
+            manifest="$path/.claude-plugin/plugin.json"
+            if [ ! -f "$manifest" ]; then
+              echo "::error::$manifest not found for plugin '$name' (ref $ref)"
+              exit 1
+            fi
+            actual_version="$(jq -r '.version' "$manifest")"
+            if [ "$expected_version" != "$actual_version" ]; then
+              echo "::error::ref $ref implies version $expected_version but $manifest declares $actual_version — fix one before releasing"
+              exit 1
+            fi
+
+            echo "Releasing $name → $ref at $COMMIT_SHA"
+
+            # Annotated tag on the pushed commit (matches the repo convention).
+            git tag -a "$ref" -m "Release $ref" "$COMMIT_SHA"
+            git push origin "refs/tags/$ref"
+
+            # Release notes: the matching CHANGELOG TL;DR block if we can find it, else auto-generate.
+            notes_file="$(mktemp)"
+            changelog="$path/CHANGELOG.md"
+            if [ -f "$changelog" ] && awk -v ver="$expected_version" '
+                index($0, "TL;DR (v" ver) > 0 { cap=1 }
+                cap && /TL;DR \(v/ && index($0, "TL;DR (v" ver) == 0 { exit }
+                cap { print }
+              ' "$changelog" > "$notes_file" && [ -s "$notes_file" ]; then
+              gh release create "$ref" --verify-tag --title "$ref" --notes-file "$notes_file"
+            else
+              echo "no CHANGELOG block for $expected_version — auto-generating notes"
+              gh release create "$ref" --verify-tag --title "$ref" --generate-notes
+            fi
+
+            released=$((released + 1))
+          done < <(jq -r '.plugins[] | [.name, .source.path, (.source.ref // "")] | @tsv' "$marketplace")
+
+          echo "released $released plugin(s) this run"
