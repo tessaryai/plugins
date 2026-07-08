@@ -20,6 +20,10 @@ In any Claude Code session:
 /evals:connect
 ```
 
+> **Already have graders/traces on the platform?** Run this. **Starting from zero (no evals at all)?**
+> Run [`/evals:synthesize-graders`](#bootstrap-a-starter-suite-greenfield) first to generate a starter
+> suite, then connect.
+
 This links the current repo to a project on evals.tessary.ai (a one-time device-code handshake in
 your browser), then registers the platform's authenticated tools into Claude Code — privately, scoped
 to this repo. After you reconnect the session, just ask the agent things like:
@@ -28,11 +32,11 @@ to this repo. After you reconnect the session, just ask the agent things like:
 - **"what's failing this week?"** — it queries real observations and verdicts
 - **"run triage on `<failure mode>`"** — it traces a failure to its root cause
 - **"show the grader for `<call site>`"** — it pulls the definition and recent verdicts
-- **"add a call site for the LLM call in `foo.py`"** — it registers it on the platform
 
 The link stores a project-scoped token under `~/.config/tessary-evals/credentials.json` and, because
 the MCP server is registered at **local scope** (`~/.claude.json`), the token is never written into a
-committed file. Reconnect once after connecting so the tools load.
+committed file. Reconnect once after connecting so the tools load. To disconnect a repo later, run
+`python3 platform.py unlink` (removes the local registration + stored credential).
 
 ### What you get natively after connecting
 

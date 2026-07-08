@@ -175,7 +175,7 @@ def _tls_help(url: str) -> str:
 
 
 def _request(method: str, url: str, *, body: bytes | None = None,
-             headers: dict[str, str] | None = None) -> tuple[int, bytes]:
+             headers: dict[str, str] | None = None, fatal: bool = True) -> tuple[int, bytes]:
     merged = {"User-Agent": USER_AGENT, CLIENT_HEADER_NAME: CLIENT_HEADER_VALUE}
     if headers:
         merged.update(headers)
@@ -186,6 +186,11 @@ def _request(method: str, url: str, *, body: bytes | None = None,
     except urllib.error.HTTPError as e:
         return e.code, e.read()
     except urllib.error.URLError as e:
+        # A one-shot call (status/upload/link-start) treats a transport error as fatal. A long-running
+        # caller that polls for minutes (the device-link loop) passes fatal=False so a single transient
+        # blip doesn't kill the whole flow — it gets a (0, b"") sentinel and retries on the next tick.
+        if not fatal:
+            return 0, b""
         reason = e.reason
         if isinstance(reason, ssl.SSLCertVerificationError) or "CERTIFICATE_VERIFY_FAILED" in str(reason):
             print(_tls_help(url), file=sys.stderr)
@@ -194,11 +199,12 @@ def _request(method: str, url: str, *, body: bytes | None = None,
         raise SystemExit(2)
 
 
-def post_json(url: str, payload: dict[str, Any], token: str | None = None) -> tuple[int, dict[str, Any]]:
+def post_json(url: str, payload: dict[str, Any], token: str | None = None,
+              *, fatal: bool = True) -> tuple[int, dict[str, Any]]:
     headers = {"Content-Type": "application/json"}
     if token:
         headers["Authorization"] = f"Bearer {token}"
-    code, raw = _request("POST", url, body=json.dumps(payload).encode(), headers=headers)
+    code, raw = _request("POST", url, body=json.dumps(payload).encode(), headers=headers, fatal=fatal)
     try:
         return code, json.loads(raw or b"{}")
     except json.JSONDecodeError:
@@ -289,7 +295,9 @@ def cmd_link(args: argparse.Namespace) -> int:
     deadline = time.time() + int(d.get("expires_in", 600))
     while time.time() < deadline:
         time.sleep(interval)
-        pc, pdata = post_json(f"{url}/auth/link/poll", {"device_code": device_code})
+        pc, pdata = post_json(f"{url}/auth/link/poll", {"device_code": device_code}, fatal=False)
+        if pc == 0:
+            continue  # transient network blip this tick — keep polling until the deadline
         status = (pdata.get("data") or {}).get("status")
         if status == "ready":
             pd = pdata["data"]

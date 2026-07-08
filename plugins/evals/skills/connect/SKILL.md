@@ -64,8 +64,14 @@ org/project to link, and confirms. On success it stores a project-scoped **ADMIN
 
 - **Already linked** → the command is a no-op and prints the existing `<org>/<project>`; skip to
   step 3 (the MCP registration may still be missing).
+- **No project yet (new account)** → connect links a repo to an *existing* project. The browser
+  flow lets the user create one during confirmation, so tell them: "pick a project — or create one
+  — on the confirmation screen." If they have **no evals at all** and want a starter suite generated
+  from their code, that's the greenfield bootstrap (`/evals:synthesize-graders`, see "When to
+  bootstrap instead"), not connect.
 - **Headless / no browser** (SSH, CI) → it prints the URL + code for the user to open elsewhere,
-  then polls. Relay the URL and code and wait.
+  then polls (resilient to transient blips, up to ~10 min). Relay the URL and code, say you're
+  waiting for their confirmation, and end your turn — don't spin.
 - **Declined / timed out** → report it plainly and stop; do not silently retry. The user can
   re-run `/evals:connect`.
 
@@ -86,22 +92,27 @@ grep -rInE "messages\.create|chat\.completions|generate_content|anthropic|openai
 ```
 
 The OTLP export target for this project is the platform's receiver, authenticated with the stored
-link token (an OTLP ingest header). Resolve them without printing the token:
+link token (an OTLP ingest header). Resolve the base URL **locally** (no network call, no token
+printed):
 
 ```bash
-BASE="$(python3 "$PLUGIN/platform.py" --repo . status >/dev/null 2>&1 && \
-  python3 - <<'PY'
-import publish; from pathlib import Path
-p = publish.linked_project(Path('.').resolve()/'.tessary') or {}
+BASE="$(PYTHONPATH="$PLUGIN" python3 - <<'PY'
+import publish
+from pathlib import Path
+p = publish.linked_project(Path('.').resolve() / '.tessary') or {}
 print(p.get('base_url') or publish.DEFAULT_BASE_URL)
 PY
 )"
 echo "OTLP endpoint:  $BASE/v1/traces"
-echo "OTLP headers:   Authorization=Bearer <your link token>   # from: python3 \"$PLUGIN/platform.py\" token"
+echo "OTLP headers:   Authorization=Bearer <your link token>   # the USER runs: platform.py token --reveal (keep it out of the chat)"
 ```
 
-Classify what you find and act. **Wiring means editing OTLP config/env — propose it as a concrete
-change and let the user apply it; never write the raw token into a committed file.**
+The greps above are a **heuristic, not a verdict** — a config-driven OTel setup or GenAI-only
+instrumentation can hide from a keyword search, and commented/dead code can false-positive. **State
+your classification and how confident you are, and confirm with the user before proposing any
+`.env`/config edit.** Wiring means editing OTLP config/env — propose it as a concrete change and let
+the user apply it; never write the raw token into a committed file, and **never fetch or echo the
+token yourself** — the user runs `platform.py token --reveal` and pastes it into their own `.env`.
 
 - **OpenTelemetry / OTLP already set up** → point it at the project. The standard OTEL env vars do
   it with no code change:
@@ -135,11 +146,14 @@ python3 "$PLUGIN/platform.py" mcp-add --run
 This runs `claude mcp add --transport http --scope local tessary-evals <base>/mcp` with the stored
 token as an `Authorization: Bearer` header. **`local` scope** keeps the registration (and the
 token) private to this repo in `~/.claude.json` — it is never written into a committed file. Re-running
-refreshes the token idempotently (it removes any prior registration first).
+refreshes the token: it **first checks `claude` is on PATH**, then removes any prior registration and
+re-adds, so a PATH problem never leaves the repo with zero tools.
 
-If the `claude` CLI isn't on PATH, the command fails with a clear message; fall back to printing the
-command for the user (`python3 "$PLUGIN/platform.py" mcp-add`, which masks the token) and let them run
-it, or point them at their MCP settings.
+If the `claude` CLI isn't on PATH, `mcp-add --run` **fails fast without touching any existing
+registration** and tells the user to fix PATH (usually a version-manager shim or devcontainer) and
+re-run `/evals:connect`. Do **not** have the user hand-assemble the `claude mcp add` command with a
+raw token — that leaks it into shell history. (`python3 "$PLUGIN/platform.py" mcp-add` without `--run`
+prints only a masked, non-runnable preview.)
 
 ### 4 — Report project state
 
@@ -148,26 +162,30 @@ python3 "$PLUGIN/platform.py" status
 ```
 
 Prints the linked `<org>/<project>` and counts of call sites / graders / failure modes / quality
-dimensions. Relay it. If the pipeline isn't available yet (a brand-new project with nothing
-synthesized), say so and offer to bootstrap (below).
+dimensions. Relay it. If the pipeline is empty/unavailable (a brand-new project with nothing
+synthesized yet), say so plainly — "this project has no graders yet" — and, if the user wants a
+starter suite, offer the bootstrap while **sizing it honestly**: `/evals:synthesize-graders` is a
+multi-minute, phased run that pauses for your approval twice — not the 30-second connect.
 
 ### 5 — Hand off
 
-The MCP tools load on the **next** session/reconnect, not mid-turn. Tell the user exactly that,
-then show what they can now ask you to do. Print something like:
+**The MCP tools are NOT usable this turn** — they load only after the client reloads its MCP config.
+The hand-off must lead and close with that. Do not claim the tools work now; if the user asks you to
+use them immediately, remind them to reconnect first. Print something like:
 
 ```
-Connected to <org>/<project>. I registered the Tessary tools with Claude Code — reconnect
-(or restart this session) so they load. Then just ask me things like:
+Connected to <org>/<project>. ✅
+
+⚠️ Reconnect (or restart) this session once so the Tessary tools load — they are not available yet.
+
+After you reconnect, just ask me things like:
   • "assess my call sites"            → I list them and flag gaps/risks
   • "what's failing this week?"       → I query real observations + verdicts
   • "run triage on <failure mode>"    → I trace a failure to its root cause
   • "show the grader for <call site>" → I pull its definition and recent verdicts
-  • "add a call site for <the LLM call in foo.py>"  → I register it on the platform
-```
 
-Do **not** claim the tools are usable in the current turn — they aren't until the client reloads
-its MCP config. If the user asks you to use them immediately, remind them to reconnect first.
+(These use the Tessary tools, so they only work after you reconnect.)
+```
 
 ## When to bootstrap instead
 
@@ -183,8 +201,12 @@ just want to work with an existing project.
 
 - **Confirm the target repo** before linking if the cwd is ambiguous — the credential is keyed by
   repo root.
-- **Never print the raw token** in normal output. `platform.py mcp-add` (without `--run`) masks it;
-  `platform.py token` prints it raw and is for scripting only — don't surface it to the user.
+- **Never print the raw token.** `platform.py mcp-add` (without `--run`) masks it; `platform.py token`
+  now refuses unless given `--reveal`, and even then it is the *user's* action for their own `.env` —
+  never run `token --reveal` on the user's behalf or echo the value into the chat.
+- **To disconnect a repo**, use `python3 "$PLUGIN/platform.py" unlink` — it tears down both the local
+  MCP registration and the stored credential together. (The server-side token still needs revoking in
+  the platform UI.)
 - **The link is user-consented, per-session, per-project.** Do not re-link a different project
   without the user asking. One confirmation in the browser authorizes one project.
 - **Assessing call sites needs no new skill** — once connected, you list and evaluate them with the
