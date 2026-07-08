@@ -7,9 +7,10 @@ Two subcommands, both stdlib-only (urllib), no third-party deps:
           browser, polls until the user confirms in a signed-in browser, then
           stores a project-scoped token under ~/.config/tessary-evals/.
 
-  upload  Multipart-pushes the local .tessary/ bundle to the linked
-          project's import endpoint, then uploads any captured datasets/*.jsonl
-          to the trace-upload endpoint so the graders run on real rows.
+  upload  Multipart-pushes the local .tessary/ bundle (pipeline + graders, and
+          any captured datasets/*.jsonl) to the linked project's import endpoint.
+          To actually run the graders on real rows, traces are ingested via OTLP
+          (POST /v1/traces) — not by this uploader.
 
 The only network egress in the whole skill. Invoked from SKILL.md's Phase C.7
 publish step (opt-in, asked once) and re-run with `upload` on later sites.
@@ -347,21 +348,17 @@ def cmd_upload(args: argparse.Namespace) -> int:
         return 1
     print(f"Uploaded graders to {org}/{project}.")
 
-    # 2) Upload captured datasets so the graders run on real rows. One request
-    #    per file's call site is unnecessary — the backend derives the call site
-    #    from each dataset filename (datasets/<call_site_id>.jsonl).
+    # 2) Captured datasets (datasets/*.jsonl) ride along inside the bundle above.
+    #    There is no longer a JSONL trace-upload endpoint: trace ingestion is OTLP
+    #    (POST /v1/traces). So this uploader lands the graders; to run them on real
+    #    rows the user connects traces (below), observations flow in over OTLP, and
+    #    grading runs against them.
     datasets = sorted((evals_dir / "datasets").glob("*.jsonl")) if (evals_dir / "datasets").is_dir() else []
     if datasets:
-        ds_files = [(p.name, p) for p in datasets]
-        dc, ddata = multipart_post(f"{api}/traces/upload", ds_files, token)
-        if dc in (200, 202):
-            run_id = (ddata.get("data") or {}).get("runId")
-            n = (ddata.get("data") or {}).get("totalEntries")
-            print(f"Grading {n} captured trace rows → {url}/orgs/{org}/projects/{project}/runs/{run_id}")
-        else:
-            print(f"(datasets upload skipped: HTTP {dc})", file=sys.stderr)
+        print(f"Bundled {len(datasets)} captured dataset file(s). To grade on real rows, "
+              "connect traces (OTLP) so observations flow into the project.")
 
-    print(f"\nConnect more traces & see verdicts:\n  {url}/orgs/{org}/projects/{project}/setup?step=connect-traces")
+    print(f"\nConnect traces & see verdicts:\n  {url}/orgs/{org}/projects/{project}/setup?step=connect-traces")
     return 0
 
 

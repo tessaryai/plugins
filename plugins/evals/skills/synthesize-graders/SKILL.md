@@ -509,7 +509,7 @@ python3 "$PLUGIN/publish.py" link --evals-dir .tessary
 python3 "$PLUGIN/publish.py" upload --evals-dir .tessary
 ```
 
-`link` prints a short code + URL and waits for the user to confirm in their browser (signing up if needed), then stores a project-scoped token under `~/.config/tessary-evals/`. `upload` imports the graders, then uploads captured trace rows so the graders run immediately. The final printed URL lands the user on the project's **Connect traces** step, where they connect more traces and see verdicts — the aha moment. If `link` is declined or times out, report it and resume the gate; do not retry unprompted.
+`link` prints a short code + URL and waits for the user to confirm in their browser (signing up if needed), then stores a project-scoped token under `~/.config/tessary-evals/`. `upload` imports the graders (captured `datasets/*.jsonl` ride along in the bundle). To actually *run* the graders on real rows, traces are ingested via OTLP (`POST /v1/traces`) — not by `upload` — so the final printed URL lands the user on the project's **Connect traces** step, where they wire up trace ingestion and see verdicts flow in — the aha moment. If `link` is declined or times out, report it and resume the gate; do not retry unprompted.
 
 Optionally, after a successful publish, rebuild the viewer so its header CTA deep-links straight to the user's project instead of the generic homepage — pass the Connect-traces URL `upload` printed:
 
