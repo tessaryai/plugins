@@ -1,7 +1,7 @@
 {
   "name": "evals",
-  "description": "Generate a calibrated eval suite for your LLM product — graders, datasets, and a visual report, straight from your repo.",
-  "version": "0.18.0",
+  "description": "Connect your repo to evals.tessary.ai and work with your evals from the coding agent — wire trace ingestion over OTLP, assess call sites, inspect graders, query failing traces, run triage. Bootstrap a starter grader suite from your code when you have none.",
+  "version": "0.19.0",
   "author": {
     "name": "Tessary AI"
   },
@@ -12,6 +12,8 @@
     "evals",
     "llm",
     "graders",
-    "observability"
+    "observability",
+    "mcp",
+    "coding-agent"
   ]
 }
