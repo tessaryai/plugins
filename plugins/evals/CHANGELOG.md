@@ -1,6 +1,6 @@
-# synthesize-graders — changelog & migration notes
+# evals plugin — changelog & migration notes
 
-This document summarizes every change to `synthesize-graders` since the initial commit (`92a4802`). It is written for **consumers of synthesize-graders output** — the teams whose runners, viewers, CI integrations, or curation tools read `.tessary/pipeline/*.yaml` and `.tessary/graders/*.yaml` — and tells you what your code needs to change to consume the current output cleanly.
+This document summarizes every change to the `evals` plugin since the initial commit (`92a4802`) — the `/evals:connect` front door and the `synthesize-graders` / `regenerate-grader` skills. The contract and output-format notes are written for **consumers of `synthesize-graders` output** — the teams whose runners, viewers, CI integrations, or curation tools read `.tessary/pipeline/*.yaml` and `.tessary/graders/*.yaml` — and tell you what your code needs to change to consume the current output cleanly.
 
 > **TL;DR (v0.19.1, current — `/evals:connect` security + UX hardening; no contract/schema change, grader contract still v9, on-disk schema still `0.14.0`)**
 > - **Security.** `platform.py token` is now gated behind `--reveal` (+ a stderr warning) so an agent step or a prompt-injection in a linked repo can't print the live project token into the transcript. The `mcp-add` fallback no longer tells the user to hand-assemble `claude mcp add … Bearer <token>` (which leaked the token into shell history) — the masked preview is non-runnable and registration always goes through `--run`, which reads the token internally.
