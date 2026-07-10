@@ -472,7 +472,7 @@ pipeline view from the shards before running its checks.
 ## `.tessary/datasets/<call_site_id>.jsonl`
 
 Optional. Written from the traces fetched for that call site (one row per representative
-span). Absent under `--skip-trace-grounding`, which fetches nothing.
+span).
 
 ```jsonl
 {"trace_id": "<hex>", "span_id": "<hex>", "parent_span_id": "<hex|null>", "timestamp": "<iso8601>", "input_messages": [{"role":"system|user|assistant|tool","content":"..."}], "observed_output": "<string>", "observed_finish_reason": "<string|null>", "observed_tokens_in": <int|null>, "observed_tokens_out": <int|null>, "redaction_state": "<none|partial|redacted>"}

@@ -108,10 +108,6 @@ written against real spans is a measurement. Call sites discovered in code but n
 dropped and listed in `.tessary/pipeline/skipped_sites.yaml` with a reason, so the gaps are visible
 rather than silent.
 
-`--skip-trace-grounding` waives the trace requirement (never the link). It warns loudly and stamps
-every grader with `_meta.grounding: none`, because those graders are a starting point for human
-editing, not an instrument.
-
 The run synthesizes a `.tessary/` bundle locally, one call site at a time, with a preview after the
 first site, and can publish it back with `--publish`. This is the one-time greenfield path;
 **`/evals:connect` is the ongoing front door** once a project exists.
