@@ -31,6 +31,10 @@ in a span when none does.
 - The repo is linked (`/evals:connect`). Tagging without a project to send spans to is busywork.
 - The repo emits OpenTelemetry, or can. `/evals:connect` step 2 wires the OTLP export.
 
+**OTLP is the only supported ingestion path, and this skill installs no SDK.** The tag is a plain
+OpenTelemetry span attribute; it needs nothing beyond the tracer the repo already has. Never propose
+adding a client library to make tagging work.
+
 ## Resolve the plugin path once
 
 ```bash
@@ -62,7 +66,7 @@ call_sites:
   support.answer:
     file: src/support/answer.py
     line: 84
-    method: otel_attribute      # otel_attribute | tessary_sdk | wrapped_span
+    method: otel_attribute      # otel_attribute | wrapped_span
     tagged_at: "2026-07-10T09:14:02Z"
 ```
 
@@ -130,13 +134,6 @@ span.set_attribute("tessary.call_site.id", "support.answer")
 
 ```typescript
 span.setAttribute("tessary.call_site.id", "support.answer");
-```
-
-**`tessary_sdk`** — the repo uses the `tessary` SDK. Pass it declaratively:
-
-```python
-with span(call_site="support.answer"):
-    ...
 ```
 
 **`wrapped_span`** — no span covers the call. Open one around it, using the tracer the repo
