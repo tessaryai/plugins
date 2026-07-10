@@ -320,8 +320,8 @@
         },
         "grounding": {
           "type": "string",
-          "enum": ["observed", "none"],
-          "description": "What this grader was authored from. `observed`: the call site's real traces were fetched from the linked project and read before authoring (the default path). `none`: authored under --skip-trace-grounding, from source code alone, so its judge prompt, rubric anchors, and applies_when gate are inferred rather than calibrated against production. Optional and absent on bundles synthesized before trace grounding was mandatory."
+          "enum": ["observed"],
+          "description": "What this grader was authored from. `observed`: the call site's real traces were fetched from the linked project and read before authoring — the only value a synthesis can stamp, since trace grounding is unconditional. Optional and absent on bundles synthesized before trace grounding was mandatory."
         },
         "materialized_at": {
           "type": "string",

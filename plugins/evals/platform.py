@@ -147,7 +147,8 @@ def cmd_status(args: argparse.Namespace) -> int:
         # An empty/absent pipeline is a normal new-project state, not an error — say so on stdout so a
         # relayed status doesn't read as a broken wall of zeros.
         print("  → this project has no synthesized pipeline yet; nothing to assess until graders exist "
-              "(run /evals:synthesize-graders to bootstrap one).")
+              "(tag your call sites with /evals:instrument if they aren't yet, then bootstrap with "
+              "/evals:synthesize-graders).")
     return 0
 
 

@@ -87,8 +87,6 @@ The pipeline produces graders in two distinct scopes that must remain cleanly se
 - **Environment** (`--env <slug>`) — which environment's traces to ground on. There is **no default**:
   in an interactive run you prompt with real per-env counts (Phase A.0); in a non-interactive run the
   flag is **required** and its absence is a hard failure, never a silent fallback.
-- **Skip grounding** (`--skip-trace-grounding`) — waive the trace requirement. It does **not** waive
-  the link. Prints a blocking warning and stamps `_meta.grounding: none` on every grader emitted.
 - **Trace budget** (`--limit N`, default 25) — max traces fetched **per call site**. Bounds the
   count of traces, never the content of any one of them.
 - **Product hint** (optional) — 1-2 sentences describing what the product does.
@@ -296,22 +294,9 @@ so, and do not present the resulting suite as covering the project.
 **5. Fetch the traces**, one call site at a time, after discovery has confirmed which sites survive
 the intersection (A.1). Deferred to A.1 so a site that gets dropped is never fetched.
 
-#### A.0b — The escape hatch
-
-`--skip-trace-grounding` waives steps 3–5. It does **not** waive step 1: connection is
-non-negotiable, because a grader suite with nowhere to run is not a deliverable.
-
-When it is set, print this before anything else, and do not bury it in a status line:
-
-> **Warning — generating ungrounded graders.** Without real traces, every judge prompt, rubric
-> anchor, and `applies_when` gate is inferred from source code alone. Expect: assertions about
-> output shape the model never produces; rubric levels calibrated to nothing; `applies_when` gates
-> that never fire, or fire on every span. These graders are a starting point for human editing, not
-> a measurement instrument. Re-run without this flag once traces exist.
-
-Every grader emitted under this flag carries `_meta.grounding: none`, so the provenance survives
-into the bundle and a reviewer can tell at a glance which graders were never grounded. Do not stamp
-`observed` on anything in this mode, and do not let a later `--complete` run silently upgrade it.
+There is no ungrounded mode: without tagged telemetry in the chosen environment the run stops at
+the A.0 gate (exit `3` → `/evals:instrument`). A grader authored from source alone is a guess, not
+a measurement instrument, so the skill does not offer to produce one.
 
 Then run discovery:
 
@@ -473,10 +458,6 @@ From the fetched traces, enrich each surviving shard:
 The `.cache/` directory is a fetch artifact, not bundle content: it is excluded from
 `publish.py upload` and must be gitignored. Do not add it to `.synth-lock.yaml`.
 
-Under `--skip-trace-grounding` this whole step collapses to: every discovered site survives, no
-traces are fetched, no `observed.*` stats exist, and no dataset rows are captured. That is precisely
-why the graders are worse.
-
 ### Phase B — Triage
 
 **Pack discovery + interview.** Stays in main context. Bundle paths:
@@ -589,7 +570,7 @@ python3 "$PLUGIN/pipeline_io.py" stamp-meta .tessary/graders/<call_site>/<failur
 
 `stamp_meta` fills `author`, `synthesized_at`, `synth_inputs_digest`, `author_contract_version`, and **preserves** any existing `_meta.locked_fields` / `_meta.human_edited` on re-run (so it never clobbers human edits). Then lock each emitted grader file as the subagent returns.
 
-`--grounding` records what the grader was written from, and it is a fact about *this* run: pass `observed` when the site's traces were fetched in A.1, and `none` under `--skip-trace-grounding`. It is the only field that tells a reviewer whether a judge prompt was calibrated against production or imagined from source. Never stamp `observed` on a site whose traces you did not read.
+`--grounding` records what the grader was written from, and it is a fact about *this* run: pass `observed` when the site's traces were fetched in A.1 — which the A.0 gate guarantees for every site that reaches authoring. It is the field that tells a reviewer the judge prompt was calibrated against production. Never stamp `observed` on a site whose traces you did not read.
 
 **Step C.5 — Bookkeeping.** Run, in order:
 

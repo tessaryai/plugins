@@ -306,9 +306,10 @@ def stamp_meta(grader_path: Path, author: str, synth_inputs_digest: str,
     and per-site subagents do not write it.
 
     `grounding` records what the grader was written from: `observed` (the call site's real traces
-    were fetched and read) or `none` (--skip-trace-grounding). It is the audit trail for whether a
-    judge prompt was calibrated against production or inferred from source alone, so it is never
-    invented here — pass it explicitly, or omit it to carry forward whatever the file already had.
+    were fetched and read — the only value a synthesis can stamp, since the A.0 gate makes
+    grounding unconditional). It is the audit trail that the judge prompt was calibrated against
+    production, so it is never invented here — pass it explicitly, or omit it to carry forward
+    whatever the file already had.
     """
     if grounding is not None and grounding not in VALID_GROUNDING:
         raise ValueError(f"stamp_meta: grounding must be one of {VALID_GROUNDING}, got {grounding!r}")
@@ -504,8 +505,7 @@ def _cli(argv: list[str]) -> int:
     p_stamp.add_argument("--author-contract-version", type=int, default=8)
     p_stamp.add_argument("--grounding", choices=VALID_GROUNDING, default=None,
                          help="what this grader was written from: `observed` (the call site's real "
-                              "traces were read) or `none` (--skip-trace-grounding). Omit to carry "
-                              "forward the value already on the file.")
+                              "traces were read). Omit to carry forward the value already on the file.")
     # Accepted and ignored (stamp-meta operates on an absolute/explicit path);
     # mirrors the sibling subcommands so the documented orchestrator invocation
     # works verbatim.

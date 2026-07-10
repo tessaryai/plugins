@@ -25,7 +25,9 @@ import socket
 import ssl
 import sys
 import time
+import subprocess
 import urllib.error
+import urllib.parse
 import urllib.request
 import uuid
 import webbrowser
@@ -222,17 +224,18 @@ def get_json(url: str, token: str | None = None) -> tuple[int, dict[str, Any]]:
         return code, {}
 
 
-def multipart_post(url: str, files: list[tuple[str, Path]], token: str) -> tuple[int, dict[str, Any]]:
-    """POST files as multipart/form-data. Each tuple is (form-field-filename, path)."""
+def multipart_post(url: str, files: list[tuple[str, Path | bytes]], token: str) -> tuple[int, dict[str, Any]]:
+    """POST files as multipart/form-data. Each tuple is (form-field-filename, path-or-bytes);
+    bytes payloads let the uploader stamp provenance into a file without touching the tree."""
     boundary = "----evals" + uuid.uuid4().hex
     parts: list[bytes] = []
-    for field_name, path in files:
-        ctype = mimetypes.guess_type(str(path))[0] or "application/octet-stream"
+    for field_name, payload in files:
+        ctype = mimetypes.guess_type(field_name)[0] or "application/octet-stream"
         parts.append(("--" + boundary + "\r\n").encode())
         parts.append(
             (f'Content-Disposition: form-data; name="files"; filename="{field_name}"\r\n').encode())
         parts.append((f"Content-Type: {ctype}\r\n\r\n").encode())
-        parts.append(path.read_bytes())
+        parts.append(payload if isinstance(payload, bytes) else payload.read_bytes())
         parts.append(b"\r\n")
     parts.append(("--" + boundary + "--\r\n").encode())
     body = b"".join(parts)
@@ -282,7 +285,7 @@ def cmd_link(args: argparse.Namespace) -> int:
     verify = d["verification_uri_complete"]
     interval = max(1, int(d.get("interval", 3)))
 
-    print("\nConnect this session to evals.tessary.ai:")
+    print(f"\nConnect this session to {urllib.parse.urlsplit(url).netloc or url}:")
     print(f"  → {verify}")
     print(f"  code: {d['user_code']}")
     if not is_headless():
@@ -344,6 +347,43 @@ def collect_bundle_files(evals_dir: Path) -> list[tuple[str, Path]]:
     return out
 
 
+def git_provenance(repo_root: Path) -> tuple[str | None, str | None, str | None]:
+    """(commit_sha, repo_owner, repo_name) of the repo containing the bundle, or Nones outside git.
+    The sha binds the imported pipeline to the commit it was synthesized against (the platform's
+    version-by-commit-SHA lineage); owner/name come from the origin remote when it looks like a
+    forge URL (git@host:owner/name.git or https://host/owner/name)."""
+    def git(*argv: str) -> str | None:
+        try:
+            out = subprocess.run(
+                ["git", "-C", str(repo_root), *argv], capture_output=True, text=True, timeout=10)
+            return out.stdout.strip() or None if out.returncode == 0 else None
+        except OSError:
+            return None
+
+    sha = git("rev-parse", "HEAD")
+    owner = name = None
+    remote = git("remote", "get-url", "origin")
+    if remote:
+        tail = remote.split(":", 1)[-1] if remote.startswith("git@") else urllib.parse.urlsplit(remote).path
+        parts = [p for p in tail.strip("/").split("/") if p]
+        if len(parts) >= 2:
+            owner, name = parts[-2], parts[-1].removesuffix(".git")
+    return sha, owner, name
+
+
+def stamp_provenance(meta_bytes: bytes, sha: str, owner: str | None, name: str | None) -> bytes:
+    """Append top-level commit_sha / repo keys to the meta.yaml payload (upload copy only — the
+    on-disk bundle is never touched). The author contract never writes these keys, so a bundle that
+    already carries them declared its own provenance and is sent verbatim."""
+    text = meta_bytes.decode("utf-8")
+    if "\ncommit_sha:" in text or text.startswith("commit_sha:"):
+        return meta_bytes
+    lines = [f"commit_sha: {sha}"]
+    if owner and name:
+        lines += ["repo:", f"  owner: {owner}", f"  name: {name}"]
+    return (text.rstrip("\n") + "\n" + "\n".join(lines) + "\n").encode("utf-8")
+
+
 def cmd_upload(args: argparse.Namespace) -> int:
     evals_dir = Path(args.evals_dir)
     if not (evals_dir / "pipeline" / "meta.yaml").exists():
@@ -357,8 +397,16 @@ def cmd_upload(args: argparse.Namespace) -> int:
     org, project, token = proj["org_slug"], proj["project_slug"], proj["token"]
     api = f"{url}/api/orgs/{org}/projects/{project}"
 
-    # 1) Import the pipeline + graders.
-    files = collect_bundle_files(evals_dir)
+    # 1) Import the pipeline + graders, stamping git provenance (commit_sha + repo) into the
+    #    uploaded meta.yaml so the platform can bind the pipeline to the synthesized-against commit.
+    files: list[tuple[str, Path | bytes]] = list(collect_bundle_files(evals_dir))
+    sha, owner, name = git_provenance(evals_dir.resolve().parent)
+    if sha:
+        meta_rel = f"{evals_dir.name}/pipeline/meta.yaml"
+        files = [
+            (rel, stamp_provenance(Path(p).read_bytes(), sha, owner, name) if rel == meta_rel else p)
+            for rel, p in files
+        ]
     code, data = multipart_post(f"{api}/import?mode={args.mode}", files, token)
     if code == 401:
         print("token rejected (revoked or expired) — re-run `publish.py link`", file=sys.stderr)
@@ -369,16 +417,15 @@ def cmd_upload(args: argparse.Namespace) -> int:
     print(f"Uploaded graders to {org}/{project}.")
 
     # 2) Captured datasets (datasets/*.jsonl) ride along inside the bundle above.
-    #    There is no longer a JSONL trace-upload endpoint: trace ingestion is OTLP
-    #    (POST /v1/traces). So this uploader lands the graders; to run them on real
-    #    rows the user connects traces (below), observations flow in over OTLP, and
-    #    grading runs against them.
+    #    Trace ingestion itself is OTLP (POST /v1/traces) and is normally already flowing by the
+    #    time a grounded synthesis publishes — grounding required tagged telemetry.
     datasets = sorted((evals_dir / "datasets").glob("*.jsonl")) if (evals_dir / "datasets").is_dir() else []
     if datasets:
-        print(f"Bundled {len(datasets)} captured dataset file(s). To grade on real rows, "
-              "connect traces (OTLP) so observations flow into the project.")
+        print(f"Bundled {len(datasets)} captured dataset file(s).")
 
-    print(f"\nConnect traces & see verdicts:\n  {url}/orgs/{org}/projects/{project}/setup?step=connect-traces")
+    print("\nReview your graders (judge prompts and grader code are generated platform-side):")
+    print(f"  {url}/orgs/{org}/projects/{project}/pipeline")
+    print(f"Traces not flowing yet? The setup guide: {url}/orgs/{org}/projects/{project}/setup")
     return 0
 
 

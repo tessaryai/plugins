@@ -84,8 +84,8 @@ CALL_SITE_SCOPES: Final[frozenset[str]] = frozenset({"single_call", "trace"})
 VALID_VERDICTS: Final[frozenset[str]] = frozenset({"pass", "fail", "not_applicable"})
 VALID_CONFIDENCE: Final[frozenset[str]] = frozenset({"high", "medium", "low"})
 # `_meta.grounding` — `observed`: the call site's real traces were fetched and read before authoring.
-# `none`: authored under --skip-trace-grounding, from source code alone.
-VALID_GROUNDING: Final[frozenset[str]] = frozenset({"observed", "none"})
+# The A.0 gate makes grounding unconditional, so this is the only value a synthesis can stamp.
+VALID_GROUNDING: Final[frozenset[str]] = frozenset({"observed"})
 VALID_LAYERS: Final[frozenset[str]] = frozenset({"A", "B", "C"})
 
 # Failure-catching graders require these; score graders use a different set (below).
