@@ -268,7 +268,7 @@ python3 "$PLUGIN/platform.py" preflight --env <slug>
 | --- | --- | --- |
 | `0` | tagged telemetry present | continue to step 4 |
 | `1` | not linked / token rejected | stop → `/evals:connect` |
-| `2` | network or TLS failure | stop, report it; do not degrade to ungrounded |
+| `2` | the platform did not answer (network/TLS, or 403/404/5xx) | stop, relay stderr; **never** degrade to ungrounded |
 | `3` | linked, but nothing tagged in this env | stop → `/evals:instrument`, then exercise the app |
 | `4` | unknown env slug | re-prompt from the `envs` list |
 
@@ -288,6 +288,10 @@ universe of what may be graded.** Hold onto it — Phase A.1 intersects static d
 
 A large `untagged` count is worth surfacing: those spans reached the platform but carry no
 `tessary.call_site.id`, so they are invisible here. Point the user at `/evals:instrument`.
+
+If a `truncated\ttrue` line appears, the platform hit its facet cap and this list is **incomplete** —
+call sites below the cap are missing, and grading only what you can see would silently skip them. Say
+so, and do not present the resulting suite as covering the project.
 
 **5. Fetch the traces**, one call site at a time, after discovery has confirmed which sites survive
 the intersection (A.1). Deferred to A.1 so a site that gets dropped is never fetched.

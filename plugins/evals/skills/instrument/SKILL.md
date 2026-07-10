@@ -68,13 +68,29 @@ call_sites:
     line: 84
     method: otel_attribute      # otel_attribute | wrapped_span
     tagged_at: "2026-07-10T09:14:02Z"
+
+  support.legacy_reply:
+    file: src/support/legacy.py
+    line: 12
+    state: stale                # the tag is still in the code, but the code path is gone (§2)
+    tagged_at: "2026-06-02T11:00:00Z"
+
+  billing.dunning_notice:
+    file: src/billing/dunning.py
+    line: 51
+    state: skipped              # proposed and declined; do not re-propose (§5)
+    reason: user_declined
 ```
+
+An entry carries `state` only when it is *not* a live tag: omit it for the normal case. `stale` and
+`skipped` entries are never deleted — a `stale` id may still be arriving on production spans, and a
+`skipped` one records a decision, so removing either would make the next run re-litigate it.
 
 **An id in this file is frozen.** Re-running must never rename an existing call site: the id is a
 foreign key held by every grader, every failure mode, and every already-ingested span. Renaming
 `support.answer` orphans all of them silently. If a tagged call site has moved file or line,
-update `file`/`line` and leave `id` alone. If its code is gone, leave the entry and report it as
-`stale` — do not delete it, because production spans carrying that id may still be arriving.
+update `file`/`line` and leave `id` alone. If its code is gone, leave the entry, set `state: stale`,
+and report it — do not delete it, because production spans carrying that id may still be arriving.
 
 ### 3 — Discover call sites
 
@@ -157,7 +173,7 @@ Rules that are not negotiable:
 - **Tag the span that covers the model call**, not a parent request/handler span. A handler that
   makes three different LLM calls is three call sites, and one tag on the handler collapses them.
 - Do not add a tag to a call site the user declines. Record the decline in the manifest as
-  `skipped: user_declined` so the next run doesn't re-propose it.
+  `state: skipped` / `reason: user_declined` (§2) so the next run doesn't re-propose it.
 
 For `cli_agent` / `http` / `sandbox_agent` sites there is often no span at all — these need
 `wrapped_span`. They are frequently the **highest-risk** calls precisely because they run

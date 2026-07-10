@@ -41,7 +41,9 @@ Exit codes (the runbook branches on these, so they are contract):
 
   0  ok
   1  not linked (or the stored token was rejected) → run `link` / /evals:connect
-  2  network / TLS failure (raised by publish._request)
+  2  the platform did not answer: network/TLS failure (raised by publish._request),
+     or it answered with 403/404/5xx. Also argparse's own usage-error code — both
+     mean "this invocation produced no data", so the runbook treats them alike.
   3  linked, but <env> has no tagged telemetry → run /evals:instrument, then
      exercise the app. Deliberately distinct from 1: "nothing to ground on" is
      not "not connected".
@@ -62,7 +64,7 @@ import subprocess
 import sys
 import urllib.parse
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 # Reuse publish.py's plumbing (same dir). When run as a script, sys.path[0] is
 # this file's directory, so a bare `import publish` resolves.
@@ -300,14 +302,29 @@ def _project_api(proj: dict[str, Any], base_url_arg: str | None) -> str:
 
 
 def _unwrap(code: int, body: dict[str, Any], what: str) -> Any:
-    """Pull `data` out of the ApiResponse envelope, mapping 401 to the re-link exit."""
+    """Pull `data` out of the ApiResponse envelope, mapping HTTP status to the exit contract.
+
+    Only a 401 means "your link is broken" (exit 1). A 403/404/5xx is a *platform* problem — a
+    revoked scope, a version-skewed endpoint, an outage — and routing those to "re-run link" sends
+    the user to fix something that isn't wrong. They share exit 2 with a transport failure, which is
+    what `publish._request` already raises: from the caller's side both mean "the platform did not
+    answer me", and the stderr line says which."""
     if code == 401:
         print("stored token was rejected (revoked or expired) — re-run `platform.py link --force`",
               file=sys.stderr)
         raise SystemExit(1)
+    if code == 403:
+        print(f"the stored token is not permitted to read {what} (HTTP 403). It needs an ADMIN- or "
+              "QUERY-scoped key; re-link with `platform.py link --force`, or check the key's scope in "
+              "the platform UI.", file=sys.stderr)
+        raise SystemExit(2)
+    if code == 404:
+        print(f"could not read {what} (HTTP 404). The project may have been deleted, or this platform "
+              "predates the endpoint — check that the server is new enough to serve it.", file=sys.stderr)
+        raise SystemExit(2)
     if code != 200:
         print(f"could not read {what} (HTTP {code})", file=sys.stderr)
-        raise SystemExit(1)
+        raise SystemExit(2)
     return body.get("data")
 
 
@@ -327,11 +344,26 @@ def _resolve_env(proj: dict[str, Any], base_url_arg: str | None, slug: str) -> d
     raise SystemExit(EXIT_UNKNOWN_ENV)
 
 
-def _call_site_facets(proj: dict[str, Any], base_url_arg: str | None, env_id: str) -> tuple[list[tuple[str, int]], int]:
+class Coverage(NamedTuple):
+    """What one environment's telemetry says about call-site coverage."""
+
+    tagged: list[tuple[str, int]]  # (call_site_id, span_count), busiest first
+    untagged: int  # spans carrying no tessary.call_site.id
+    truncated: bool  # the platform's facet cap hid some call sites
+
+
+def _call_site_facets(proj: dict[str, Any], base_url_arg: str | None, env_id: str) -> Coverage:
     """Per-call-site span counts in one environment, plus the untagged span count.
 
     One request: facet `observations` by `call_site_id`, filtered to the environment. Untagged spans
-    have a null `call_site_id` and land in the null bucket — they are the residue, never a call site.
+    have a null `call_site_id`, so Postgres groups them into a **null bucket** that is ranked by count
+    like any other — early on it is usually the largest. That bucket is the residue, never a call site.
+
+    It also consumes one of the platform's `top_n` slots, which is why truncation is detected from the
+    number of buckets the server *returned* rather than from how many call sites we kept: a response of
+    99 call sites + 1 null bucket is already truncated, and counting only the call sites would call it
+    complete. Truncation must be loud — `coverage` is the universe of what may be graded, so a call site
+    silently missing from it is a call site silently left ungraded.
     """
     url = f"{_api_base(proj, base_url_arg)}/v1/query/facets"
     payload = {
@@ -342,16 +374,17 @@ def _call_site_facets(proj: dict[str, Any], base_url_arg: str | None, env_id: st
     }
     code, body = publish.post_json(url, payload, token=proj["token"])
     data = _unwrap(code, body, "call-site coverage") or {}
+    buckets = data.get("facets") or []
     tagged: list[tuple[str, int]] = []
     untagged = 0
-    for bucket in data.get("facets") or []:
+    for bucket in buckets:
         value, count = bucket.get("value"), int(bucket.get("count") or 0)
         if value is None or value == "":
             untagged += count
         else:
             tagged.append((value, count))
     tagged.sort(key=lambda kv: (-kv[1], kv[0]))
-    return tagged, untagged
+    return Coverage(tagged, untagged, len(buckets) >= FACET_TOP_N)
 
 
 def cmd_envs(args: argparse.Namespace) -> int:
@@ -360,9 +393,9 @@ def cmd_envs(args: argparse.Namespace) -> int:
     envs = _environments(proj, args.base_url)
     print(f"ENVIRONMENTS\t{proj['org_slug']}/{proj['project_slug']}\t{_api_base(proj, args.base_url)}")
     for e in envs:
-        tagged, _untagged = _call_site_facets(proj, args.base_url, e["id"])
-        spans = sum(c for _, c in tagged)
-        sites = f"{len(tagged)}+" if len(tagged) >= FACET_TOP_N else str(len(tagged))
+        cov = _call_site_facets(proj, args.base_url, e["id"])
+        spans = sum(c for _, c in cov.tagged)
+        sites = f"{len(cov.tagged)}+" if cov.truncated else str(len(cov.tagged))
         print(f"env\t{e['slug']}\t{spans}\t{sites}\t{str(bool(e.get('is_default'))).lower()}")
     print("\n(spans = observations carrying a tessary.call_site.id tag. A span with no tag is invisible "
           "to grader generation. The default env is where untagged-environment traffic lands.)",
@@ -374,19 +407,21 @@ def cmd_preflight(args: argparse.Namespace) -> int:
     """The gate synthesize-graders calls before it authors anything."""
     proj = _require_link(args.repo)
     env = _resolve_env(proj, args.base_url, args.env)
-    tagged, untagged = _call_site_facets(proj, args.base_url, env["id"])
-    spans = sum(c for _, c in tagged)
-    if len(tagged) < args.min:
-        print(f"PREFLIGHT\t{args.env}\tcall_sites={len(tagged)}\tspans={spans}\tuntagged={untagged}\tempty")
+    cov = _call_site_facets(proj, args.base_url, env["id"])
+    spans = sum(c for _, c in cov.tagged)
+    if len(cov.tagged) < args.min:
+        print(f"PREFLIGHT\t{args.env}\tcall_sites={len(cov.tagged)}\tspans={spans}"
+              f"\tuntagged={cov.untagged}\tempty")
         print(f"\n'{args.env}' has no tagged telemetry (min={args.min}). Grader generation would be "
               "ungrounded, so it stops here.\n"
               "  - No call sites instrumented yet? Run /evals:instrument, then exercise the app.\n"
-              f"  - Instrumented but {untagged} untagged spans arriving? The tag is "
+              f"  - Instrumented but {cov.untagged} untagged spans arriving? The tag is "
               "`tessary.call_site.id`; check it reaches the exporter.\n"
               "  - Traffic in a different environment? Re-run with --env <slug> (see `platform.py envs`).",
               file=sys.stderr)
         return EXIT_NO_TELEMETRY
-    print(f"PREFLIGHT\t{args.env}\tcall_sites={len(tagged)}\tspans={spans}\tuntagged={untagged}\tok")
+    print(f"PREFLIGHT\t{args.env}\tcall_sites={len(cov.tagged)}\tspans={spans}"
+          f"\tuntagged={cov.untagged}\tok")
     return 0
 
 
@@ -394,15 +429,20 @@ def cmd_coverage(args: argparse.Namespace) -> int:
     """The set synthesize-graders intersects against static discovery."""
     proj = _require_link(args.repo)
     env = _resolve_env(proj, args.base_url, args.env)
-    tagged, untagged = _call_site_facets(proj, args.base_url, env["id"])
-    for call_site, count in tagged:
+    cov = _call_site_facets(proj, args.base_url, env["id"])
+    for call_site, count in cov.tagged:
         print(f"call_site\t{call_site}\t{count}")
-    print(f"untagged\t{untagged}")
-    if len(tagged) >= FACET_TOP_N:
-        print(f"\nNOTE: the platform caps a facet at {FACET_TOP_N} buckets, so this list is truncated — "
-              "call sites beyond the top 100 by span count are NOT shown and would be silently skipped.",
+    print(f"untagged\t{cov.untagged}")
+    if cov.truncated:
+        # On STDOUT: the caller parses stdout, and a truncation notice that only reaches stderr is a
+        # notice the runbook can act as though it never saw. Coverage is the universe of what gets
+        # graded, so an incomplete list must be self-describing.
+        print("truncated\ttrue")
+        print(f"\nNOTE: the platform returned its maximum of {FACET_TOP_N} facet buckets, so this list "
+              "is incomplete — call sites below the top ones by span count are NOT shown, and would be "
+              "silently left ungraded. Narrow the environment, or raise the platform's facet cap.",
               file=sys.stderr)
-    return 0 if tagged else EXIT_NO_TELEMETRY
+    return 0 if cov.tagged else EXIT_NO_TELEMETRY
 
 
 _SAFE_NAME = re.compile(r"[^A-Za-z0-9._-]+")
@@ -419,13 +459,20 @@ def cmd_fetch_traces(args: argparse.Namespace) -> int:
     Bounded by the COUNT of traces (`--limit`) and never by clipping content: a judge or grader author
     that reads a truncated span is being lied to about what production did.
     """
+    if args.limit < 1:
+        print("--limit must be at least 1 (it bounds the number of traces to fetch)", file=sys.stderr)
+        raise SystemExit(2)
     proj = _require_link(args.repo)
     env = _resolve_env(proj, args.base_url, args.env)
     api = _project_api(proj, args.base_url)
     token = proj["token"]
 
     # Page the trace list (server-side filtered to this env + call site) until we have `--limit` ids.
+    # Dedupe across pages and refuse to reuse a cursor: a server that repeats a cursor, or returns rows
+    # without advancing, would otherwise spin here or write the same trace twice.
     ids: list[str] = []
+    seen: set[str] = set()
+    seen_cursors: set[str] = set()
     cursor: str | None = None
     while len(ids) < args.limit:
         params = {"environment": args.env, "callSite": args.call_site, "limit": min(args.limit - len(ids), 100)}
@@ -434,10 +481,15 @@ def cmd_fetch_traces(args: argparse.Namespace) -> int:
         code, body = publish.get_json(f"{api}/traces?{urllib.parse.urlencode(params)}", token=token)
         page = _unwrap(code, body, "traces") or {}
         rows = page.get("traces") or []
-        ids.extend(t["id"] for t in rows)
+        for row in rows:
+            trace_id = row.get("id")
+            if trace_id and trace_id not in seen:
+                seen.add(trace_id)
+                ids.append(trace_id)
         cursor = page.get("next_cursor")
-        if not cursor or not rows:
+        if not cursor or not rows or cursor in seen_cursors:
             break
+        seen_cursors.add(cursor)
     ids = ids[: args.limit]
 
     if not ids:
