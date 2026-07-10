@@ -118,8 +118,8 @@ Set `default_grade_mode` on the shard when this site is **multi-turn** — i.e. 
 invoked repeatedly within one session and what matters is the final turn given the prior ones:
 
 - **`per_conversation`** — set this when the evidence shows multiple turns sharing one trace/session
-  for this site. The strongest signal is **structural**: in Path A traces, ≥ 2 spans for this site
-  share a `trace_id` (or session id); in Path A-agent transcripts, the session has ≥ 2 turns. Shape
+  for this site. The strongest signal is **structural**: ≥ 2 of the site's observations in the fetched
+  traces share a `trace_id` (or session id). Shape
   `conversational_turn` or `agent_step` is a strong secondary signal. When set, the site's cross-turn
   failure modes (§ 2, item 6) are graded once per conversation with `scope: trace`.
 - **`per_turn`** (default; may be omitted) — single-shot sites, or multi-turn sites where each turn is
@@ -149,12 +149,12 @@ expected_spans:
     match_pattern: "checkout_summary"   # exact string or glob (* / ?)
     kind: span                   # span | trace
     source: inferred             # v9 — backfill from static code is always `inferred` (a guess);
-                                 # `observed` is reserved for entries grounded in real telemetry (Path A).
+                                 # `observed` is reserved for entries confirmed by a real fetched span.
     confidence: high             # high (explicit literal) | medium (convention) | low (guess)
 ```
 
 Entries you backfill here from static code are **`source: inferred`** — never stamp `observed` (that
-provenance means a real span confirmed the name; only Path A / solicited telemetry can do that). If the
+provenance means a real span confirmed the name; only the traces fetched in Phase A.1 can do that). If the
 shard already carries an `observed` entry for a matcher, **do not overwrite it** with an inferred guess —
 a verified entry supersedes a guess, not the reverse.
 
@@ -195,7 +195,7 @@ Each constraint:
 - `description`: a precise rule a parser/regex/schema-check can verify.
 - `enforcement`: `deterministic` if mechanical; `judge` if it requires LLM judgment.
 
-Sources of constraints: output schemas in surrounding code; explicit prompt instructions; refusal conditions; format hints; observed production stats (Path A — `observed.p95_tokens_out` lower-bounds length; `observed.refusal_rate` reveals refusal conditions).
+Sources of constraints: output schemas in surrounding code; explicit prompt instructions; refusal conditions; format hints; observed production stats (`observed.p95_tokens_out` lower-bounds length; `observed.refusal_rate` reveals refusal conditions).
 
 **Prefer `deterministic` over `judge` when the rule is mechanical.** Mechanical constraints become deterministic graders downstream and do not count as failure modes.
 

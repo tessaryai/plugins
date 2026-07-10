@@ -83,6 +83,9 @@ VALID_SCOPES: Final[frozenset[str]] = frozenset({"single_call", "chain", "trace"
 CALL_SITE_SCOPES: Final[frozenset[str]] = frozenset({"single_call", "trace"})
 VALID_VERDICTS: Final[frozenset[str]] = frozenset({"pass", "fail", "not_applicable"})
 VALID_CONFIDENCE: Final[frozenset[str]] = frozenset({"high", "medium", "low"})
+# `_meta.grounding` — `observed`: the call site's real traces were fetched and read before authoring.
+# `none`: authored under --skip-trace-grounding, from source code alone.
+VALID_GROUNDING: Final[frozenset[str]] = frozenset({"observed", "none"})
 VALID_LAYERS: Final[frozenset[str]] = frozenset({"A", "B", "C"})
 
 # Failure-catching graders require these; score graders use a different set (below).
@@ -304,6 +307,11 @@ def _check_meta(g: Grader) -> list[str]:
     human_edited = meta.get("human_edited")
     if human_edited is not None and not isinstance(human_edited, bool):
         errors.append("_meta.human_edited must be a boolean when present")
+    # Grounding provenance: what the grader was written from. Optional and absent on pre-existing
+    # bundles, so this is additive — but when present it must name a real state, never a guess.
+    grounding = meta.get("grounding")
+    if grounding is not None and grounding not in VALID_GROUNDING:
+        errors.append(f"_meta.grounding must be one of {sorted(VALID_GROUNDING)} when present")
     # v9 body-lifecycle provenance — both optional, present only on materialized/human bodies.
     if meta.get("materialized_at") is not None and not _is_nonempty_str(meta.get("materialized_at")):
         errors.append("_meta.materialized_at must be a non-empty string when present")

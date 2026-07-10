@@ -64,4 +64,5 @@ The bundled Python helpers (`validate.py`, `pipeline_io.py`, `finalize.py`, `vie
 - **Only the named graders change.** Re-running on the same inputs is diffable/stable.
 - **No new sources.** Every regenerated grader stays bound to its existing call site / failure mode; this skill never adds coverage (use `synthesize-graders --complete <id>` for deferred failures, or a full `synthesize-graders` run for new sites).
 - **Respect locks and frozen bodies** (`_meta.locked_fields`, `_meta.human_edited`, materialized/human `_body_source`).
+- **Never forge `_meta.grounding`.** Carry the existing value forward verbatim. This skill re-authors from the shards already on disk; it does not fetch traces, so it has no standing to promote a grader to `observed`, and downgrading a grounded grader to `none` would erase a true fact about how it was written. Omitting `--grounding` on `stamp-meta` does exactly the right thing.
 - **Deterministic helpers only** for validation and locking — never hand-author the lock or a provenance digest.

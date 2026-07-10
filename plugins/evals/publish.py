@@ -319,16 +319,28 @@ def cmd_link(args: argparse.Namespace) -> int:
 
 # ---------------------------------------------------------------- upload flow
 
+# Fetch artifacts, not bundle content. `.tessary/.cache/` holds traces pulled back down from the
+# platform (platform.py fetch-traces); re-uploading them would round-trip the project's own telemetry
+# through the import endpoint. Excluded here rather than at each call site so there is one rule.
+BUNDLE_EXCLUDED_DIRS = (".cache",)
+
+
 def collect_bundle_files(evals_dir: Path) -> list[tuple[str, Path]]:
     """Every file under .tessary/, keyed by its path relative to the repo
     (so the name carries the leading .tessary/ that the backend classifier
-    expects). datasets/*.jsonl and report/html are sent too but ignored by import."""
-    parent = evals_dir.resolve().parent
+    expects). datasets/*.jsonl and report/html are sent too but ignored by import.
+    Local fetch caches (see BUNDLE_EXCLUDED_DIRS) never ride along."""
+    root = evals_dir.resolve()
+    parent = root.parent
     out: list[tuple[str, Path]] = []
     for path in sorted(evals_dir.rglob("*")):
-        if path.is_file():
-            rel = path.resolve().relative_to(parent).as_posix()
-            out.append((rel, path))
+        if not path.is_file():
+            continue
+        rel_parts = path.resolve().relative_to(root).parts
+        if rel_parts and rel_parts[0] in BUNDLE_EXCLUDED_DIRS:
+            continue
+        rel = path.resolve().relative_to(parent).as_posix()
+        out.append((rel, path))
     return out
 
 

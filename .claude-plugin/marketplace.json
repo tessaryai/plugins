@@ -11,7 +11,7 @@
         "source": "git-subdir",
         "url": "https://github.com/tessaryai/plugins.git",
         "path": "plugins/evals",
-        "ref": "evals-v0.19.1"
+        "ref": "evals-v0.20.0"
       },
       "description": "Connect your repo to evals.tessary.ai and work with your evals from the coding agent — wire trace ingestion over OTLP, assess call sites, inspect graders, query failing traces, run triage. Bootstrap a starter grader suite from your code when you have none."
     },

@@ -154,7 +154,7 @@
     "dataset_refs": {
       "type": ["array", "null"],
       "items": { "$ref": "#/$defs/dataset_ref" },
-      "description": "Optional. Pointers to real inputs this grader should run against — captured trace span IDs or file:line source locations. Populated by orchestrator from Path A trace ingestion or Path B static discovery. Empty/absent means 'no captured dataset'."
+      "description": "Optional. Pointers to real inputs this grader should run against — captured trace span IDs or file:line source locations. Populated by the orchestrator from the traces fetched for the call site, or from static discovery. Empty/absent means 'no captured dataset'."
     },
 
     "pack_ids": {
@@ -317,6 +317,11 @@
         "human_edited": {
           "type": "boolean",
           "description": "Set to true by curators (or by tooling) to mark the file as touched. Re-runs warn before overwriting human_edited files unless --force. v9: also set automatically when a `platform-materialized` body's recomputed body_digest no longer matches _meta.body_digest (a human edited the materialized body); the grader's _body_source is promoted to 'human' at the same time."
+        },
+        "grounding": {
+          "type": "string",
+          "enum": ["observed", "none"],
+          "description": "What this grader was authored from. `observed`: the call site's real traces were fetched from the linked project and read before authoring (the default path). `none`: authored under --skip-trace-grounding, from source code alone, so its judge prompt, rubric anchors, and applies_when gate are inferred rather than calibrated against production. Optional and absent on bundles synthesized before trace grounding was mandatory."
         },
         "materialized_at": {
           "type": "string",

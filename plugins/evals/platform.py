@@ -9,24 +9,45 @@ server into the user's Claude Code so the coding agent gets native tools
 …) instead of shelling out to Python for every read.
 
 It deliberately reuses `publish.py`'s HTTP / TLS / credentials / device-link
-plumbing (same directory) rather than duplicating ~150 lines — and it never
-touches the synthesis pipeline, so the demoted `synthesize-graders` path is
-unaffected.
+plumbing (same directory) rather than duplicating ~150 lines.
+
+It is also the read side that `synthesize-graders` grounds on: `envs` /
+`preflight` / `coverage` / `fetch-traces` answer "is there real telemetry for
+this call site in this environment, and give me its spans verbatim". Call-site
+identity is the explicit `tessary.call_site.id` span tag and nothing else, so an
+untagged span is invisible to all four (explicit-or-nothing).
 
 Subcommands (all stdlib-only):
 
-  link      Device-authorization handshake → stores a project-scoped ADMIN token
-            under ~/.config/tessary-evals/credentials.json (keyed by repo path).
-            A no-op if the repo is already linked with a still-valid token.
-  status    Print the linked project's org/project slugs + call-site / grader /
-            failure-mode counts (a quick "am I connected and what's here?").
-  mcp-add   Print (default) or --run the `claude mcp add` command that registers
-            the platform MCP server for THIS repo at `local` scope — the token is
-            stored privately in ~/.claude.json, never in a committed file.
-  unlink    Tear down the link for a repo: remove the local MCP registration AND
-            delete the repo's stored credential (the one place both are undone).
-  token     Print the stored bearer token — GATED behind --reveal (it is a live,
-            high-privilege secret); used internally by mcp-add, rarely by hand.
+  link          Device-authorization handshake → stores a project-scoped ADMIN token
+                under ~/.config/tessary-evals/credentials.json (keyed by repo path).
+                A no-op if the repo is already linked with a still-valid token.
+  status        Print the linked project's org/project slugs + call-site / grader /
+                failure-mode counts (a quick "am I connected and what's here?").
+  mcp-add       Print (default) or --run the `claude mcp add` command that registers
+                the platform MCP server for THIS repo at `local` scope — the token is
+                stored privately in ~/.claude.json, never in a committed file.
+  unlink        Tear down the link for a repo: remove the local MCP registration AND
+                delete the repo's stored credential (the one place both are undone).
+  token         Print the stored bearer token — GATED behind --reveal (it is a live,
+                high-privilege secret); used internally by mcp-add, rarely by hand.
+  envs          One line per environment: tagged-span count + distinct call sites.
+  preflight     Gate: does <env> carry usable tagged telemetry? Exit code is the answer.
+  coverage      Per-call-site span counts in <env>, plus the untagged residue.
+  fetch-traces  Full trace detail for one call site in <env>, one JSON object per
+                line, content verbatim. Bounded by trace COUNT, never truncation.
+
+Exit codes (the runbook branches on these, so they are contract):
+
+  0  ok
+  1  not linked (or the stored token was rejected) → run `link` / /evals:connect
+  2  the platform did not answer: network/TLS failure (raised by publish._request),
+     or it answered with 403/404/5xx. Also argparse's own usage-error code — both
+     mean "this invocation produced no data", so the runbook treats them alike.
+  3  linked, but <env> has no tagged telemetry → run /evals:instrument, then
+     exercise the app. Deliberately distinct from 1: "nothing to ground on" is
+     not "not connected".
+  4  unknown environment slug
 
 Credentials are keyed by repo root exactly as `publish.py` keys them (the parent
 of `<repo>/.tessary`), so a repo linked here is also "linked" for a later
@@ -37,11 +58,13 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shlex
 import subprocess
 import sys
+import urllib.parse
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 # Reuse publish.py's plumbing (same dir). When run as a script, sys.path[0] is
 # this file's directory, so a bare `import publish` resolves.
@@ -258,6 +281,237 @@ def cmd_token(args: argparse.Namespace) -> int:
     return 0
 
 
+# ------------------------------------------------------- telemetry grounding
+
+# The platform caps a facet at 100 buckets (QueryRepository.MAX_FACET_TOP_N). A project with more
+# than that many call sites in one env would silently lose the tail, so we say so rather than lie.
+FACET_TOP_N = 100
+
+EXIT_NO_TELEMETRY = 3
+EXIT_UNKNOWN_ENV = 4
+
+
+def _api_base(proj: dict[str, Any], base_url_arg: str | None) -> str:
+    return proj.get("base_url") or publish.base_url(base_url_arg)
+
+
+def _project_api(proj: dict[str, Any], base_url_arg: str | None) -> str:
+    """`{base}/api/orgs/{org}/projects/{project}` — the RBAC-scoped read surface."""
+    url = _api_base(proj, base_url_arg)
+    return f"{url}/api/orgs/{proj['org_slug']}/projects/{proj['project_slug']}"
+
+
+def _unwrap(code: int, body: dict[str, Any], what: str) -> Any:
+    """Pull `data` out of the ApiResponse envelope, mapping HTTP status to the exit contract.
+
+    Only a 401 means "your link is broken" (exit 1). A 403/404/5xx is a *platform* problem — a
+    revoked scope, a version-skewed endpoint, an outage — and routing those to "re-run link" sends
+    the user to fix something that isn't wrong. They share exit 2 with a transport failure, which is
+    what `publish._request` already raises: from the caller's side both mean "the platform did not
+    answer me", and the stderr line says which."""
+    if code == 401:
+        print("stored token was rejected (revoked or expired) — re-run `platform.py link --force`",
+              file=sys.stderr)
+        raise SystemExit(1)
+    if code == 403:
+        print(f"the stored token is not permitted to read {what} (HTTP 403). It needs an ADMIN- or "
+              "QUERY-scoped key; re-link with `platform.py link --force`, or check the key's scope in "
+              "the platform UI.", file=sys.stderr)
+        raise SystemExit(2)
+    if code == 404:
+        print(f"could not read {what} (HTTP 404). The project may have been deleted, or this platform "
+              "predates the endpoint — check that the server is new enough to serve it.", file=sys.stderr)
+        raise SystemExit(2)
+    if code != 200:
+        print(f"could not read {what} (HTTP {code})", file=sys.stderr)
+        raise SystemExit(2)
+    return body.get("data")
+
+
+def _environments(proj: dict[str, Any], base_url_arg: str | None) -> list[dict[str, Any]]:
+    code, body = publish.get_json(f"{_project_api(proj, base_url_arg)}/environments", token=proj["token"])
+    return _unwrap(code, body, "environments") or []
+
+
+def _resolve_env(proj: dict[str, Any], base_url_arg: str | None, slug: str) -> dict[str, Any]:
+    """The environment row for `slug`, or exit 4. Never guesses a default — the caller must choose."""
+    envs = _environments(proj, base_url_arg)
+    for e in envs:
+        if e.get("slug") == slug:
+            return e
+    known = ", ".join(e.get("slug", "?") for e in envs) or "(none)"
+    print(f"unknown environment '{slug}' — this project has: {known}", file=sys.stderr)
+    raise SystemExit(EXIT_UNKNOWN_ENV)
+
+
+class Coverage(NamedTuple):
+    """What one environment's telemetry says about call-site coverage."""
+
+    tagged: list[tuple[str, int]]  # (call_site_id, span_count), busiest first
+    untagged: int  # spans carrying no tessary.call_site.id
+    truncated: bool  # the platform's facet cap hid some call sites
+
+
+def _call_site_facets(proj: dict[str, Any], base_url_arg: str | None, env_id: str) -> Coverage:
+    """Per-call-site span counts in one environment, plus the untagged span count.
+
+    One request: facet `observations` by `call_site_id`, filtered to the environment. Untagged spans
+    have a null `call_site_id`, so Postgres groups them into a **null bucket** that is ranked by count
+    like any other — early on it is usually the largest. That bucket is the residue, never a call site.
+
+    It also consumes one of the platform's `top_n` slots, which is why truncation is detected from the
+    number of buckets the server *returned* rather than from how many call sites we kept: a response of
+    99 call sites + 1 null bucket is already truncated, and counting only the call sites would call it
+    complete. Truncation must be loud — `coverage` is the universe of what may be graded, so a call site
+    silently missing from it is a call site silently left ungraded.
+    """
+    url = f"{_api_base(proj, base_url_arg)}/v1/query/facets"
+    payload = {
+        "dataset": "observations",
+        "field": "call_site_id",
+        "filters": {"environment_id": env_id},
+        "top_n": FACET_TOP_N,
+    }
+    code, body = publish.post_json(url, payload, token=proj["token"])
+    data = _unwrap(code, body, "call-site coverage") or {}
+    buckets = data.get("facets") or []
+    tagged: list[tuple[str, int]] = []
+    untagged = 0
+    for bucket in buckets:
+        value, count = bucket.get("value"), int(bucket.get("count") or 0)
+        if value is None or value == "":
+            untagged += count
+        else:
+            tagged.append((value, count))
+    tagged.sort(key=lambda kv: (-kv[1], kv[0]))
+    return Coverage(tagged, untagged, len(buckets) >= FACET_TOP_N)
+
+
+def cmd_envs(args: argparse.Namespace) -> int:
+    """One line per environment so the skill can prompt with real numbers instead of a guess."""
+    proj = _require_link(args.repo)
+    envs = _environments(proj, args.base_url)
+    print(f"ENVIRONMENTS\t{proj['org_slug']}/{proj['project_slug']}\t{_api_base(proj, args.base_url)}")
+    for e in envs:
+        cov = _call_site_facets(proj, args.base_url, e["id"])
+        spans = sum(c for _, c in cov.tagged)
+        sites = f"{len(cov.tagged)}+" if cov.truncated else str(len(cov.tagged))
+        print(f"env\t{e['slug']}\t{spans}\t{sites}\t{str(bool(e.get('is_default'))).lower()}")
+    print("\n(spans = observations carrying a tessary.call_site.id tag. A span with no tag is invisible "
+          "to grader generation. The default env is where untagged-environment traffic lands.)",
+          file=sys.stderr)
+    return 0
+
+
+def cmd_preflight(args: argparse.Namespace) -> int:
+    """The gate synthesize-graders calls before it authors anything."""
+    proj = _require_link(args.repo)
+    env = _resolve_env(proj, args.base_url, args.env)
+    cov = _call_site_facets(proj, args.base_url, env["id"])
+    spans = sum(c for _, c in cov.tagged)
+    if len(cov.tagged) < args.min:
+        print(f"PREFLIGHT\t{args.env}\tcall_sites={len(cov.tagged)}\tspans={spans}"
+              f"\tuntagged={cov.untagged}\tempty")
+        print(f"\n'{args.env}' has no tagged telemetry (min={args.min}). Grader generation would be "
+              "ungrounded, so it stops here.\n"
+              "  - No call sites instrumented yet? Run /evals:instrument, then exercise the app.\n"
+              f"  - Instrumented but {cov.untagged} untagged spans arriving? The tag is "
+              "`tessary.call_site.id`; check it reaches the exporter.\n"
+              "  - Traffic in a different environment? Re-run with --env <slug> (see `platform.py envs`).",
+              file=sys.stderr)
+        return EXIT_NO_TELEMETRY
+    print(f"PREFLIGHT\t{args.env}\tcall_sites={len(cov.tagged)}\tspans={spans}"
+          f"\tuntagged={cov.untagged}\tok")
+    return 0
+
+
+def cmd_coverage(args: argparse.Namespace) -> int:
+    """The set synthesize-graders intersects against static discovery."""
+    proj = _require_link(args.repo)
+    env = _resolve_env(proj, args.base_url, args.env)
+    cov = _call_site_facets(proj, args.base_url, env["id"])
+    for call_site, count in cov.tagged:
+        print(f"call_site\t{call_site}\t{count}")
+    print(f"untagged\t{cov.untagged}")
+    if cov.truncated:
+        # On STDOUT: the caller parses stdout, and a truncation notice that only reaches stderr is a
+        # notice the runbook can act as though it never saw. Coverage is the universe of what gets
+        # graded, so an incomplete list must be self-describing.
+        print("truncated\ttrue")
+        print(f"\nNOTE: the platform returned its maximum of {FACET_TOP_N} facet buckets, so this list "
+              "is incomplete — call sites below the top ones by span count are NOT shown, and would be "
+              "silently left ungraded. Narrow the environment, or raise the platform's facet cap.",
+              file=sys.stderr)
+    return 0 if cov.tagged else EXIT_NO_TELEMETRY
+
+
+_SAFE_NAME = re.compile(r"[^A-Za-z0-9._-]+")
+
+
+def _cache_path(repo: str, env: str, call_site: str) -> Path:
+    safe = _SAFE_NAME.sub("_", call_site).strip("_") or "unnamed"
+    return _evals_dir(repo) / ".cache" / "traces" / _SAFE_NAME.sub("_", env) / f"{safe}.jsonl"
+
+
+def cmd_fetch_traces(args: argparse.Namespace) -> int:
+    """Full trace detail for one call site, written verbatim, one JSON object per line.
+
+    Bounded by the COUNT of traces (`--limit`) and never by clipping content: a judge or grader author
+    that reads a truncated span is being lied to about what production did.
+    """
+    if args.limit < 1:
+        print("--limit must be at least 1 (it bounds the number of traces to fetch)", file=sys.stderr)
+        raise SystemExit(2)
+    proj = _require_link(args.repo)
+    env = _resolve_env(proj, args.base_url, args.env)
+    api = _project_api(proj, args.base_url)
+    token = proj["token"]
+
+    # Page the trace list (server-side filtered to this env + call site) until we have `--limit` ids.
+    # Dedupe across pages and refuse to reuse a cursor: a server that repeats a cursor, or returns rows
+    # without advancing, would otherwise spin here or write the same trace twice.
+    ids: list[str] = []
+    seen: set[str] = set()
+    seen_cursors: set[str] = set()
+    cursor: str | None = None
+    while len(ids) < args.limit:
+        params = {"environment": args.env, "callSite": args.call_site, "limit": min(args.limit - len(ids), 100)}
+        if cursor:
+            params["cursor"] = cursor
+        code, body = publish.get_json(f"{api}/traces?{urllib.parse.urlencode(params)}", token=token)
+        page = _unwrap(code, body, "traces") or {}
+        rows = page.get("traces") or []
+        for row in rows:
+            trace_id = row.get("id")
+            if trace_id and trace_id not in seen:
+                seen.add(trace_id)
+                ids.append(trace_id)
+        cursor = page.get("next_cursor")
+        if not cursor or not rows or cursor in seen_cursors:
+            break
+        seen_cursors.add(cursor)
+    ids = ids[: args.limit]
+
+    if not ids:
+        print(f"no traces for call site '{args.call_site}' in env '{args.env}'", file=sys.stderr)
+        return EXIT_NO_TELEMETRY
+
+    out = Path(args.out) if args.out else _cache_path(args.repo, args.env, args.call_site)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    spans = 0
+    with out.open("w") as fh:
+        for trace_id in ids:
+            code, body = publish.get_json(f"{api}/traces/{urllib.parse.quote(trace_id)}", token=token)
+            detail = _unwrap(code, body, f"trace {trace_id}")
+            if not detail:
+                continue
+            spans += len(detail.get("observations") or [])
+            fh.write(json.dumps(detail, separators=(",", ":")) + "\n")
+
+    print(f"FETCHED\t{args.env}\t{args.call_site}\ttraces={len(ids)}\tobservations={spans}\tout={out}")
+    return 0
+
+
 # ----------------------------------------------------------------------- cli
 
 def main(argv: list[str]) -> int:
@@ -288,6 +542,27 @@ def main(argv: list[str]) -> int:
     pt.add_argument("--reveal", action="store_true",
                     help="actually print the live token to stdout (it is a high-privilege secret)")
     pt.set_defaults(func=cmd_token)
+
+    pe = sub.add_parser("envs", help="list environments with their tagged-span + call-site counts")
+    pe.set_defaults(func=cmd_envs)
+
+    pp = sub.add_parser("preflight", help="does <env> carry usable tagged telemetry? (exit 3 if not)")
+    pp.add_argument("--env", required=True, help="environment slug (there is no default — choose one)")
+    pp.add_argument("--min", type=int, default=1, help="minimum tagged call sites required (default: 1)")
+    pp.set_defaults(func=cmd_preflight)
+
+    pc = sub.add_parser("coverage", help="per-call-site span counts in <env>, plus the untagged residue")
+    pc.add_argument("--env", required=True, help="environment slug")
+    pc.set_defaults(func=cmd_coverage)
+
+    pf = sub.add_parser("fetch-traces", help="write one call site's full traces to a local cache file")
+    pf.add_argument("--env", required=True, help="environment slug")
+    pf.add_argument("--call-site", required=True, help="call-site id (the tessary.call_site.id tag value)")
+    pf.add_argument("--limit", type=int, default=25,
+                    help="max TRACES to fetch (default: 25). Content is never truncated — only the count "
+                         "of traces is bounded.")
+    pf.add_argument("--out", default=None, help="output path (default: .tessary/.cache/traces/<env>/<id>.jsonl)")
+    pf.set_defaults(func=cmd_fetch_traces)
 
     args = p.parse_args(argv)
     return args.func(args)
