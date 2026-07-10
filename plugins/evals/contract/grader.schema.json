@@ -318,6 +318,11 @@
           "type": "boolean",
           "description": "Set to true by curators (or by tooling) to mark the file as touched. Re-runs warn before overwriting human_edited files unless --force. v9: also set automatically when a `platform-materialized` body's recomputed body_digest no longer matches _meta.body_digest (a human edited the materialized body); the grader's _body_source is promoted to 'human' at the same time."
         },
+        "grounding": {
+          "type": "string",
+          "enum": ["observed", "none"],
+          "description": "What this grader was authored from. `observed`: the call site's real traces were fetched from the linked project and read before authoring (the default path). `none`: authored under --skip-trace-grounding, from source code alone, so its judge prompt, rubric anchors, and applies_when gate are inferred rather than calibrated against production. Optional and absent on bundles synthesized before trace grounding was mandatory."
+        },
         "materialized_at": {
           "type": "string",
           "format": "date-time",

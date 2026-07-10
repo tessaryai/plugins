@@ -4,7 +4,8 @@
 >
 > The bundle now **nests shard filenames as folders** (`::` → `/`) instead of flattening them to `__`,
 > and grader files drop the redundant trailing `::grader`. A grader `persona::memory_citation::grader`
-> is written to `graders/persona/memory_citation.yaml`; a Path-A call site `sha::a1b2` → `call_sites/sha/a1b2.yaml`.
+> is written to `graders/persona/memory_citation.yaml`; a call site `support.answer` (the span-tag value,
+> which carries no `::`) stays flat → `call_sites/support.answer.yaml`.
 > The grader **contract stays v9** and shard *contents* are unchanged — only filenames move. The platform's
 > `BundleAssembler.classify()` already routes by substring (`contains("graders/")`, `contains("pipeline/call_sites/")`)
 > and reads the canonical `id` from inside each file, so **no import change is required** — it accepts the deeper

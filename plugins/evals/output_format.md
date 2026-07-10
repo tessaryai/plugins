@@ -24,7 +24,7 @@ diffs and the per-grader / bundle validators pass.
   graders/
     <call_site>/<failure>.yaml         # one per grader (`::` -> `/`, drop `::grader`)
   datasets/
-    <call_site_id>.jsonl               # captured inputs (Path A only)
+    <call_site_id>.jsonl               # rows captured from the traces fetched for that call site
   report.md
   index.html                           # built by viewer.py
   .synth-lock.yaml                     # content hashes from the last run
@@ -37,9 +37,10 @@ files additionally drop the redundant trailing `::grader`. Example: a grader wit
 file still uses `::`.
 
 The same `::` → `/` nesting applies to call-site shards
-(`call_sites/<id_path>.yaml` — e.g. a Path-A site `sha::a1b2` → `call_sites/sha/a1b2.yaml`),
-failure-mode shards (`failure_modes/<call_site_id_path>.yaml`), and quality-dimension
-shards (`quality_dimensions/<call_site_id_path>.yaml`).
+(`call_sites/<id_path>.yaml`), failure-mode shards (`failure_modes/<call_site_id_path>.yaml`),
+and quality-dimension shards (`quality_dimensions/<call_site_id_path>.yaml`). A call-site id is
+the `tessary.call_site.id` tag value, which normally contains no `::`, so it stays a flat filename
+(`support.answer` → `call_sites/support.answer.yaml`).
 
 ## Loading the logical pipeline view
 
@@ -183,7 +184,7 @@ One file per call site. The orchestrator never reads these in bulk; per-step
 subagents read only the specific shard they're working on.
 
 ```yaml
-id: <string>                       # snake_case label (Path B) or sha::<16hex> (Path A)
+id: <string>                       # the `tessary.call_site.id` span-tag value, verbatim. Never derived.
 use_case: <string | null>          # human-readable display hint
 invocation: <sdk | cli_agent | http | sandbox_agent>  # how the model is reached; default sdk
 provider: <string>                 # "anthropic" / "openai" / "litellm" / "other"
@@ -215,8 +216,8 @@ surrounding_code: <string | null>  # optional; the code snippet around the call 
 # INFERRED (default) from explicit instrumentation visible in `surrounding_code` (OTel
 # start_span("…")/start_as_current_span, Langfuse name= / @observe(name=) /
 # update_current_observation(name=), logger/tracer names, the enclosing function name = the SDK
-# default span name, provider-SDK default naming); OBSERVED from real OTel/trace telemetry the user
-# provided (Path A) — the span name is then a verified fact. Omitted / empty when no hint is found.
+# default span name, provider-SDK default naming); OBSERVED from the real spans fetched for this call
+# site — the span name is then a verified fact. Omitted / empty when no hint is found.
 # The platform uses it to bind a grader to the right captured spans/traces.
 expected_spans:
   - match_field: <name | model | trace_id | metadata.<key>>  # what the matcher keys on
@@ -228,7 +229,7 @@ expected_spans:
     confidence: <high | medium | low>  # REQUIRED for inferred entries; optional/moot for observed
                                      # (a verified span name has no uncertainty)
 
-# Path A (traces)
+# From the fetched traces
 source_spans:
   - trace_id: <hex>
     span_id: <hex>
@@ -470,8 +471,8 @@ pipeline view from the shards before running its checks.
 
 ## `.tessary/datasets/<call_site_id>.jsonl`
 
-Optional. Written by Path A ingestion (one row per representative span captured
-for that call site).
+Optional. Written from the traces fetched for that call site (one row per representative
+span). Absent under `--skip-trace-grounding`, which fetches nothing.
 
 ```jsonl
 {"trace_id": "<hex>", "span_id": "<hex>", "parent_span_id": "<hex|null>", "timestamp": "<iso8601>", "input_messages": [{"role":"system|user|assistant|tool","content":"..."}], "observed_output": "<string>", "observed_finish_reason": "<string|null>", "observed_tokens_in": <int|null>, "observed_tokens_out": <int|null>, "redaction_state": "<none|partial|redacted>"}
@@ -482,11 +483,13 @@ unless it has a re-hydration pathway.
 
 ### Agent-session rows (schema 0.10.0)
 
-When the input is an agent-session transcript (Claude Code / opencode and similar
-agent runners — see SKILL.md "Path A-agent"), each row captures one **session** as a
-turn sequence rather than one span. This is the natural input for `scope: trace`
-graders (prior turns → final turn) and `kind: agentic` graders (which re-inspect the
-repo). Fields beyond the span shape above:
+A row may capture one **session** as a turn sequence rather than one span — the natural shape for
+`scope: trace` graders (prior turns → final turn) and `kind: agentic` graders (which re-inspect the
+repo). This shape is **still read** by runners and viewers, but v0.20.0's `synthesize-graders` no
+longer produces it: it removed the local agent-session transcript input along with `--traces`, and
+now captures rows only from OTLP traces fetched from the linked project. Multi-turn sessions
+reconstructed from real traces (≥ 2 observations sharing a `trace_id`) use the span shape above.
+Fields beyond the span shape:
 
 ```jsonl
 {"session_id": "<string>", "call_site_id": "<string>", "invocation": "<cli_agent|sandbox_agent>", "messages": [{"role": "<user|assistant|tool>", "content": "<string>", "tool_calls": [<obj>, ...], "tool_results": [<obj>, ...]}], "repo_state": {"commit": "<sha|null>", "git_diff": "<unified diff text|null>"}, "redaction_state": "<none|partial|redacted>"}

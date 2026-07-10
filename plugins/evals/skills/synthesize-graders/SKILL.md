@@ -1,6 +1,6 @@
 ---
 name: synthesize-graders
-description: Generate a calibrated eval suite for an LLM product. Point it at the user's repo (with optional production traces) and it produces graders, datasets, and a visual report under `.tessary/`. Use when the user says "synthesize evals", "generate evals", "bootstrap evals for this repo", "create graders", or invokes /evals:synthesize-graders.
+description: Generate a calibrated eval suite for an LLM product, grounded in the real traces its call sites produced. Requires a linked Tessary project with tagged telemetry (run /evals:connect then /evals:instrument first); produces graders, datasets, and a visual report under `.tessary/`. Use when the user says "synthesize evals", "generate evals", "bootstrap evals for this repo", "create graders", or invokes /evals:synthesize-graders.
 ---
 
 # synthesize-graders — synthesize an eval pipeline from a real codebase
@@ -21,17 +21,20 @@ Output goes to a directory in the **target repo's** working directory:
     priorities.yaml                   # ordered list of call_site_ids
     product_profile.yaml              # phase A
     invariants.yaml                   # implicit_invariants + invariant_coverage
-    call_sites/<id_path>.yaml         # one per call site (`::` -> `/`)
+    call_sites/<id_path>.yaml         # one per GRADED call site (`::` -> `/`)
+    instrumentation.yaml              # call_site_id -> file/line/method (/evals:instrument)
+    skipped_sites.yaml                # discovered but not graded, with the reason
     chains.yaml                       # all detected chains
     failure_modes/<call_site_id_path>.yaml # single_call failures per site
     failure_modes/_chains.yaml        # chain failures
     quality_dimensions/<call_site_id_path>.yaml # 1-5 quality axes per judgment site
     taxonomy.yaml                     # taxonomy tree (populated at end of phase C)
   graders/<call_site>/<failure>.yaml  # one per emitted grader (`::` -> `/`, drop `::grader`)
-  datasets/<call_site_id>.jsonl       # captured inputs (Path A only)
+  datasets/<call_site_id>.jsonl       # rows captured from the fetched traces
   report.md                           # human-readable walkthrough
   index.html                          # self-contained visual viewer
   .synth-lock.yaml                    # SHA-256 of every shard + grader
+  .cache/traces/<env>/<id>.jsonl      # fetched traces; gitignored, never uploaded, never locked
 ```
 
 One grader per file is deliberate: emission failures are isolated (re-run one grader, not the whole batch), diffs are scoped to the grader that changed, and validation happens per file so a single malformed grader doesn't poison the pipeline. The same logic applies to the pipeline itself — sharded across per-artifact files so no single Write call carries the whole synthesis.
@@ -81,12 +84,18 @@ The pipeline produces graders in two distinct scopes that must remain cleanly se
 ## Inputs
 
 - **Repo path** (required) — local directory to analyze. If they don't give one, assume CWD and confirm.
-- **Traces file** (optional) — JSONL of OpenTelemetry GenAI spans.
+- **Environment** (`--env <slug>`) — which environment's traces to ground on. There is **no default**:
+  in an interactive run you prompt with real per-env counts (Phase A.0); in a non-interactive run the
+  flag is **required** and its absence is a hard failure, never a silent fallback.
+- **Skip grounding** (`--skip-trace-grounding`) — waive the trace requirement. It does **not** waive
+  the link. Prints a blocking warning and stamps `_meta.grounding: none` on every grader emitted.
+- **Trace budget** (`--limit N`, default 25) — max traces fetched **per call site**. Bounds the
+  count of traces, never the content of any one of them.
 - **Product hint** (optional) — 1-2 sentences describing what the product does.
 - **Pack selection** (optional) — `--pack <id>` / `--no-pack <id>`. Without flags, the triage phase auto-discovers from `applies_when` signals. `quality` is always-on.
 - **Deep-grade** (optional) — `--complete <call_site_id>` flips that site's deferred medium/low failures to non-deferred and synthesizes their graders. `--complete all` does the same for every site in priority order, reusing the same adaptive approval gate.
 - **Pause cadence** (optional) — `--pause-every N` overrides the adaptive gate; the orchestrator pauses after every N sites instead of using the measured per-site budget.
-- **Publish** (optional) — `--publish` pre-consents to pushing the bundle to evals.tessary.ai so the user can run these graders on real traces. Without the flag the publish step is offered once at the site-1 gate (Phase C.7) and only runs if the user opts in. See "Publishing to the platform" below.
+- **Publish** (optional) — `--publish` pre-consents to pushing the finished bundle back to the linked project so the user can run these graders on real traces. Without the flag the publish step is offered once at the site-1 gate (Phase C.7) and only runs if the user opts in. See "Publishing to the platform" below.
 
 ## Re-run safety
 
@@ -177,11 +186,21 @@ override locks (rare).
 
 ## Pipeline
 
-Five phases. A and B run once. C is the per-site loop with the user-approval gate. D wraps up chains + taxonomy at the end. E is the on-demand deep-grade flow triggered by `--complete`.
+Five phases. A.0 is a hard gate: no traces, no graders. A and B run once. C is the per-site loop with the user-approval gate. D wraps up chains + taxonomy at the end. E is the on-demand deep-grade flow triggered by `--complete`.
 
 ```
+┌─ Phase A.0 — Trace grounding preflight (GATE) ──────────────────┐
+│  require link → envs → choose env → preflight → coverage        │
+│  exit 1 → /evals:connect    exit 3 → /evals:instrument          │
+└──────────────────────────────────┬──────────────────────────────┘
+                                   ▼
 ┌─ Phase A — Discovery (parallel) ────────────────────────────────┐
 │  Product profile subagent  ‖  Call-site discovery subagent      │
+└──────────────────────────────────┬──────────────────────────────┘
+                                   ▼
+┌─ Phase A.1 — Intersect + fetch ─────────────────────────────────┐
+│  code ∩ telemetry, by call_site_id → skipped_sites.yaml         │
+│  fetch-traces per surviving site (verbatim, bounded by count)   │
 └──────────────────────────────────┬──────────────────────────────┘
                                    ▼
 ┌─ Phase B — Triage (main agent, serial) ─────────────────────────┐
@@ -208,34 +227,87 @@ Phase E (on demand): /evals:synthesize-graders --complete <id>
 
 ### Phase A — Discovery
 
-#### A.0 — Solicit telemetry (optional, skippable; v9)
+#### A.0 — Trace grounding preflight (mandatory)
 
-Before dispatching discovery, optionally solicit real OpenTelemetry / trace data so span names
-are **observed, not guessed**. This runs once, and is purely additive — it never changes the
-graders produced, only whether `expected_spans` are verified.
+A grader written from source code alone is a guess about what the model does. Grounding it in the
+spans that call site actually produced is the difference between an eval suite and a plausible one.
+So this phase is a **gate, not a prompt**: nothing is authored until real telemetry is in hand, or
+the user has explicitly and knowingly waived it.
 
-- **If `--traces` (or an agent-session JSONL) was already supplied** → skip the prompt entirely and
-  go straight to Path A, which now emits `source: observed` `expected_spans` from the real spans.
-- **If no traces were supplied AND the run is interactive** → emit ONE short, skippable prompt:
+Resolve the plugin path (as `connect` does), then:
 
-  > *Optional: paste or point me at OpenTelemetry data so span names are exact instead of inferred
-  > from code. I accept any of: an OTLP/JSON or OTLP-export `traces.jsonl` (the `--traces` format);
-  > a flat span-name list (one `name` per line, optionally `name<TAB>kind<TAB>metadata.key=val`); or
-  > a Langfuse / Phoenix / Jaeger export. Press enter / "skip" to proceed from source code only.*
+**1. Require a link.**
 
-  - If the user provides full traces → treat as Path A (verified-span extraction).
-  - If the user provides a flat span-name list → run Path B discovery, then match each provided name
-    to a discovered call site by use-case / enclosing-function correspondence and write it as a
-    `source: observed` `name` matcher (superseding any inferred guess for that site); surface any
-    names that did not map back to the user rather than dropping them silently.
-  - No answer / "skip" → proceed exactly as today: Path B inference, `source: inferred`, real
-    `confidence`. Backward-compatible verbatim.
+```bash
+python3 "$PLUGIN/platform.py" status
+```
 
-- **MUST be a NO-OP in any non-interactive / subagent / unattended run** — never block the autonomous
-  flow on this prompt. When no interactive gate is available (the same condition the site-1 publish
-  gate uses), skip A.0 silently and proceed to Path B as today. Graceful degradation is the rule:
-  the absence of solicited telemetry only means `expected_spans` stay best-effort `inferred`, which
-  the platform already tolerates.
+Exit `1` → **stop**. Tell the user to run `/evals:connect`. Do not fall through to discovery.
+
+**2. Show the environments and their real counts.**
+
+```bash
+python3 "$PLUGIN/platform.py" envs
+```
+
+Each `env` line is `slug`, tagged spans, distinct call sites, is-default. Present these verbatim and
+ask the user which environment to ground on. **Never pick for them**, and never default to the
+`is_default` env just because it is marked so — untagged-environment traffic buckets there, so it is
+the *least* trustworthy label, not the most.
+
+If the run is non-interactive and `--env` was not passed: fail with that instruction. A synthesis
+run that silently chose an environment is a run whose graders nobody can trace back to a source.
+
+**3. Gate on the chosen environment.**
+
+```bash
+python3 "$PLUGIN/platform.py" preflight --env <slug>
+```
+
+| exit | meaning | what you do |
+| --- | --- | --- |
+| `0` | tagged telemetry present | continue to step 4 |
+| `1` | not linked / token rejected | stop → `/evals:connect` |
+| `2` | network or TLS failure | stop, report it; do not degrade to ungrounded |
+| `3` | linked, but nothing tagged in this env | stop → `/evals:instrument`, then exercise the app |
+| `4` | unknown env slug | re-prompt from the `envs` list |
+
+Exit `3` is the interesting one, and it is **not** an error state — it is the normal condition of a
+project that has connected but not yet instrumented. Say so plainly. The `preflight` stderr already
+distinguishes "no call sites tagged" from "spans arriving but untagged"; relay it rather than
+paraphrasing.
+
+**4. Read the coverage set.**
+
+```bash
+python3 "$PLUGIN/platform.py" coverage --env <slug>
+```
+
+`call_site\t<id>\t<span_count>` per tagged call site, then `untagged\t<n>`. **This set is the
+universe of what may be graded.** Hold onto it — Phase A.1 intersects static discovery against it.
+
+A large `untagged` count is worth surfacing: those spans reached the platform but carry no
+`tessary.call_site.id`, so they are invisible here. Point the user at `/evals:instrument`.
+
+**5. Fetch the traces**, one call site at a time, after discovery has confirmed which sites survive
+the intersection (A.1). Deferred to A.1 so a site that gets dropped is never fetched.
+
+#### A.0b — The escape hatch
+
+`--skip-trace-grounding` waives steps 3–5. It does **not** waive step 1: connection is
+non-negotiable, because a grader suite with nowhere to run is not a deliverable.
+
+When it is set, print this before anything else, and do not bury it in a status line:
+
+> **Warning — generating ungrounded graders.** Without real traces, every judge prompt, rubric
+> anchor, and `applies_when` gate is inferred from source code alone. Expect: assertions about
+> output shape the model never produces; rubric levels calibrated to nothing; `applies_when` gates
+> that never fire, or fire on every span. These graders are a starting point for human editing, not
+> a measurement instrument. Re-run without this flag once traces exist.
+
+Every grader emitted under this flag carries `_meta.grounding: none`, so the provenance survives
+into the bundle and a reviewer can tell at a glance which graders were never grounded. Do not stamp
+`observed` on anything in this mode, and do not let a later `--complete` run silently upgrade it.
 
 Then run discovery:
 
@@ -243,15 +315,17 @@ Send **one message with two Agent tool calls** so they run in parallel.
 
 1. **Product profile subagent** (`subagent_type: Explore`) — pass `$PLUGIN/prompts/analyze_product.md`, the target repo path, and the absolute `.tessary/` path. Writes `.tessary/pipeline/product_profile.yaml` and `.tessary/pipeline/invariants.yaml`. Returns a manifest with domain, regulatory regimes, data sensitivity kinds, invariant counts, and `coverage_deferred: true` (because call-site discovery may still be running).
 
-2. **Call-site discovery subagent** — choose:
+2. **Call-site discovery subagent** (`subagent_type: Explore`).
 
-   **Your deliverable is the shard files on disk, not the manifest.** Write each `.tessary/pipeline/call_sites/<id>.yaml` (and any `.tessary/datasets/<id>.jsonl`) directly to disk; the manifest only *summarizes* what you wrote. Before returning, list each file you wrote and confirm it exists — a manifest that names files it did not write is a failure. (Mirrors `analyze_product.md` — "write the shards directly, return a tiny manifest".)
+   **Your deliverable is the shard files on disk, not the manifest.** Write each `.tessary/pipeline/call_sites/<id>.yaml` directly to disk; the manifest only *summarizes* what you wrote. Before returning, list each file you wrote and confirm it exists — a manifest that names files it did not write is a failure. (Mirrors `analyze_product.md` — "write the shards directly, return a tiny manifest".)
 
-   - **Path A — traces provided**: `subagent_type: general-purpose`. Parse the JSONL (OTLP/JSON or flat Python SDK exporter shape), normalize spans, group by normalized system-prompt hash, write one `.tessary/pipeline/call_sites/<id>.yaml` per group and `.tessary/datasets/<id>.jsonl` per group. Span taxonomy and observability stats (`observed.*` p50/p95/error_rate/refusal_rate/cost) are required. Stratified sampling at up to 10 representative spans per site. Set `invocation: sdk` by default; if span attributes show the model was reached via a shelled-out agent CLI, a raw HTTP gateway, or a sandbox runner (e.g. a `gen_ai.system` / command attribute naming `claude`, `ollama`, an `http.url` to a model host, or a sandbox span parent), set the matching `invocation` instead. Also set `default_grade_mode: per_conversation` when the group is **multi-turn** — ≥ 2 spans for this site share a `trace_id` (or session id) — so its cross-turn graders default to `scope: trace`; otherwise leave it `per_turn` (omit).
+   Discovery is **static**, always. Traces tell you *what a call site did*; only the source tells you *what it was asked to do* — the system prompt, the output schema, the surrounding code a judge prompt has to be written against. Telemetry cannot supply `surrounding_code`, so the repo is read regardless.
 
-     **Emit VERIFIED `expected_spans` from the real spans (v9).** You have the ground-truth telemetry in hand, so write the observed names rather than guessing. For each call-site group, take the span `name` actually present on the grouped spans and write an `expected_spans` entry `{match_field: name, match_pattern: <observed literal>, kind: span, source: observed}` — **no `confidence`** (an observed name is a verified fact, not a guess). Also emit `{match_field: model, match_pattern: <gen_ai.request.model literal>, kind: span, source: observed}` when the spans carry a model, and a `{match_field: metadata.<key>, ..., source: observed}` entry for any stable metadata/tag key present across the group's spans. A `source: observed` entry **supersedes** (replaces, not appends) any Path-B `inferred` guess for the same call site, so the platform's matcher never sees a verified name competing with a guess. Omit entirely when a group's spans carry no usable name.
-   - **Path A-agent — agent-session transcripts provided**: a variant of Path A for Claude Code / opencode session JSONL (and similar agent runners). These are conversation transcripts, not OTLP spans: each line is a turn carrying `tool_use`/`tool_result` blocks, file edits, and bash commands. `subagent_type: general-purpose`. Reconstruct the ordered turn+tool sequence per session and group sessions by the agent's task/system identity into call sites (`invocation: cli_agent` or `sandbox_agent`). Write the captured turns to `.tessary/datasets/<id>.jsonl` using the **agent-session row shape** (see `output_format.md`): a `messages` array of `{role, content, tool_calls?, tool_results?}`, plus an optional per-turn `repo_state: {commit?, git_diff?}` so the **git diff between two turns** is captured as text and becomes a gradeable artifact. Sessions reconstructed this way are the natural input for `scope: trace` graders (prior turns → final turn) and `kind: agentic` graders (which re-inspect the repo state). A site reconstructed from multi-turn sessions (≥ 2 turns) is multi-turn by definition — set `default_grade_mode: per_conversation` on its shard.
-   - **Path B — static repo**: `subagent_type: Explore`. Grep for LLM-call patterns; write one shard per discovered call site.
+   Name each discovered site with the `call_site_id` it is **tagged with in the code** (`tessary.call_site.id`). Read the literal out of the source; if `.tessary/pipeline/instrumentation.yaml` exists, it is the authoritative map and you should reconcile against it. A site whose code carries no tag gets a `proposed_id` and is marked `tagged: false` — it will be dropped in A.1, not graded.
+
+   Never invent an id by hashing a system prompt. The id is whatever string reaches the platform on the span; anything else is a name for a call site that does not exist.
+
+   - **Path B — static repo**: Grep for LLM-call patterns; write one shard per discovered call site.
 
      **An LLM call is not always an in-process SDK call.** A call site is any place this repo causes a model to run, however the request leaves the process. Search all four invocation classes and tag each discovered site with `invocation`:
      - **`sdk`** — in-process provider SDK / framework call. The historical default. Patterns: `messages.create`, `chat.completions.create`, `responses.create`, `generate_content`, `client.complete`, `ChatPromptTemplate`, `langchain`/`langgraph`/`llamaindex`/`litellm` call objects, `ai.generateText`/`streamText` (Vercel AI SDK).
@@ -270,7 +344,7 @@ Send **one message with two Agent tool calls** so they run in parallel.
            source: inferred             # v9 — Path B is static-code inference, so ALWAYS `inferred`
            confidence: high             # high (explicit name=/start_span literal) | medium (enclosing fn / convention) | low (guess)
        ```
-     Use `match_field: model` for a pinned model literal, `metadata.<key>` for an explicit metadata/tag the code attaches, `trace_id` only when the code sets a trace-level identifier. **Path B is static inference, so every entry it writes is `source: inferred`** (never `observed` — that is reserved for entries grounded in real telemetry; see Path A and step A.0). **Omit `expected_spans` entirely (or write `[]`) when no instrumentation hint is visible** — never invent a name. This is low-risk metadata: a wrong or missing entry only weakens span binding, it never blocks grading.
+     Use `match_field: model` for a pinned model literal, `metadata.<key>` for an explicit metadata/tag the code attaches, `trace_id` only when the code sets a trace-level identifier. **Discovery is static inference, so every entry it writes is `source: inferred`.** In A.1 you may promote an entry to `source: observed` (dropping `confidence`) when the fetched spans confirm the literal. **Omit `expected_spans` entirely (or write `[]`) when no instrumentation hint is visible** — never invent a name. This is low-risk metadata: `expected_spans` plays no part in call-site resolution, which is the `tessary.call_site.id` tag and nothing else. A wrong or missing entry never blocks grading.
 
      **Confidence rubric — grep-verify before you stamp (do not over-claim).** A `high` confidence span matcher should be trustworthy, so:
      - assign `confidence: high` **only when the literal `match_pattern` string is found verbatim in source** — grep-confirm it appears in a `start_span("…")` / `tracer.start_as_current_span("…")` / `spanBuilder("…")` / Langfuse `name="…"` literal before stamping `high`;
@@ -337,6 +411,68 @@ python3 "$PLUGIN/pipeline_io.py" lock A .tessary/pipeline/meta.yaml --evals-dir 
 
 The seed is later overwritten by `finalize.py`, which **preserves** this `0.14.0` version and the `product_hint` when run flag-bare (see Step C.5) — so the version never regresses.
 
+#### A.1 — Intersect discovery with observed telemetry
+
+Discovery produced the call sites the **code** has. A.0 step 4 produced the call sites the
+**platform has seen**. Grader generation runs on the intersection, and nowhere else.
+
+The join is an exact `call_site_id` match. There are no fuzzy tiers, no span-name heuristics, and no
+LLM adjudication, because the id was written into the code on purpose (`/evals:instrument`) and
+travels on the span. If the two sides disagree, that is information, not noise:
+
+| in code | in telemetry | outcome |
+| --- | --- | --- |
+| tagged | observed | **grade it.** Fetch traces (below), attach `surrounding_code`, author normally. |
+| tagged | absent | **drop.** `reason: no_observed_traces` — the code path exists but nothing exercised it in this env. |
+| untagged | — | **drop.** `reason: not_instrumented` — invisible to the platform; run `/evals:instrument`. |
+| — | observed | **keep, code-less.** The tag materialized a call site the repo scan didn't reach (vendored, generated, or another service writing to the same project). Set `surrounding_code: null` and `code_grounded: false`; author from trace evidence alone. |
+
+Write every dropped site to `.tessary/pipeline/skipped_sites.yaml`:
+
+```yaml
+version: 1
+skipped:
+  - id: currency.legacy_convert
+    reason: no_observed_traces      # no_observed_traces | not_instrumented
+    file_hint: src/currency/legacy.py
+    detail: "tagged in code; zero spans in env 'prod'"
+```
+
+Never drop a site silently. A suite that quietly covers 6 of 14 call sites, and looks complete, is
+worse than one that says which 8 it skipped and why. Print the counts at the end of Phase A and
+surface the file in the viewer.
+
+**Then fetch traces, per surviving site:**
+
+```bash
+python3 "$PLUGIN/platform.py" fetch-traces --env <slug> --call-site <id> --limit <N>
+```
+
+This writes `.tessary/.cache/traces/<env>/<id>.jsonl` — one full trace per line, spans verbatim.
+`--limit` bounds the **number of traces**. Never clip a span's `input`, `output`, `messages`, or
+attributes to fit a context window: a judge author reading a truncated span is being lied to about
+what production did. If the budget is tight, fetch **fewer traces**, not smaller ones.
+
+From the fetched traces, enrich each surviving shard:
+
+- `.tessary/datasets/<id>.jsonl` — the captured rows this call site's graders are calibrated and
+  regression-tested against.
+- `observed.*` stats (p50/p95 latency, error_rate, refusal_rate, cost) computed over the observations
+  whose `call_site_id` equals this site.
+- `default_grade_mode: per_conversation` when the site is **multi-turn** — ≥ 2 of its observations
+  share a `trace_id` — so its cross-turn graders default to `scope: trace`. Otherwise leave it
+  `per_turn` (omit).
+- `invocation` — correct the static guess where the spans disagree with it (a `gen_ai.system` or
+  command attribute naming `claude` / `ollama`, an `http.url` to a model host, or a sandbox parent
+  span means the call did not leave the process the way the code implied).
+
+The `.cache/` directory is a fetch artifact, not bundle content: it is excluded from
+`publish.py upload` and must be gitignored. Do not add it to `.synth-lock.yaml`.
+
+Under `--skip-trace-grounding` this whole step collapses to: every discovered site survives, no
+traces are fetched, no `observed.*` stats exist, and no dataset rows are captured. That is precisely
+why the graders are worse.
+
 ### Phase B — Triage
 
 **Pack discovery + interview.** Stays in main context. Bundle paths:
@@ -363,7 +499,7 @@ PY
 
 **Rank call sites.** Main-agent inline reasoning over the phase-A manifest. Signals, in order of weight:
 
-1. **Trace anchoring** — Path A sites outrank Path B sites; among Path A, higher `observed.sample_count` wins.
+1. **Traffic** — higher `observed.sample_count` wins. Every site that reaches this phase is trace-anchored (A.1 dropped the rest), so anchoring is no longer a discriminator; volume is. A code-less site (`code_grounded: false`) ranks on traffic like any other, but note its graders are authored without `surrounding_code`.
 2. **User-facing surface** — sites whose use_case / file_hint indicate a user-visible surface (UI chat, transactional email, support response) outrank purely-internal helpers.
 3. **Data sensitivity / regulatory exposure** — sites whose surrounding code touches `product_profile.data_sensitivity` kinds or `regulatory_context` regimes get a bump.
 4. **Path-prominence heuristic for Path B** — public route paths (`/api/v1/...`), exported top-level functions, and modules referenced from the repo's entrypoint outrank deeper utility modules.
@@ -444,10 +580,12 @@ Author discovery and both per-grader templates are under "Grader subagent templa
 ```bash
 python3 "$PLUGIN/pipeline_io.py" stamp-meta .tessary/graders/<call_site>/<failure>.yaml \
   --author "<resolved author name>" --synth-inputs-digest "<digest>" \
-  --author-contract-version 8 --evals-dir .tessary
+  --author-contract-version 8 --grounding observed --evals-dir .tessary
 ```
 
 `stamp_meta` fills `author`, `synthesized_at`, `synth_inputs_digest`, `author_contract_version`, and **preserves** any existing `_meta.locked_fields` / `_meta.human_edited` on re-run (so it never clobbers human edits). Then lock each emitted grader file as the subagent returns.
+
+`--grounding` records what the grader was written from, and it is a fact about *this* run: pass `observed` when the site's traces were fetched in A.1, and `none` under `--skip-trace-grounding`. It is the only field that tells a reviewer whether a judge prompt was calibrated against production or imagined from source. Never stamp `observed` on a site whose traces you did not read.
 
 **Step C.5 — Bookkeeping.** Run, in order:
 
@@ -496,7 +634,9 @@ Never process the entire `priorities.yaml` in one unattended turn. If you ever f
 
 ### Publishing to the platform (opt-in, asked once)
 
-The local `.tessary/index.html` is the offline preview. To actually *run* these graders against real traces and share results with a team, the bundle goes to evals.tessary.ai. This is the **only** network egress in the skill and never happens without explicit consent: it runs when the user replies `publish` at the site-1 gate, or when they passed `--publish`. Once published, later sites re-upsert silently (see Step C.5).
+The local `.tessary/index.html` is the offline preview. To actually *run* these graders against real traces and share results with a team, the bundle goes back up to the linked project. This is the only network **write** in the skill — Phase A.0/A.1 already read from the project, which is what grounds the graders in the first place — and it never happens without explicit consent: it runs when the user replies `publish` at the site-1 gate, or when they passed `--publish`. Once published, later sites re-upsert silently (see Step C.5).
+
+Note the call sites already exist server-side: a tagged span materializes its `call_site` row on arrival, which is how A.0 could count them before anything was uploaded. `upload` adds the graders, failure modes, and datasets to sites the platform already knows.
 
 When publish is requested, run these two steps and report the printed URL:
 
@@ -691,7 +831,7 @@ The viewer reads only the local files under `.tessary/` — nothing leaves your 
 
 Unchanged from v0.3.
 
-- **Call site ID**: Path B → source-code label, snake_cased. Path A → `sha::<16-hex>` over the normalized representative system prompt.
+- **Call site ID**: the `tessary.call_site.id` tag value, verbatim. It is authored once by `/evals:instrument`, written into the source, carried on every span, and used as-is here. Never derive it — not from a source-code label, not from a hash of the system prompt. An id the platform has never seen names a call site that cannot be graded.
 - **Failure mode ID**: `<call_site_id>::<name>` (single_call), `<chain_id>::<name>` (chain).
 - **Chain ID**: `chain::<short_snake_case_label>`.
 - **Grader ID**: `<failure_mode_id>::grader`.

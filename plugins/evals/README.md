@@ -20,9 +20,10 @@ In any Claude Code session:
 /evals:connect
 ```
 
-> **Already have graders/traces on the platform?** Run this. **Starting from zero (no evals at all)?**
-> Run [`/evals:synthesize-graders`](#bootstrap-a-starter-suite-greenfield) first to generate a starter
-> suite, then connect.
+> **Start here, always.** The order is `/evals:connect` → [`/evals:instrument`](#bind-your-call-sites-evalsinstrument)
+> → exercise your app → [`/evals:synthesize-graders`](#bootstrap-a-starter-suite-greenfield). Grader
+> generation reads your project's real traces, so it needs a link and tagged telemetry before it can
+> produce anything worth running.
 
 This links the current repo to a project on evals.tessary.ai (a one-time device-code handshake in
 your browser), then registers the platform's authenticated tools into Claude Code — privately, scoped
@@ -70,19 +71,50 @@ Run your app and traces appear in the project — ready to `assess`, or to calib
 If your app has no OpenTelemetry yet, follow the project's **Connect traces** step for the setup
 guide; any OpenTelemetry-capable emitter works.
 
+## Bind your call sites (`/evals:instrument`)
+
+Traces arriving is not the same as traces being *usable*. The eval machinery is call-site-keyed, and
+the platform learns a span's call site from exactly one thing — the explicit **`tessary.call_site.id`**
+span attribute. There is no filepath or span-name inference: an untagged span ingests fully, shows up
+in the trace viewer, and is **invisible to grader generation**.
+
+```
+/evals:instrument
+```
+
+finds the LLM call sites in your repo, gives each a stable id, and writes that id into your code as a
+span attribute (showing you the diff first). The tagged call sites then materialize themselves in the
+project the first time a tagged span arrives — no upload required.
+
+Check what landed:
+
+```
+python3 platform.py envs                     # tagged spans + call sites, per environment
+python3 platform.py coverage --env prod      # per-call-site counts, plus the untagged residue
+```
+
 ## Bootstrap a starter suite (greenfield)
 
-If the repo has **no evals at all** and you want a full starter suite generated from your code —
-graders, datasets, and a self-contained visual report — run the heavier bootstrap:
+If the repo has **no evals at all** and you want a full starter suite — graders, datasets, and a
+self-contained visual report — run the heavier bootstrap:
 
 ```
-/evals:synthesize-graders
+/evals:synthesize-graders --env prod
 ```
 
-Point it at your repo (optionally with production OpenTelemetry traces via `--traces path.jsonl`) and
-it synthesizes a `.tessary/` bundle locally, one call site at a time, with a preview after the first
-site. It can publish the bundle to a new project with `--publish`. This is the one-time greenfield
-path; **`/evals:connect` is the ongoing front door** once a project exists.
+It **requires a linked project with tagged telemetry**, and grades only the call sites your traces
+actually exercised. A grader written from source alone is a guess about what your model does; one
+written against real spans is a measurement. Call sites discovered in code but never observed are
+dropped and listed in `.tessary/pipeline/skipped_sites.yaml` with a reason, so the gaps are visible
+rather than silent.
+
+`--skip-trace-grounding` waives the trace requirement (never the link). It warns loudly and stamps
+every grader with `_meta.grounding: none`, because those graders are a starting point for human
+editing, not an instrument.
+
+The run synthesizes a `.tessary/` bundle locally, one call site at a time, with a preview after the
+first site, and can publish it back with `--publish`. This is the one-time greenfield path;
+**`/evals:connect` is the ongoing front door** once a project exists.
 
 Everything the bootstrap produces lands in `.tessary/` in your repo:
 
@@ -91,8 +123,11 @@ Everything the bootstrap produces lands in `.tessary/` in your repo:
 | `.tessary/index.html` | Self-contained visual report — open it in a browser, no server needed. |
 | `.tessary/report.md` | Human-readable walkthrough of every grader. |
 | `.tessary/graders/*.yaml` | One grader per failure mode. Run these on the platform against golden datasets. |
-| `.tessary/datasets/*.jsonl` | Replayable input rows captured from your traces (when provided). |
+| `.tessary/datasets/*.jsonl` | Replayable input rows captured from the traces fetched for each call site. |
 | `.tessary/pipeline/` | Call sites, failure modes, taxonomy. |
+| `.tessary/pipeline/instrumentation.yaml` | `call_site_id` → file/line/method, written by `/evals:instrument`. |
+| `.tessary/pipeline/skipped_sites.yaml` | Call sites found in code but **not** graded, and why (`not_instrumented`, `no_observed_traces`). |
+| `.tessary/.cache/` | Traces fetched from the platform. Gitignore it; never uploaded. |
 
 ### Targeted regeneration
 

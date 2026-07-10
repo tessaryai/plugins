@@ -167,6 +167,18 @@ synthesized yet), say so plainly — "this project has no graders yet" — and, 
 starter suite, offer the bootstrap while **sizing it honestly**: `/evals:synthesize-graders` is a
 multi-minute, phased run that pauses for your approval twice — not the 30-second connect.
 
+Then check whether any telemetry is actually bound to a call site:
+
+```bash
+python3 "$PLUGIN/platform.py" envs
+```
+
+Each `env` line carries the environment's tagged-span count and distinct call sites. If every
+environment reads `0 0`, nothing in this repo is instrumented yet: spans may be arriving, but none
+carry the `tessary.call_site.id` tag, so they are invisible to grader synthesis. Say so and point
+the user at **`/evals:instrument`**, which tags the call sites in their code. Do not treat this as a
+failure of `connect` — it is the expected state of a freshly-linked repo, and it is the next step.
+
 ### 5 — Hand off
 
 **The MCP tools are NOT usable this turn** — they load only after the client reloads its MCP config.

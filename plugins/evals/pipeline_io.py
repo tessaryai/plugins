@@ -287,17 +287,31 @@ def write_quality_dimensions_for_site(evals_dir: Path, call_site_id: str,
     return path
 
 
+# `_meta` keys the orchestrator must never destroy when re-stamping. `locked_fields`/`human_edited`
+# drive re-run safety; `materialized_at`/`body_digest` are how a human edit of a platform-materialized
+# body is detected. Rebuilding `_meta` without them silently disarms that detection.
+_PRESERVED_META_KEYS = ("locked_fields", "human_edited", "materialized_at", "body_digest")
+
+VALID_GROUNDING = ("observed", "none")
+
+
 def stamp_meta(grader_path: Path, author: str, synth_inputs_digest: str,
-               author_contract_version: int) -> Path:
+               author_contract_version: int, grounding: str | None = None) -> Path:
     """Deterministically stamp the orchestrator-owned `_meta` provenance block onto
     a grader file *after* the author returns its body.
 
     Fills `author`, `synthesized_at` (ISO timestamp), `synth_inputs_digest`, and
-    `author_contract_version`. PRESERVES any existing `_meta.locked_fields` /
-    `_meta.human_edited` on re-run (re-run safety machinery consumes these), and never
-    clobbers them. `_meta` is orchestrator-owned per the contract Roles table — authors
+    `author_contract_version`. PRESERVES the keys in `_PRESERVED_META_KEYS` on re-run and
+    never clobbers them. `_meta` is orchestrator-owned per the contract Roles table — authors
     and per-site subagents do not write it.
+
+    `grounding` records what the grader was written from: `observed` (the call site's real traces
+    were fetched and read) or `none` (--skip-trace-grounding). It is the audit trail for whether a
+    judge prompt was calibrated against production or inferred from source alone, so it is never
+    invented here — pass it explicitly, or omit it to carry forward whatever the file already had.
     """
+    if grounding is not None and grounding not in VALID_GROUNDING:
+        raise ValueError(f"stamp_meta: grounding must be one of {VALID_GROUNDING}, got {grounding!r}")
     grader_path = Path(grader_path)
     doc = yaml.safe_load(grader_path.read_text(encoding="utf-8"))
     if not isinstance(doc, dict):
@@ -309,11 +323,14 @@ def stamp_meta(grader_path: Path, author: str, synth_inputs_digest: str,
         "synth_inputs_digest": synth_inputs_digest,
         "author_contract_version": author_contract_version,
     }
+    if grounding is not None:
+        meta["grounding"] = grounding
+    elif isinstance(existing, dict) and "grounding" in existing:
+        meta["grounding"] = existing["grounding"]
     if isinstance(existing, dict):
-        if "locked_fields" in existing:
-            meta["locked_fields"] = existing["locked_fields"]
-        if "human_edited" in existing:
-            meta["human_edited"] = existing["human_edited"]
+        for key in _PRESERVED_META_KEYS:
+            if key in existing:
+                meta[key] = existing[key]
     doc["_meta"] = meta
     _dump(grader_path, doc)
     return grader_path
@@ -485,6 +502,10 @@ def _cli(argv: list[str]) -> int:
     p_stamp.add_argument("--author", required=True)
     p_stamp.add_argument("--synth-inputs-digest", required=True)
     p_stamp.add_argument("--author-contract-version", type=int, default=8)
+    p_stamp.add_argument("--grounding", choices=VALID_GROUNDING, default=None,
+                         help="what this grader was written from: `observed` (the call site's real "
+                              "traces were read) or `none` (--skip-trace-grounding). Omit to carry "
+                              "forward the value already on the file.")
     # Accepted and ignored (stamp-meta operates on an absolute/explicit path);
     # mirrors the sibling subcommands so the documented orchestrator invocation
     # works verbatim.
@@ -494,7 +515,7 @@ def _cli(argv: list[str]) -> int:
 
     if args.cmd == "stamp-meta":
         stamp_meta(Path(args.path), args.author, args.synth_inputs_digest,
-                   args.author_contract_version)
+                   args.author_contract_version, args.grounding)
         return 0
 
     evals = Path(args.evals_dir).resolve()
