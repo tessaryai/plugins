@@ -55,7 +55,7 @@ the assembled view is never written back to disk during synthesis.
 ## `.tessary/pipeline/meta.yaml`
 
 ```yaml
-version: "0.14.0"
+version: "0.15.0"
 product_hint: <string | null>
 
 runtime:
@@ -232,7 +232,7 @@ expected_spans:
 # CODE-TRACKED FACTS (schema 0.15.0). These describe the call site's SOURCE, not its traffic, so the
 # platform keeps them in sync as the code changes and re-imports them on every push. Both are OPTIONAL
 # and both distinguish ABSENT from EMPTY: omitting `output_schema` means "this shard does not carry the
-# fact" (the platform keeps whatever it captured), NOT "this call site declares no structured output.
+# fact" (the platform keeps whatever it captured), NOT "this call site declares no structured output".
 # To positively assert the code declares none, emit `output_schema: null`.
 
 # The structured output the call site's code declares, verbatim as a JSON Schema. Read by the
@@ -413,8 +413,54 @@ capabilities:
     call_site_ids: [<string>, ...] # call sites that can reach it; empty/absent = product-wide
 ```
 
-At most ONE capabilities shard per bundle — two means one of them is silently losing, and the
-platform rejects the bundle rather than pick.
+At most ONE capabilities shard per bundle — two means one of them is silently losing, so the
+platform's importer rejects the bundle rather than pick. Enforced platform-side (its parser sees the
+whole tree, including a `.yml` spelling this repo's loader never reads); `validate.py` does not
+re-check it.
+
+### Worked example — the parity anchor
+
+The two blocks below are the **canonical fixture** for the code-tracked facts. The platform's
+`CodeFactContractParityTest` holds a byte-identical copy and asserts every key binds to a field its
+importer actually consumes — the bundle parser drops unknown YAML keys by design, so a misspelled key
+is otherwise silent from both sides. The `parity-anchor` markers delimit the exact text; if you change
+either block, change the platform's copy in the same pair of PRs.
+
+<!-- parity-anchor: call_site begin -->
+```yaml
+id: support.answer
+provider: anthropic
+invocation: sdk
+shape: rag_answer
+output_schema:
+  type: object
+  properties:
+    answer: {type: string}
+  required: [answer]
+tools:
+  - name: search_docs
+    description: full-text search over the handbook
+    input_schema:
+      type: object
+      properties:
+        query: {type: string}
+    source: src/tools/search.py:41
+  - name: escalate
+```
+<!-- parity-anchor: call_site end -->
+
+<!-- parity-anchor: capabilities begin -->
+```yaml
+capabilities:
+  - name: search_docs
+    kind: tool
+    description: full-text search
+    source: src/tools/search.py:41
+    call_site_ids: [support.answer]
+  - name: refund-policy
+    kind: skill
+```
+<!-- parity-anchor: capabilities end -->
 
 ## `.tessary/graders/<call_site>/<failure>.yaml`
 

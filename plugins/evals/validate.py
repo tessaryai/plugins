@@ -684,13 +684,16 @@ def _bundle_code_facts(pipeline: Pipeline) -> list[str]:
                     continue
                 if not _is_nonempty_str(cap.get("name")):
                     errors.append(f"{where} requires a non-empty name")
-                # An absent kind defaults to `tool` platform-side rather than failing, so only a
-                # PRESENT-but-unknown kind is an error: a manifest written by an agent reading code
-                # must not take the whole bundle down over one unlabelled entry.
+                # `kind` is an OPEN vocabulary, matching the platform (`model/Capability.kind` is a
+                # plain String; its @Schema annotation is documentation, not a constraint). It must not
+                # be rejected here: the platform's observer is the intended WRITER of this manifest, so
+                # hard-failing an unrecognized kind would make the plugin reject a bundle the platform
+                # itself just produced — the validator would be the thing breaking the contract. A
+                # non-string kind is still wrong, because that is a shape error rather than a
+                # vocabulary one, and absent is legal (it defaults to `tool` platform-side).
                 kind = cap.get("kind")
-                if kind is not None and kind not in VALID_CAPABILITY_KINDS:
-                    errors.append(f"{where} has invalid kind {kind!r}; expected one of "
-                                  f"{sorted(VALID_CAPABILITY_KINDS)}")
+                if kind is not None and not isinstance(kind, str):
+                    errors.append(f"{where} kind must be a string when present, got {type(kind).__name__}")
                 ids = cap.get("call_site_ids")
                 if ids is not None and not isinstance(ids, list):
                     errors.append(f"{where} call_site_ids must be a list when present")
