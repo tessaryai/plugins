@@ -230,10 +230,15 @@ expected_spans:
                                      # (a verified span name has no uncertainty)
 
 # CODE-TRACKED FACTS (schema 0.15.0). These describe the call site's SOURCE, not its traffic, so the
-# platform keeps them in sync as the code changes and re-imports them on every push. Both are OPTIONAL
-# and both distinguish ABSENT from EMPTY: omitting `output_schema` means "this shard does not carry the
-# fact" (the platform keeps whatever it captured), NOT "this call site declares no structured output".
-# To positively assert the code declares none, emit `output_schema: null`.
+# platform keeps them in sync as the code changes and re-imports them on every push. Both are OPTIONAL.
+#
+# `output_schema` distinguishes ABSENT from EMPTY, because it has TWO writers: this bundle and the
+# platform's own agentic synthesis. Omitting the key means "this shard does not carry the fact" and the
+# platform keeps whatever it captured — NOT "this call site declares no structured output". To assert
+# the code declares none, emit `output_schema: null`, which clears the stored capture.
+#
+# `tools` does NOT: the bundle is its only writer, so omitting it means "no tools" and clears the
+# stored list. There is no third state to express.
 
 # The structured output the call site's code declares, verbatim as a JSON Schema. Read by the
 # platform's Malformed Output classifier, which validates each observation's output against it. A
