@@ -77,7 +77,7 @@ progress:                                 # added in schema 0.7.0 (phased synthe
 
 `version` is the synthesizer's on-disk schema version, not the plugin version.
 Bump only when the shard layout or shard schemas change. Current schema is
-`0.14.0` (0.7.0 added the `progress` block here, the `priorities.yaml` shard, and
+`0.15.0` (0.7.0 added the `progress` block here, the `priorities.yaml` shard, and
 the `grader_deferred` field on failure modes; 0.8.0 added the `quality_dimensions/`
 shard and the `kind: score` grader for continuous 1–5 quality scoring; 0.9.0 added
 the `invocation` field on call sites so indirect LLM calls — agent CLIs, raw HTTP,
@@ -98,7 +98,7 @@ the redundant grader fields `owner`/`cost_budget_tokens`/`latency_budget_ms_p95`
 `compliance_tags`/`applies_when_check` — contract v9; 0.14.0 nests shard filenames as folders
 (`::` → `/`) instead of flattening them to `__`, and grader files drop the redundant trailing
 `::grader` — purely an on-disk filename layout change; the grader contract stays v9 and shard
-*contents* are unchanged).
+*contents* are unchanged); 0.15.0 adds the CODE-TRACKED FACTS — `output_schema` and `tools` on the call-site shard, and the `pipeline/capabilities.yaml` inventory — the declarations that describe the product's source rather than its traffic, which the platform reads from the repo and keeps in sync as the code changes. All three are optional and additive: a bundle that omits them parses exactly as before, and the grader contract stays v9.
 
 ## `.tessary/pipeline/priorities.yaml`
 
@@ -228,6 +228,27 @@ expected_spans:
                                      # OBSERVED entry supersedes any INFERRED guess for the same site.
     confidence: <high | medium | low>  # REQUIRED for inferred entries; optional/moot for observed
                                      # (a verified span name has no uncertainty)
+
+# CODE-TRACKED FACTS (schema 0.15.0). These describe the call site's SOURCE, not its traffic, so the
+# platform keeps them in sync as the code changes and re-imports them on every push. Both are OPTIONAL
+# and both distinguish ABSENT from EMPTY: omitting `output_schema` means "this shard does not carry the
+# fact" (the platform keeps whatever it captured), NOT "this call site declares no structured output.
+# To positively assert the code declares none, emit `output_schema: null`.
+
+# The structured output the call site's code declares, verbatim as a JSON Schema. Read by the
+# platform's Malformed Output classifier, which validates each observation's output against it. A
+# declaration here WINS over the platform's own capture — the repo is the source of truth, so editing
+# this file is how a user corrects a stale one.
+output_schema: <JSON Schema object | null>
+
+# The tools the call site declares to the model (schema 0.15.0). `name` is the only required field:
+# a tool we can name but not fully specify is still worth declaring, and dropping it would silently
+# hide exactly the tools we understand least.
+tools:
+  - name: <string>
+    description: <string | null>
+    input_schema: <JSON Schema object | null>   # the tool's argument contract
+    source: <string | null>                     # file:line of the declaration
 
 # From the fetched traces
 source_spans:
@@ -370,6 +391,30 @@ taxonomy:
     example_call_site_ids: [<string>, ...]
     example_chain_ids: [<string>, ...]
 ```
+
+## `.tessary/pipeline/capabilities.yaml`
+
+The product-level inventory of what its agents can reach — tools, skills, MCP servers, subagents —
+read out of the CODE (schema 0.15.0). OPTIONAL; a bundle without this shard declares no inventory.
+
+This exists because everything the platform knows about an agent's capabilities today is inferred
+from traffic: its behaviour-drift detector learns a project's normal action skeleton from that
+project's own traces, so "a new capability appeared" and "an established step quietly disappeared"
+are statistical inferences over what the agent happened to do. Against a declared inventory they
+become a **diff** — a capability in the code but never in traces is dead, one in traces but not in
+the manifest is genuinely unexpected — and today those two are indistinguishable.
+
+```yaml
+capabilities:
+  - name: <string>                 # the identifier the code declares
+    kind: <tool | skill | mcp_server | subagent>   # default `tool` when absent
+    description: <string | null>
+    source: <string | null>        # file:line of the declaration
+    call_site_ids: [<string>, ...] # call sites that can reach it; empty/absent = product-wide
+```
+
+At most ONE capabilities shard per bundle — two means one of them is silently losing, and the
+platform rejects the bundle rather than pick.
 
 ## `.tessary/graders/<call_site>/<failure>.yaml`
 
