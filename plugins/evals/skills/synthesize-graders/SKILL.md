@@ -392,13 +392,13 @@ python3 - <<'PY'
 import sys; sys.path.insert(0, "$PLUGIN")
 from pathlib import Path
 import pipeline_io
-pipeline_io.write_meta(Path(".tessary"), "0.14.0", "<product_hint or None>", {},
+pipeline_io.write_meta(Path(".tessary"), "0.15.0", "<product_hint or None>", {},
                        progress={"sites_completed": 0, "sites_total": <N>})
 PY
 python3 "$PLUGIN/pipeline_io.py" lock A .tessary/pipeline/meta.yaml --evals-dir .tessary
 ```
 
-The seed is later overwritten by `finalize.py`, which **preserves** this `0.14.0` version and the `product_hint` when run flag-bare (see Step C.5) — so the version never regresses.
+The seed is later overwritten by `finalize.py`, which **preserves** this `0.15.0` version and the `product_hint` when run flag-bare (see Step C.5) — so the version never regresses.
 
 #### A.1 — Intersect discovery with observed telemetry
 

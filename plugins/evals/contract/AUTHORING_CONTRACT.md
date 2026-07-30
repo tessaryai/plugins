@@ -68,6 +68,8 @@ This document defines the interface between **synthesize-graders** (the orchestr
 | `block_on_fail`, `dataset_refs` | orchestrator (sourced from call-site observed stats / curator input) |
 | `_meta` | orchestrator (incl. v9 `materialized_at` / `body_digest`, set by the platform sync-back) |
 | `expected_spans` | orchestrator (discovery step — telemetry nomenclature read from the call site's code; written on the call-site shard, consumed by the platform; v9 `source: observed` set when grounded in real telemetry) |
+| `output_schema`, `tools` (call-site shard) | orchestrator/platform (schema 0.15.0 — code-tracked facts read from the call site's source; never author-emitted) |
+| `capabilities` (`pipeline/capabilities.yaml`) | orchestrator/platform (schema 0.15.0 — the product's tool/skill/MCP/subagent inventory read from the code) |
 | `kind` | **author** |
 | `_body_source` | **author** sets `platform` to defer (v8); the platform sync-back sets `platform-materialized`, and a human edit promotes to `human` (v9) |
 | `applies_when` | **author** (always LLM-evaluated at runtime) |

@@ -622,6 +622,84 @@ def _bundle_grade_mode_enum(pipeline: Pipeline) -> list[str]:
     return errors
 
 
+VALID_CAPABILITY_KINDS: Final[frozenset[str]] = frozenset(
+    {"tool", "skill", "mcp_server", "subagent"})
+
+
+def _bundle_code_facts(pipeline: Pipeline) -> list[str]:
+    """Validate the CODE-TRACKED FACTS (schema 0.15.0): a call site's `output_schema` and
+    `tools`, and the product-level `capabilities` manifest.
+
+    These describe the product's SOURCE rather than its traffic, so the platform reads them
+    from the repo and keeps them in sync as the code changes. All three are OPTIONAL, and all
+    three distinguish ABSENT from EMPTY — omitting `output_schema` means "this shard does not
+    carry the fact" (the platform keeps whatever it captured), while an explicit `null` asserts
+    the code declares no structured output. So `output_schema: null` must NOT be an error.
+
+    Validation is deliberately shallow: `output_schema` and `input_schema` are arbitrary JSON
+    Schemas whose contents are the user's business, and the platform already treats a schema it
+    cannot compile as "no schema". What is checked is the shape the platform's parser depends on
+    — that a mapping is a mapping and a list is a list — because those are what silently drop
+    fields on import rather than failing loudly.
+    """
+    errors: list[str] = []
+    for cs in pipeline.get("call_sites") or []:
+        if not isinstance(cs, dict):
+            continue
+        cid = cs.get("id")
+
+        schema = cs.get("output_schema")
+        if schema is not None and not isinstance(schema, dict):
+            errors.append(f"call_site {cid!r} output_schema must be a JSON Schema mapping "
+                          f"(or null to assert the code declares none), got {type(schema).__name__}")
+
+        tools = cs.get("tools")
+        if tools is not None:
+            if not isinstance(tools, list):
+                errors.append(f"call_site {cid!r} tools must be a list when present")
+            else:
+                for i, tool in enumerate(tools):
+                    where = f"call_site {cid!r} tools[{i}]"
+                    if not isinstance(tool, dict):
+                        errors.append(f"{where} must be a mapping")
+                        continue
+                    # `name` is the ONLY required field: a tool we can name but not fully
+                    # specify is still worth declaring, and requiring more would silently drop
+                    # exactly the tools we understand least.
+                    if not _is_nonempty_str(tool.get("name")):
+                        errors.append(f"{where} requires a non-empty name")
+                    isch = tool.get("input_schema")
+                    if isch is not None and not isinstance(isch, dict):
+                        errors.append(f"{where} input_schema must be a JSON Schema mapping when present")
+
+    caps = pipeline.get("capabilities")
+    if caps is not None:
+        if not isinstance(caps, list):
+            errors.append("capabilities must be a list when present")
+        else:
+            for i, cap in enumerate(caps):
+                where = f"capabilities[{i}]"
+                if not isinstance(cap, dict):
+                    errors.append(f"{where} must be a mapping")
+                    continue
+                if not _is_nonempty_str(cap.get("name")):
+                    errors.append(f"{where} requires a non-empty name")
+                # `kind` is an OPEN vocabulary, matching the platform (`model/Capability.kind` is a
+                # plain String; its @Schema annotation is documentation, not a constraint). It must not
+                # be rejected here: the platform's observer is the intended WRITER of this manifest, so
+                # hard-failing an unrecognized kind would make the plugin reject a bundle the platform
+                # itself just produced — the validator would be the thing breaking the contract. A
+                # non-string kind is still wrong, because that is a shape error rather than a
+                # vocabulary one, and absent is legal (it defaults to `tool` platform-side).
+                kind = cap.get("kind")
+                if kind is not None and not isinstance(kind, str):
+                    errors.append(f"{where} kind must be a string when present, got {type(kind).__name__}")
+                ids = cap.get("call_site_ids")
+                if ids is not None and not isinstance(ids, list):
+                    errors.append(f"{where} call_site_ids must be a list when present")
+    return errors
+
+
 def _bundle_expected_spans(pipeline: Pipeline) -> list[str]:
     """If a call site declares `expected_spans` (schema 0.12.0), validate each entry.
 
@@ -1167,6 +1245,7 @@ def _run_bundle(evals_dir: Path, calibration_csv: Path | None,
     bundle_errors += _bundle_invocation_enum(pipeline)
     bundle_errors += _bundle_grade_mode_enum(pipeline)
     bundle_errors += _bundle_expected_spans(pipeline)
+    bundle_errors += _bundle_code_facts(pipeline)
     bundle_errors += _bundle_duplicate_ids(graders)
     bundle_errors += _bundle_taxonomy_reachability(pipeline)
     bundle_errors += _bundle_chain_acyclic(pipeline)

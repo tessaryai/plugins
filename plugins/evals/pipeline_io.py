@@ -15,6 +15,7 @@ Shard paths under `.tessary/pipeline/`:
     invariants.yaml                 -> implicit_invariants, invariant_coverage
     chains.yaml                     -> chains[]
     taxonomy.yaml                   -> taxonomy[]
+    capabilities.yaml               -> capabilities[]
     call_sites/<id_path>.yaml       -> one call_site mapping per file
     failure_modes/<id_path>.yaml    -> {failure_modes: [...]} per call site
     failure_modes/_chains.yaml      -> {failure_modes: [...]} for chain scope
@@ -128,6 +129,7 @@ def load_pipeline(evals_dir: Path) -> dict[str, Any]:
         "failure_modes": [],
         "quality_dimensions": [],
         "taxonomy": [],
+        "capabilities": [],
     }
 
     meta = _expect_mapping(_load_yaml(p / "meta.yaml"), p / "meta.yaml")
@@ -161,6 +163,14 @@ def load_pipeline(evals_dir: Path) -> dict[str, Any]:
 
     chains_doc = _expect_mapping(_load_yaml(p / "chains.yaml"), p / "chains.yaml")
     out["chains"] = _expect_list(chains_doc.get("chains"), "chains", p / "chains.yaml")
+
+    # capabilities.yaml (schema 0.15.0) — the product's tool/skill/MCP/subagent inventory read out
+    # of the CODE. Optional like every other shard here: a bundle without it declares no inventory,
+    # which is NOT the same as declaring it has none.
+    caps_doc = _expect_mapping(_load_yaml(p / "capabilities.yaml"), p / "capabilities.yaml")
+    out["capabilities"] = _expect_list(
+        caps_doc.get("capabilities"), "capabilities", p / "capabilities.yaml"
+    )
 
     taxonomy_doc = _expect_mapping(_load_yaml(p / "taxonomy.yaml"), p / "taxonomy.yaml")
     out["taxonomy"] = _expect_list(
