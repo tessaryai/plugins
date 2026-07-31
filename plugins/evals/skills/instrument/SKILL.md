@@ -203,7 +203,7 @@ Tell the user, plainly:
    Each environment prints its tagged-span count and distinct call sites. A row reading `0 0`
    means no tagged span has arrived in that env yet.
 
-4. Then make sure the repo is connected on the platform (Settings → Git — the GitHub App). Once
+4. Then make sure the repo is connected on the platform (Settings → Git integration — the GitHub App). Once
    tagged traffic is flowing and the repo is readable, the platform's observer authors the
    `.tessary/` bundle — call sites, failure modes, grader definitions — as a draft PR on the
    org's schedule. Review and merge it; that is the whole bootstrap.

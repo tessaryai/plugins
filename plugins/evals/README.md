@@ -100,7 +100,7 @@ There is no local generation step. Once the three preconditions hold —
 
 1. the repo is **linked** (`/evals:connect`),
 2. its call sites are **tagged and producing traffic** (`/evals:instrument`, then exercise the app),
-3. the repo is **connected on the platform** (Settings → Git — the GitHub App),
+3. the repo is **connected on the platform** (Settings → Git integration — the GitHub App),
 
 — the platform's **observer** authors the eval bundle for you, on your org's schedule: it reads the
 code, writes the `.tessary/` bundle (call-site shards, code-tracked facts like output schemas and

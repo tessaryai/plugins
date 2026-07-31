@@ -23,7 +23,7 @@ things and then gets out of the way:
 After this, the user assesses call sites by *talking to you* — you call the platform tools
 directly. No local synthesis pipeline, no Python per read. The `.tessary/` bundle itself is
 **authored and maintained by the platform's observer**: once tagged traffic is flowing and the
-repo is connected on the platform (Settings → Git), the observer reads the code on the org's
+repo is connected on the platform (Settings → Git integration), the observer reads the code on the org's
 schedule and proposes the bundle — call sites, failure modes, grader definitions — as a draft
 PR the user reviews and merges. There is no local bootstrap step anymore.
 
@@ -166,7 +166,7 @@ Prints the linked `<org>/<project>` and counts of call sites / graders / failure
 dimensions. Relay it. If the pipeline is empty/unavailable (a brand-new project), say so plainly —
 "this project has no graders yet" — and explain how they arrive: tag the call sites
 (`/evals:instrument`), exercise the app so tagged traffic flows, and connect the repo on the
-platform (Settings → Git); the platform's observer then authors the starter bundle as a draft PR
+platform (Settings → Git integration); the platform's observer then authors the starter bundle as a draft PR
 to review and merge. No local generation step.
 
 Then check whether any telemetry is actually bound to a call site:
@@ -210,7 +210,7 @@ There is no local generation step. The full path, in order:
 2. **`/evals:instrument`** — stamp `tessary.call_site.id` onto the repo's LLM call spans, then
    exercise the app so tagged traffic reaches the platform. Call sites materialize from real
    spans; nothing is inferred from code alone.
-3. **Connect the repo on the platform** (Settings → Git — the GitHub App). This is what lets the
+3. **Connect the repo on the platform** (Settings → Git integration — the GitHub App). This is what lets the
    platform read the code and open PRs against it.
 4. **The platform's observer does the rest**, on the org's schedule: it reads the repo, authors
    the `.tessary/` bundle — call-site shards, code-tracked facts, failure modes, grader

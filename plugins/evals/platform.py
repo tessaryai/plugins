@@ -388,7 +388,7 @@ def cmd_status(args: argparse.Namespace) -> int:
         # relayed status doesn't read as a broken wall of zeros.
         print("  → this project has no eval pipeline yet. Tag your call sites with /evals:instrument "
               "and exercise the app; once tagged traffic is flowing and the repo is connected on the "
-              "platform (Settings → Git), the platform's observer authors the starter bundle as a "
+              "platform (Settings → Git integration), the platform's observer authors the starter bundle as a "
               "draft PR for you to review.")
     return 0
 
