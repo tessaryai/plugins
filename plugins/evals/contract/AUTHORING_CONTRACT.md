@@ -1,9 +1,9 @@
 # Grader-author contract (v9)
 
-This document defines the interface between **synthesize-graders** (the orchestrator) and any **grader author** invoked during the grader-synthesis phase. It exists so that the author is swappable: the bundled `authors/default/` is the OSS fallback; closed-source or third-party authors (e.g. `evals-prompt`) declare conformance to this contract and become drop-in replacements.
+This document defines the interface between a **bundle-authoring orchestrator** and any **grader author** it invokes. Today the orchestrator is the **evals-platform observer** (its sandboxed agent authors grader definitions in-repo and proposes them as draft PRs); historically it was this plugin's `synthesize-graders` skill, and the contract deliberately survives that move unchanged — an author is swappable, and closed-source or third-party authors (e.g. `evals-prompt`) declare conformance and become drop-in replacements. A human editing grader YAML by hand in `.tessary/` is bound by the same rules.
 
 - **Authoritative schema**: [`grader.schema.json`](./grader.schema.json) — the on-disk grader YAML.
-- **Authoritative enforcer**: `validate.py` (at the plugin root) — runs the schema rules plus cross-field invariants, per-file and `--bundle` cross-references.
+- **Authoritative enforcer**: the bundle validator, which is **platform-owned** (`tessary-evals-validate` in the platform's authoring sandbox, and the platform's CI) — it runs the schema rules plus cross-field invariants, per-file and `--bundle` cross-references. References to `validate.py` below mean this validator.
 - **Contract version**: 9. **v9 is author-transparent** — it does not change what a grader author emits for a fresh synthesis (a deferred body is still `_body_source: platform` + empty body; the v9-removed fields were orchestrator-owned or never author-emitted; the materialized/human body states are produced by the platform's sync-back, never by an author). So an author that already conforms to v8 conforms to v9 unchanged, and `_meta.author_contract_version` stays `8` for those authors (see § "Declaring conformance"). v8 **defers judge-prompt authoring to the platform** for `kind=llm_judge`/`score`: the author emits the grader *definition* (kind, `applies_when`, `rubric_levels`+`score_scale` for score, `confidence`, `rationale`) plus a top-level `_body_source: platform` marker, and does **not** author `judge_prompt`/`rubric`. The platform expands the verdict body on import. `kind=deterministic`/`execution`/`agentic` bodies are unchanged — still plugin-authored inline.
 
 ## What changed in v9
@@ -291,7 +291,7 @@ Score graders never use `applies_when` / `not_applicable` (they always apply whe
 
 The orchestrator (or its step-6 subagents) runs `validate.py` on every emitted grader. On failure it re-invokes the author with the original input **plus** a `validator_feedback` block (see input schema above). Up to **3 retries** total. After the third failure, the orchestrator writes the last attempt to disk with a top-level `_validation_error: <message>` key and continues — the operator handles it during review.
 
-When `_validation_error` is set on a grader file, `validate.py` returns exit 0 on subsequent runs (it short-circuits all other rules). This is intentional: the operator-facing `report.md` "Validation warnings" section and the `<F> failed validation` count in the summary line already surface these files; a later `--pipeline` cross-check pass should not double-flag them.
+When `_validation_error` is set on a grader file, `validate.py` returns exit 0 on subsequent runs (it short-circuits all other rules). This is intentional: the file is already flagged for the operator (in the draft PR carrying it, and in the platform UI after import); a later cross-check pass should not double-flag it.
 
 Authors should treat `validator_feedback.errors` as the primary signal for what to change on retry; the orchestrator does not paraphrase or filter the validator output.
 
@@ -306,7 +306,7 @@ An author conforms to this contract when:
 
 The orchestrator discovers authors by **two distinct invocation models**:
 
-- **Skill-based authors** (e.g. `evals-prompt`) — invoked through the Skill tool. Preferred when available.
-- **Bundled markdown author** (`authors/default/AUTHOR.md`) — read as a procedure and followed inline by the step-6 subagent. Always available because it ships with this plugin. No Skill-tool call.
+- **Skill-based authors** (e.g. `evals-prompt`) — invoked through the Skill tool, where one is available. The platform's own authoring agents use this model.
+- **Inline procedure authors** — a markdown procedure read and followed inline by the authoring agent (the historical `authors/default/AUTHOR.md` shipped with this plugin's synthesis skill; retired with it).
 
-This distinction matters: subagents that try to invoke the bundled author via the Skill tool will fail because there is no skill of that name. The orchestrator's subagent prompt must branch on author type. See `SKILL.md` § "Grader subagent template" (its "Author discovery" paragraph) for the exact branching logic. Future versions may surface explicit selection.
+This distinction matters: an agent that tries to invoke an inline procedure via the Skill tool will fail because there is no skill of that name. An orchestrator's subagent prompt must branch on author type.

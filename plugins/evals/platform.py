@@ -1,23 +1,19 @@
 #!/usr/bin/env python3
-"""platform.py — the evals *assistant's* thin client to evals.tessary.ai.
+"""platform.py — the evals plugin's client to evals.tessary.ai.
 
-Distinct from `publish.py` (which pushes a full synthesized `.tessary/` bundle).
-This is the **integration front door** driven by the `connect` skill: link a repo
-to a project, report project status, and wire the platform's authenticated MCP
-server into the user's Claude Code so the coding agent gets native tools
+The **integration front door** driven by the `connect` skill: link a repo to a
+project, report project status, and wire the platform's authenticated MCP server
+into the user's Claude Code so the coding agent gets native tools
 (`list_call_sites`, `list_graders`, `query_*`, `run_triage`, `propose_grader_edit`,
 …) instead of shelling out to Python for every read.
 
-It deliberately reuses `publish.py`'s HTTP / TLS / credentials / device-link
-plumbing (same directory) rather than duplicating ~150 lines.
+Everything downstream of the link lives on the platform: the observer reads the
+repo on the org's schedule, authors and refreshes the `.tessary/` bundle through
+draft PRs, and imports it on merge. This client carries no synthesis, no upload,
+and no bundle tooling — its job ends when the repo is linked, instrumented
+(`/evals:instrument`) and emitting OTLP.
 
-It is also the read side that `synthesize-graders` grounds on: `envs` /
-`preflight` / `coverage` / `fetch-traces` answer "is there real telemetry for
-this call site in this environment, and give me its spans verbatim". Call-site
-identity is the explicit `tessary.call_site.id` span tag and nothing else, so an
-untagged span is invisible to all four (explicit-or-nothing).
-
-Subcommands (all stdlib-only):
+Subcommands (all stdlib-only, single-file):
 
   link          Device-authorization handshake → stores a project-scoped ADMIN token
                 under ~/.config/tessary-evals/credentials.json (keyed by repo path).
@@ -32,26 +28,22 @@ Subcommands (all stdlib-only):
   token         Print the stored bearer token — GATED behind --reveal (it is a live,
                 high-privilege secret); used internally by mcp-add, rarely by hand.
   envs          One line per environment: tagged-span count + distinct call sites.
-  preflight     Gate: does <env> carry usable tagged telemetry? Exit code is the answer.
   coverage      Per-call-site span counts in <env>, plus the untagged residue.
-  fetch-traces  Full trace detail for one call site in <env>, one JSON object per
-                line, content verbatim. Bounded by trace COUNT, never truncation.
 
-Exit codes (the runbook branches on these, so they are contract):
+Exit codes (the skills branch on these, so they are contract):
 
   0  ok
   1  not linked (or the stored token was rejected) → run `link` / /evals:connect
-  2  the platform did not answer: network/TLS failure (raised by publish._request),
-     or it answered with 403/404/5xx. Also argparse's own usage-error code — both
-     mean "this invocation produced no data", so the runbook treats them alike.
+  2  the platform did not answer: network/TLS failure, or it answered with
+     403/404/5xx. Also argparse's own usage-error code — both mean "this
+     invocation produced no data", so callers treat them alike.
   3  linked, but <env> has no tagged telemetry → run /evals:instrument, then
      exercise the app. Deliberately distinct from 1: "nothing to ground on" is
      not "not connected".
   4  unknown environment slug
 
-Credentials are keyed by repo root exactly as `publish.py` keys them (the parent
-of `<repo>/.tessary`), so a repo linked here is also "linked" for a later
-`publish.py upload`, and vice-versa — one link, one token, both paths.
+Credentials are keyed by repo root (the parent of `<repo>/.tessary`) — one link,
+one token, every subcommand.
 """
 from __future__ import annotations
 
@@ -60,44 +52,292 @@ import json
 import os
 import re
 import shlex
+import socket
+import ssl
 import subprocess
 import sys
+import time
+import urllib.error
 import urllib.parse
+import urllib.request
+import webbrowser
 from pathlib import Path
 from typing import Any, NamedTuple
 
-# Reuse publish.py's plumbing (same dir). When run as a script, sys.path[0] is
-# this file's directory, so a bare `import publish` resolves.
-import publish  # noqa: E402
+DEFAULT_BASE_URL = "https://evals.tessary.ai"
+
+
+def _client_version() -> str:
+    """Plugin version, read from .claude-plugin/plugin.json next to this script.
+    Surfaced in the User-Agent so the platform — and the zone's Cloudflare WAF —
+    can recognise the official CLI instead of a bare `Python-urllib/X.Y` agent,
+    which Cloudflare's bot rules block."""
+    try:
+        manifest = Path(__file__).resolve().parent / ".claude-plugin" / "plugin.json"
+        return str(json.loads(manifest.read_text()).get("version", "0"))
+    except Exception:
+        return "0"
+
+
+# Default headers on every request. USER_AGENT replaces urllib's `Python-urllib/X.Y`
+# (the string Cloudflare blocks); X-Tessary-Client is the stable marker the zone's
+# WAF skip rule matches on to bypass Super Bot Fight Mode for this client. Neither
+# is a secret — they *identify* the client, they do not *authenticate* it. The
+# project-scoped bearer token remains the only authorization boundary, so a spoofed
+# header buys an attacker nothing beyond skipping bot heuristics on these paths.
+USER_AGENT = f"tessary-evals/{_client_version()} (+https://evals.tessary.ai)"
+CLIENT_HEADER_NAME = "X-Tessary-Client"
+CLIENT_HEADER_VALUE = "evals-cli"
+
+
+# --------------------------------------------------------------------- config
+
+def base_url(arg: str | None) -> str:
+    url = arg or os.environ.get("EVALS_PLATFORM_URL") or DEFAULT_BASE_URL
+    return url.rstrip("/")
+
+
+def config_path() -> Path:
+    root = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
+    return Path(root) / "tessary-evals" / "credentials.json"
+
+
+def repo_key(evals_dir: Path) -> str:
+    # Key by the repo (parent of .tessary/) so one machine can link many repos.
+    return str(evals_dir.resolve().parent)
+
+
+def load_config() -> dict[str, Any]:
+    p = config_path()
+    if not p.exists():
+        return {"projects": {}}
+    try:
+        data = json.loads(p.read_text())
+        data.setdefault("projects", {})
+        return data
+    except (json.JSONDecodeError, OSError):
+        return {"projects": {}}
+
+
+def save_credentials(evals_dir: Path, url: str, token: str, org_slug: str, project_slug: str) -> None:
+    p = config_path()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    cfg = load_config()
+    cfg["base_url"] = url
+    cfg["projects"][repo_key(evals_dir)] = {
+        "token": token,
+        "org_slug": org_slug,
+        "project_slug": project_slug,
+        "base_url": url,
+        "linked_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    }
+    p.write_text(json.dumps(cfg, indent=2))
+    os.chmod(p, 0o600)
+
+
+def linked_project(evals_dir: Path) -> dict[str, Any] | None:
+    return load_config().get("projects", {}).get(repo_key(evals_dir))
 
 
 def _evals_dir(repo: str) -> Path:
-    """The notional `.tessary` dir for a repo, whether or not it exists yet.
-
-    publish.py keys credentials by `evals_dir.resolve().parent` (the repo root),
-    so we pass `<repo>/.tessary` to share the exact same credential key — a repo
-    connected here is recognized by `publish.py` and vice-versa."""
+    """The notional `.tessary` dir for a repo, whether or not it exists yet —
+    credentials are keyed by its parent (the repo root)."""
     return Path(repo).resolve() / ".tessary"
+
+
+# ----------------------------------------------------------------------- http
+
+_SSL_CONTEXT: ssl.SSLContext | None = None
+
+
+def ssl_context() -> ssl.SSLContext:
+    """TLS context that actually finds a CA bundle, cached for the process.
+
+    urllib's default context trusts only OpenSSL's compiled-in CA paths. On the
+    python.org macOS build those paths are empty until you run
+    'Install Certificates.command', so every HTTPS request to evals.tessary.ai
+    dies with CERTIFICATE_VERIFY_FAILED / 'unable to get local issuer
+    certificate' — exactly the consuming-machine failure this guards against.
+    We layer fallbacks, most-specific first:
+
+      1. An explicit bundle from SSL_CERT_FILE / REQUESTS_CA_BUNDLE. Covers a
+         corporate TLS-intercepting proxy whose injected root the system trusts
+         but Python doesn't — the only fix there is to point at its bundle.
+      2. The stdlib default store if it already trusts CAs (Linux, Homebrew
+         Python), detected via cert_store_stats — leave it untouched.
+      3. The certifi bundle if importable. pip ships certifi, so it is present
+         in most environments even when ssl was never wired up to it; this is
+         what rescues the bare python.org macOS build.
+
+    Verification is never disabled — an unverifiable host fails loudly rather
+    than silently sending the link token over plaintext-trust.
+    """
+    global _SSL_CONTEXT
+    if _SSL_CONTEXT is not None:
+        return _SSL_CONTEXT
+    ctx = ssl.create_default_context()
+    explicit = os.environ.get("SSL_CERT_FILE") or os.environ.get("REQUESTS_CA_BUNDLE")
+    if explicit and os.path.isfile(explicit):
+        try:
+            ctx.load_verify_locations(explicit)
+            _SSL_CONTEXT = ctx
+            return ctx
+        except ssl.SSLError:
+            pass  # bad/empty bundle — fall through to the other sources
+    try:
+        has_cas = ctx.cert_store_stats().get("x509_ca", 0) > 0
+    except Exception:
+        has_cas = False
+    if not has_cas:
+        try:
+            import certifi  # type: ignore
+            ctx.load_verify_locations(certifi.where())
+        except Exception:
+            pass  # nothing more we can add; the request will surface the error
+    _SSL_CONTEXT = ctx
+    return ctx
+
+
+def _tls_help(url: str) -> str:
+    return (
+        f"TLS trust error talking to {url}: the certificate could not be verified "
+        "because this machine's Python has no CA bundle it can use.\n"
+        "  • macOS python.org build: run the bundled "
+        "'/Applications/Python 3.x/Install Certificates.command', or "
+        "`pip install --upgrade certifi`.\n"
+        "  • Behind a TLS-intercepting corporate proxy: point Python at its root "
+        "bundle, e.g. `export SSL_CERT_FILE=/path/to/corp-ca.pem` (or "
+        "REQUESTS_CA_BUNDLE), then re-run.\n"
+        "Verification was not disabled — nothing was sent over an untrusted connection."
+    )
+
+
+def _request(method: str, url: str, *, body: bytes | None = None,
+             headers: dict[str, str] | None = None, fatal: bool = True) -> tuple[int, bytes]:
+    merged = {"User-Agent": USER_AGENT, CLIENT_HEADER_NAME: CLIENT_HEADER_VALUE}
+    if headers:
+        merged.update(headers)
+    req = urllib.request.Request(url, data=body, method=method, headers=merged)
+    try:
+        with urllib.request.urlopen(req, timeout=30, context=ssl_context()) as resp:
+            return resp.getcode(), resp.read()
+    except urllib.error.HTTPError as e:
+        return e.code, e.read()
+    except urllib.error.URLError as e:
+        # A one-shot call (status/link-start) treats a transport error as fatal. A long-running
+        # caller that polls for minutes (the device-link loop) passes fatal=False so a single
+        # transient blip doesn't kill the whole flow — it gets a (0, b"") sentinel and retries on
+        # the next tick.
+        if not fatal:
+            return 0, b""
+        reason = e.reason
+        if isinstance(reason, ssl.SSLCertVerificationError) or "CERTIFICATE_VERIFY_FAILED" in str(reason):
+            print(_tls_help(url), file=sys.stderr)
+        else:
+            print(f"network error talking to {url}: {reason}", file=sys.stderr)
+        raise SystemExit(2)
+
+
+def post_json(url: str, payload: dict[str, Any], token: str | None = None,
+              *, fatal: bool = True) -> tuple[int, dict[str, Any]]:
+    headers = {"Content-Type": "application/json"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    code, raw = _request("POST", url, body=json.dumps(payload).encode(), headers=headers, fatal=fatal)
+    try:
+        return code, json.loads(raw or b"{}")
+    except json.JSONDecodeError:
+        return code, {}
+
+
+def get_json(url: str, token: str | None = None) -> tuple[int, dict[str, Any]]:
+    headers = {}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    code, raw = _request("GET", url, headers=headers)
+    try:
+        return code, json.loads(raw or b"{}")
+    except json.JSONDecodeError:
+        return code, {}
 
 
 # --------------------------------------------------------------------- link
 
+def is_headless() -> bool:
+    if os.environ.get("SSH_CONNECTION") or os.environ.get("CI"):
+        return True
+    if sys.platform.startswith("linux") and not os.environ.get("DISPLAY") and not os.environ.get("WAYLAND_DISPLAY"):
+        return True
+    return False
+
+
 def cmd_link(args: argparse.Namespace) -> int:
-    """Device-authorization handshake, delegated to publish.cmd_link so the
-    stored-credential shape is identical across both entry points."""
-    ns = argparse.Namespace(
-        base_url=args.base_url,
-        evals_dir=str(_evals_dir(args.repo)),
-        label=args.label,
-        force=args.force,
-    )
-    return publish.cmd_link(ns)
+    """Device-authorization handshake. Prints a short code + URL, opens the
+    browser, polls until the user confirms in a signed-in browser, then stores a
+    project-scoped token under ~/.config/tessary-evals/."""
+    url = base_url(args.base_url)
+    evals_dir = _evals_dir(args.repo)
+
+    if not args.force:
+        existing = linked_project(evals_dir)
+        if existing and existing.get("token"):
+            # Confirm the stored token still works before reusing it.
+            code, _ = get_json(
+                f"{url}/api/orgs/{existing['org_slug']}/projects/{existing['project_slug']}/pipeline",
+                token=existing["token"])
+            if code != 401:
+                print(f"Already linked to {existing['org_slug']}/{existing['project_slug']}.")
+                return 0
+
+    label = args.label or f"Claude Code on {socket.gethostname()}"
+    code, data = post_json(f"{url}/auth/link/start", {"client_label": label})
+    if code != 200 or "data" not in data:
+        print(f"could not start link (HTTP {code})", file=sys.stderr)
+        return 1
+    d = data["data"]
+    device_code = d["device_code"]
+    verify = d["verification_uri_complete"]
+    interval = max(1, int(d.get("interval", 3)))
+
+    print(f"\nConnect this session to {urllib.parse.urlsplit(url).netloc or url}:")
+    print(f"  → {verify}")
+    print(f"  code: {d['user_code']}")
+    if not is_headless():
+        try:
+            webbrowser.open(verify)
+        except Exception:
+            pass
+    print("Waiting for you to confirm in the browser…", flush=True)
+
+    deadline = time.time() + int(d.get("expires_in", 600))
+    while time.time() < deadline:
+        time.sleep(interval)
+        pc, pdata = post_json(f"{url}/auth/link/poll", {"device_code": device_code}, fatal=False)
+        if pc == 0:
+            continue  # transient network blip this tick — keep polling until the deadline
+        status = (pdata.get("data") or {}).get("status")
+        if status == "ready":
+            pd = pdata["data"]
+            save_credentials(evals_dir, url, pd["token"], pd["org_slug"], pd["project_slug"])
+            print(f"\nLinked to {pd['org_slug']}/{pd['project_slug']}.")
+            return 0
+        if status in ("denied",):
+            print("\nLink was declined in the browser.", file=sys.stderr)
+            return 1
+        if pc == 410 or status == "expired":
+            print("\nLink expired before it was confirmed. Re-run to try again.", file=sys.stderr)
+            return 1
+        # authorization_pending / slow_down → keep polling
+        if status == "slow_down":
+            interval += 1
+    print("\nTimed out waiting for confirmation.", file=sys.stderr)
+    return 1
 
 
 # ------------------------------------------------------------------- status
 
 def _require_link(repo: str) -> dict[str, Any]:
-    proj = publish.linked_project(_evals_dir(repo))
+    proj = linked_project(_evals_dir(repo))
     if not proj or not proj.get("token"):
         print("not linked yet — run `platform.py link` (or /evals:connect) first", file=sys.stderr)
         raise SystemExit(1)
@@ -106,12 +346,12 @@ def _require_link(repo: str) -> dict[str, Any]:
 
 def cmd_status(args: argparse.Namespace) -> int:
     proj = _require_link(args.repo)
-    url = proj.get("base_url") or publish.base_url(args.base_url)
+    url = proj.get("base_url") or base_url(args.base_url)
     org, project, token = proj["org_slug"], proj["project_slug"], proj["token"]
     api = f"{url}/api/orgs/{org}/projects/{project}"
 
     # Project summary — also the token liveness check.
-    code, summary = publish.get_json(api, token=token)
+    code, summary = get_json(api, token=token)
     if code == 401:
         print("stored token was rejected (revoked or expired) — re-run `platform.py link --force`",
               file=sys.stderr)
@@ -121,9 +361,9 @@ def cmd_status(args: argparse.Namespace) -> int:
         return 1
 
     # Pipeline envelope carries the call-site / grader / failure-mode inventory.
-    pcode, penv = publish.get_json(f"{api}/pipeline", token=token)
+    pcode, penv = get_json(f"{api}/pipeline", token=token)
     if pcode == 401:
-        # A 401 here is a token problem, not an empty project — don't mislead toward "bootstrap".
+        # A 401 here is a token problem, not an empty project — don't mislead toward "empty".
         print("stored token was rejected on the pipeline read (revoked or expired) — re-run "
               "`platform.py link --force`", file=sys.stderr)
         return 1
@@ -146,9 +386,10 @@ def cmd_status(args: argparse.Namespace) -> int:
     if pcode != 200 or (numeric and sum(numeric) == 0):
         # An empty/absent pipeline is a normal new-project state, not an error — say so on stdout so a
         # relayed status doesn't read as a broken wall of zeros.
-        print("  → this project has no synthesized pipeline yet; nothing to assess until graders exist "
-              "(tag your call sites with /evals:instrument if they aren't yet, then bootstrap with "
-              "/evals:synthesize-graders).")
+        print("  → this project has no eval pipeline yet. Tag your call sites with /evals:instrument "
+              "and exercise the app; once tagged traffic is flowing and the repo is connected on the "
+              "platform (Settings → Git integration), the platform's observer authors the starter bundle as a "
+              "draft PR for you to review.")
     return 0
 
 
@@ -181,7 +422,7 @@ def _claude_available() -> bool:
 
 def cmd_mcp_add(args: argparse.Namespace) -> int:
     proj = _require_link(args.repo)
-    url = proj.get("base_url") or publish.base_url(args.base_url)
+    url = proj.get("base_url") or base_url(args.base_url)
     token = proj["token"]
     cmd = _mcp_add_command(url, token)
 
@@ -225,12 +466,12 @@ def cmd_mcp_add(args: argparse.Namespace) -> int:
 
 def _forget_credentials(evals_dir: Path) -> bool:
     """Delete this repo's entry from credentials.json. Returns True if one was removed."""
-    cfg = publish.load_config()
-    key = publish.repo_key(evals_dir)
+    cfg = load_config()
+    key = repo_key(evals_dir)
     if key not in cfg.get("projects", {}):
         return False
     del cfg["projects"][key]
-    p = publish.config_path()
+    p = config_path()
     p.write_text(json.dumps(cfg, indent=2))
     os.chmod(p, 0o600)
     return True
@@ -240,7 +481,7 @@ def cmd_unlink(args: argparse.Namespace) -> int:
     """The single place both credential copies are torn down together: the local MCP registration
     (~/.claude.json) and the stored credential (credentials.json)."""
     evals_dir = _evals_dir(args.repo)
-    proj = publish.linked_project(evals_dir)
+    proj = linked_project(evals_dir)
 
     # (a) Remove the repo-local MCP registration (best-effort; fine if `claude` is absent or none exists).
     mcp_removed = False
@@ -282,7 +523,7 @@ def cmd_token(args: argparse.Namespace) -> int:
     return 0
 
 
-# ------------------------------------------------------- telemetry grounding
+# ------------------------------------------------------- telemetry coverage
 
 # The platform caps a facet at 100 buckets (QueryRepository.MAX_FACET_TOP_N). A project with more
 # than that many call sites in one env would silently lose the tail, so we say so rather than lie.
@@ -293,7 +534,7 @@ EXIT_UNKNOWN_ENV = 4
 
 
 def _api_base(proj: dict[str, Any], base_url_arg: str | None) -> str:
-    return proj.get("base_url") or publish.base_url(base_url_arg)
+    return proj.get("base_url") or base_url(base_url_arg)
 
 
 def _project_api(proj: dict[str, Any], base_url_arg: str | None) -> str:
@@ -307,9 +548,8 @@ def _unwrap(code: int, body: dict[str, Any], what: str) -> Any:
 
     Only a 401 means "your link is broken" (exit 1). A 403/404/5xx is a *platform* problem — a
     revoked scope, a version-skewed endpoint, an outage — and routing those to "re-run link" sends
-    the user to fix something that isn't wrong. They share exit 2 with a transport failure, which is
-    what `publish._request` already raises: from the caller's side both mean "the platform did not
-    answer me", and the stderr line says which."""
+    the user to fix something that isn't wrong. They share exit 2 with a transport failure: from
+    the caller's side both mean "the platform did not answer me", and the stderr line says which."""
     if code == 401:
         print("stored token was rejected (revoked or expired) — re-run `platform.py link --force`",
               file=sys.stderr)
@@ -330,7 +570,7 @@ def _unwrap(code: int, body: dict[str, Any], what: str) -> Any:
 
 
 def _environments(proj: dict[str, Any], base_url_arg: str | None) -> list[dict[str, Any]]:
-    code, body = publish.get_json(f"{_project_api(proj, base_url_arg)}/environments", token=proj["token"])
+    code, body = get_json(f"{_project_api(proj, base_url_arg)}/environments", token=proj["token"])
     return _unwrap(code, body, "environments") or []
 
 
@@ -373,7 +613,7 @@ def _call_site_facets(proj: dict[str, Any], base_url_arg: str | None, env_id: st
         "filters": {"environment_id": env_id},
         "top_n": FACET_TOP_N,
     }
-    code, body = publish.post_json(url, payload, token=proj["token"])
+    code, body = post_json(url, payload, token=proj["token"])
     data = _unwrap(code, body, "call-site coverage") or {}
     buckets = data.get("facets") or []
     tagged: list[tuple[str, int]] = []
@@ -389,7 +629,7 @@ def _call_site_facets(proj: dict[str, Any], base_url_arg: str | None, env_id: st
 
 
 def cmd_envs(args: argparse.Namespace) -> int:
-    """One line per environment so the skill can prompt with real numbers instead of a guess."""
+    """One line per environment so the skills can report with real numbers instead of a guess."""
     proj = _require_link(args.repo)
     envs = _environments(proj, args.base_url)
     print(f"ENVIRONMENTS\t{proj['org_slug']}/{proj['project_slug']}\t{_api_base(proj, args.base_url)}")
@@ -399,35 +639,14 @@ def cmd_envs(args: argparse.Namespace) -> int:
         sites = f"{len(cov.tagged)}+" if cov.truncated else str(len(cov.tagged))
         print(f"env\t{e['slug']}\t{spans}\t{sites}\t{str(bool(e.get('is_default'))).lower()}")
     print("\n(spans = observations carrying a tessary.call_site.id tag. A span with no tag is invisible "
-          "to grader generation. The default env is where untagged-environment traffic lands.)",
+          "to every call-site-scoped feature. The default env is where untagged-environment traffic "
+          "lands.)",
           file=sys.stderr)
     return 0
 
 
-def cmd_preflight(args: argparse.Namespace) -> int:
-    """The gate synthesize-graders calls before it authors anything."""
-    proj = _require_link(args.repo)
-    env = _resolve_env(proj, args.base_url, args.env)
-    cov = _call_site_facets(proj, args.base_url, env["id"])
-    spans = sum(c for _, c in cov.tagged)
-    if len(cov.tagged) < args.min:
-        print(f"PREFLIGHT\t{args.env}\tcall_sites={len(cov.tagged)}\tspans={spans}"
-              f"\tuntagged={cov.untagged}\tempty")
-        print(f"\n'{args.env}' has no tagged telemetry (min={args.min}). Grader generation would be "
-              "ungrounded, so it stops here.\n"
-              "  - No call sites instrumented yet? Run /evals:instrument, then exercise the app.\n"
-              f"  - Instrumented but {cov.untagged} untagged spans arriving? The tag is "
-              "`tessary.call_site.id`; check it reaches the exporter.\n"
-              "  - Traffic in a different environment? Re-run with --env <slug> (see `platform.py envs`).",
-              file=sys.stderr)
-        return EXIT_NO_TELEMETRY
-    print(f"PREFLIGHT\t{args.env}\tcall_sites={len(cov.tagged)}\tspans={spans}"
-          f"\tuntagged={cov.untagged}\tok")
-    return 0
-
-
 def cmd_coverage(args: argparse.Namespace) -> int:
-    """The set synthesize-graders intersects against static discovery."""
+    """Per-call-site span counts — how instrument verifies its tags became telemetry."""
     proj = _require_link(args.repo)
     env = _resolve_env(proj, args.base_url, args.env)
     cov = _call_site_facets(proj, args.base_url, env["id"])
@@ -436,7 +655,7 @@ def cmd_coverage(args: argparse.Namespace) -> int:
     print(f"untagged\t{cov.untagged}")
     if cov.truncated:
         # On STDOUT: the caller parses stdout, and a truncation notice that only reaches stderr is a
-        # notice the runbook can act as though it never saw. Coverage is the universe of what gets
+        # notice the caller can act as though it never saw. Coverage is the universe of what gets
         # graded, so an incomplete list must be self-describing.
         print("truncated\ttrue")
         print(f"\nNOTE: the platform returned its maximum of {FACET_TOP_N} facet buckets, so this list "
@@ -444,73 +663,6 @@ def cmd_coverage(args: argparse.Namespace) -> int:
               "silently left ungraded. Narrow the environment, or raise the platform's facet cap.",
               file=sys.stderr)
     return 0 if cov.tagged else EXIT_NO_TELEMETRY
-
-
-_SAFE_NAME = re.compile(r"[^A-Za-z0-9._-]+")
-
-
-def _cache_path(repo: str, env: str, call_site: str) -> Path:
-    safe = _SAFE_NAME.sub("_", call_site).strip("_") or "unnamed"
-    return _evals_dir(repo) / ".cache" / "traces" / _SAFE_NAME.sub("_", env) / f"{safe}.jsonl"
-
-
-def cmd_fetch_traces(args: argparse.Namespace) -> int:
-    """Full trace detail for one call site, written verbatim, one JSON object per line.
-
-    Bounded by the COUNT of traces (`--limit`) and never by clipping content: a judge or grader author
-    that reads a truncated span is being lied to about what production did.
-    """
-    if args.limit < 1:
-        print("--limit must be at least 1 (it bounds the number of traces to fetch)", file=sys.stderr)
-        raise SystemExit(2)
-    proj = _require_link(args.repo)
-    env = _resolve_env(proj, args.base_url, args.env)
-    api = _project_api(proj, args.base_url)
-    token = proj["token"]
-
-    # Page the trace list (server-side filtered to this env + call site) until we have `--limit` ids.
-    # Dedupe across pages and refuse to reuse a cursor: a server that repeats a cursor, or returns rows
-    # without advancing, would otherwise spin here or write the same trace twice.
-    ids: list[str] = []
-    seen: set[str] = set()
-    seen_cursors: set[str] = set()
-    cursor: str | None = None
-    while len(ids) < args.limit:
-        params = {"environment": args.env, "callSite": args.call_site, "limit": min(args.limit - len(ids), 100)}
-        if cursor:
-            params["cursor"] = cursor
-        code, body = publish.get_json(f"{api}/traces?{urllib.parse.urlencode(params)}", token=token)
-        page = _unwrap(code, body, "traces") or {}
-        rows = page.get("traces") or []
-        for row in rows:
-            trace_id = row.get("id")
-            if trace_id and trace_id not in seen:
-                seen.add(trace_id)
-                ids.append(trace_id)
-        cursor = page.get("next_cursor")
-        if not cursor or not rows or cursor in seen_cursors:
-            break
-        seen_cursors.add(cursor)
-    ids = ids[: args.limit]
-
-    if not ids:
-        print(f"no traces for call site '{args.call_site}' in env '{args.env}'", file=sys.stderr)
-        return EXIT_NO_TELEMETRY
-
-    out = Path(args.out) if args.out else _cache_path(args.repo, args.env, args.call_site)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    spans = 0
-    with out.open("w") as fh:
-        for trace_id in ids:
-            code, body = publish.get_json(f"{api}/traces/{urllib.parse.quote(trace_id)}", token=token)
-            detail = _unwrap(code, body, f"trace {trace_id}")
-            if not detail:
-                continue
-            spans += len(detail.get("observations") or [])
-            fh.write(json.dumps(detail, separators=(",", ":")) + "\n")
-
-    print(f"FETCHED\t{args.env}\t{args.call_site}\ttraces={len(ids)}\tobservations={spans}\tout={out}")
-    return 0
 
 
 # ----------------------------------------------------------------------- cli
@@ -547,23 +699,9 @@ def main(argv: list[str]) -> int:
     pe = sub.add_parser("envs", help="list environments with their tagged-span + call-site counts")
     pe.set_defaults(func=cmd_envs)
 
-    pp = sub.add_parser("preflight", help="does <env> carry usable tagged telemetry? (exit 3 if not)")
-    pp.add_argument("--env", required=True, help="environment slug (there is no default — choose one)")
-    pp.add_argument("--min", type=int, default=1, help="minimum tagged call sites required (default: 1)")
-    pp.set_defaults(func=cmd_preflight)
-
     pc = sub.add_parser("coverage", help="per-call-site span counts in <env>, plus the untagged residue")
     pc.add_argument("--env", required=True, help="environment slug")
     pc.set_defaults(func=cmd_coverage)
-
-    pf = sub.add_parser("fetch-traces", help="write one call site's full traces to a local cache file")
-    pf.add_argument("--env", required=True, help="environment slug")
-    pf.add_argument("--call-site", required=True, help="call-site id (the tessary.call_site.id tag value)")
-    pf.add_argument("--limit", type=int, default=25,
-                    help="max TRACES to fetch (default: 25). Content is never truncated — only the count "
-                         "of traces is bounded.")
-    pf.add_argument("--out", default=None, help="output path (default: .tessary/.cache/traces/<env>/<id>.jsonl)")
-    pf.set_defaults(func=cmd_fetch_traces)
 
     args = p.parse_args(argv)
     return args.func(args)

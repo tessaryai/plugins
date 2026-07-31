@@ -2,8 +2,9 @@
 
 A Claude Code plugin that connects your repo to [evals.tessary.ai](https://evals.tessary.ai) and lets
 you work with your evals **from the coding agent** — assess call sites, inspect graders, query
-failing traces, and run triage, all as native tools. When you have no evals yet, it can bootstrap a
-calibrated starter suite straight from your code.
+failing traces, and run triage, all as native tools. Grader authoring itself lives on the platform:
+its observer reads your repo, proposes the `.tessary/` eval bundle as a draft PR, and keeps it
+current as your code changes.
 
 ## Install
 
@@ -21,9 +22,9 @@ In any Claude Code session:
 ```
 
 > **Start here, always.** The order is `/evals:connect` → [`/evals:instrument`](#bind-your-call-sites-evalsinstrument)
-> → exercise your app → [`/evals:synthesize-graders`](#bootstrap-a-starter-suite-greenfield). Grader
-> generation reads your project's real traces, so it needs a link and tagged telemetry before it can
-> produce anything worth running.
+> → exercise your app → [connect the repo on the platform](#how-graders-come-to-exist). Grader
+> authoring reads your project's real traces and your code, so it needs a link, tagged telemetry,
+> and a readable repo before it can produce anything worth running.
 
 This links the current repo to a project on evals.tessary.ai (a one-time device-code handshake in
 your browser), then registers the platform's authenticated tools into Claude Code — privately, scoped
@@ -67,7 +68,7 @@ OTEL_EXPORTER_OTLP_HEADERS=Authorization=Bearer <your link token>
 OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
 ```
 
-Run your app and traces appear in the project — ready to `assess`, or to calibrate graders against.
+Run your app and traces appear in the project — ready to assess, or to author graders against.
 If your app has no OpenTelemetry yet, follow the project's **Connect traces** step for the setup
 guide; any OpenTelemetry-capable emitter works.
 
@@ -76,7 +77,7 @@ guide; any OpenTelemetry-capable emitter works.
 Traces arriving is not the same as traces being *usable*. The eval machinery is call-site-keyed, and
 the platform learns a span's call site from exactly one thing — the explicit **`tessary.call_site.id`**
 span attribute. There is no filepath or span-name inference: an untagged span ingests fully, shows up
-in the trace viewer, and is **invisible to grader generation**.
+in the trace viewer, and is **invisible to every call-site-scoped feature**.
 
 ```
 /evals:instrument
@@ -93,56 +94,25 @@ python3 platform.py envs                     # tagged spans + call sites, per en
 python3 platform.py coverage --env prod      # per-call-site counts, plus the untagged residue
 ```
 
-## Bootstrap a starter suite (greenfield)
+## How graders come to exist
 
-If the repo has **no evals at all** and you want a full starter suite — graders, datasets, and a
-self-contained visual report — run the heavier bootstrap:
+There is no local generation step. Once the three preconditions hold —
 
-```
-/evals:synthesize-graders --env prod
-```
+1. the repo is **linked** (`/evals:connect`),
+2. its call sites are **tagged and producing traffic** (`/evals:instrument`, then exercise the app),
+3. the repo is **connected on the platform** (Settings → Git integration — the GitHub App),
 
-It **requires a linked project with tagged telemetry**, and grades only the call sites your traces
-actually exercised. A grader written from source alone is a guess about what your model does; one
-written against real spans is a measurement. Call sites discovered in code but never observed are
-dropped and listed in `.tessary/pipeline/skipped_sites.yaml` with a reason, so the gaps are visible
-rather than silent.
+— the platform's **observer** authors the eval bundle for you, on your org's schedule: it reads the
+code, writes the `.tessary/` bundle (call-site shards, code-tracked facts like output schemas and
+tool declarations, failure modes, quality dimensions, grader definitions), and opens a **draft PR**
+against your repo. You review and merge; the merge imports the bundle into the platform, which then
+authors each grader's verdict body from real traces. The same loop keeps the bundle current as your
+code changes — every update arrives as a PR, never a silent write.
 
-The run synthesizes a `.tessary/` bundle locally, one call site at a time, with a preview after the
-first site, and can publish it back with `--publish`. This is the one-time greenfield path;
-**`/evals:connect` is the ongoing front door** once a project exists.
-
-Everything the bootstrap produces lands in `.tessary/` in your repo:
-
-| Path | What it is |
-| --- | --- |
-| `.tessary/index.html` | Self-contained visual report — open it in a browser, no server needed. |
-| `.tessary/report.md` | Human-readable walkthrough of every grader. |
-| `.tessary/graders/*.yaml` | One grader per failure mode. Run these on the platform against golden datasets. |
-| `.tessary/datasets/*.jsonl` | Replayable input rows captured from the traces fetched for each call site. |
-| `.tessary/pipeline/` | Call sites, failure modes, taxonomy. |
-| `.tessary/pipeline/instrumentation.yaml` | `call_site_id` → file/line/method, written by `/evals:instrument`. |
-| `.tessary/pipeline/skipped_sites.yaml` | Call sites found in code but **not** graded, and why (`not_instrumented`, `no_observed_traces`). |
-| `.tessary/.cache/` | Traces fetched from the platform. Gitignore it; never uploaded. |
-
-### Targeted regeneration
-
-After a code change makes specific graders stale and you already know which ones:
-
-```
-/evals:regenerate-grader <grader_id|call_site_id|chain_id>
-```
-
-Re-authors just the named graders in place — no discovery, triage, or approval gates.
-
-## Validating a bundle
-
-```bash
-python3 validate.py --bundle .tessary/
-```
-
-Runs every check on a generated bundle: failure-mode coverage, schema conformance, dedup uniqueness,
-lock consistency.
+The `.tessary/` directory in your repo is the **source of truth**: you can edit any of it directly
+(adjust a grader's gate, retire a failure mode, fix a description) and the platform imports your
+version on push. The bundle's format is documented in [`output_format.md`](output_format.md); grader
+authoring rules live in [`contract/AUTHORING_CONTRACT.md`](contract/AUTHORING_CONTRACT.md).
 
 ## License
 

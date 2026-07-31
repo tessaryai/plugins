@@ -20,10 +20,12 @@ things and then gets out of the way:
    `get_grader`, `propose_grader_edit`, `reload_pipeline`.
 4. **Report** what's in the project so the user knows what they can do next.
 
-After this, the user assesses/creates call sites by *talking to you* — you call the platform
-tools directly. No local synthesis pipeline, no `.tessary/` bundle, no Python per read. (The
-heavier `/evals:synthesize-graders` bootstrap still exists for greenfield repos with no
-project yet — see "When to bootstrap instead" below.)
+After this, the user assesses call sites by *talking to you* — you call the platform tools
+directly. No local synthesis pipeline, no Python per read. The `.tessary/` bundle itself is
+**authored and maintained by the platform's observer**: once tagged traffic is flowing and the
+repo is connected on the platform (Settings → Git integration), the observer reads the code on the org's
+schedule and proposes the bundle — call sites, failure modes, grader definitions — as a draft
+PR the user reviews and merges. There is no local bootstrap step anymore.
 
 ## The only network egress
 
@@ -43,8 +45,8 @@ PLUGIN="${CLAUDE_PLUGIN_ROOT:-$(find ~/.claude -name SKILL.md -path '*/evals/ski
 echo "PLUGIN=$PLUGIN"
 ```
 
-`platform.py` is the thin client; it reuses `publish.py`'s device-link/TLS/credentials plumbing,
-so the stored token is shared with the synthesis path (link once, use everywhere).
+`platform.py` is the whole client — device-link, TLS, credentials, status and coverage in one
+stdlib-only file. The stored token is keyed by repo root (link once, use everywhere).
 
 ## Flow
 
@@ -66,9 +68,8 @@ org/project to link, and confirms. On success it stores a project-scoped **ADMIN
   step 3 (the MCP registration may still be missing).
 - **No project yet (new account)** → connect links a repo to an *existing* project. The browser
   flow lets the user create one during confirmation, so tell them: "pick a project — or create one
-  — on the confirmation screen." If they have **no evals at all** and want a starter suite generated
-  from their code, that's the greenfield bootstrap (`/evals:synthesize-graders`, see "When to
-  bootstrap instead"), not connect.
+  — on the confirmation screen." A brand-new project starts empty; graders arrive via the
+  platform's observer once traffic flows (see "How graders come to exist" below).
 - **Headless / no browser** (SSH, CI) → it prints the URL + code for the user to open elsewhere,
   then polls (resilient to transient blips, up to ~10 min). Relay the URL and code, say you're
   waiting for their confirmation, and end your turn — don't spin.
@@ -97,10 +98,10 @@ printed):
 
 ```bash
 BASE="$(PYTHONPATH="$PLUGIN" python3 - <<'PY'
-import publish
+import platform as p  # the plugin's platform.py (via PYTHONPATH), not the stdlib module
 from pathlib import Path
-p = publish.linked_project(Path('.').resolve() / '.tessary') or {}
-print(p.get('base_url') or publish.DEFAULT_BASE_URL)
+proj = p.linked_project(Path('.').resolve() / '.tessary') or {}
+print(proj.get('base_url') or p.DEFAULT_BASE_URL)
 PY
 )"
 echo "OTLP endpoint:  $BASE/v1/traces"
@@ -162,10 +163,11 @@ python3 "$PLUGIN/platform.py" status
 ```
 
 Prints the linked `<org>/<project>` and counts of call sites / graders / failure modes / quality
-dimensions. Relay it. If the pipeline is empty/unavailable (a brand-new project with nothing
-synthesized yet), say so plainly — "this project has no graders yet" — and, if the user wants a
-starter suite, offer the bootstrap while **sizing it honestly**: `/evals:synthesize-graders` is a
-multi-minute, phased run that pauses for your approval twice — not the 30-second connect.
+dimensions. Relay it. If the pipeline is empty/unavailable (a brand-new project), say so plainly —
+"this project has no graders yet" — and explain how they arrive: tag the call sites
+(`/evals:instrument`), exercise the app so tagged traffic flows, and connect the repo on the
+platform (Settings → Git integration); the platform's observer then authors the starter bundle as a draft PR
+to review and merge. No local generation step.
 
 Then check whether any telemetry is actually bound to a call site:
 
@@ -175,9 +177,10 @@ python3 "$PLUGIN/platform.py" envs
 
 Each `env` line carries the environment's tagged-span count and distinct call sites. If every
 environment reads `0 0`, nothing in this repo is instrumented yet: spans may be arriving, but none
-carry the `tessary.call_site.id` tag, so they are invisible to grader synthesis. Say so and point
-the user at **`/evals:instrument`**, which tags the call sites in their code. Do not treat this as a
-failure of `connect` — it is the expected state of a freshly-linked repo, and it is the next step.
+carry the `tessary.call_site.id` tag, so they are invisible to every call-site-scoped feature. Say
+so and point the user at **`/evals:instrument`**, which tags the call sites in their code. Do not
+treat this as a failure of `connect` — it is the expected state of a freshly-linked repo, and it is
+the next step.
 
 ### 5 — Hand off
 
@@ -199,15 +202,25 @@ After you reconnect, just ask me things like:
 (These use the Tessary tools, so they only work after you reconnect.)
 ```
 
-## When to bootstrap instead
+## How graders come to exist
 
-`/evals:connect` assumes a project exists (or the user will create one during the link). If the
-repo has **no evals at all** and the user wants a full starter suite generated from their code
-(graders, datasets, a visual report), that's the heavier `/evals:synthesize-graders` bootstrap —
-it synthesizes a `.tessary/` bundle locally and can publish it to a new project. Connect is the
-lean, ongoing front door; synthesize is the one-time greenfield bootstrap. Offer synthesize only
-when `status` shows an empty/absent pipeline and the user wants graders generated, not when they
-just want to work with an existing project.
+There is no local generation step. The full path, in order:
+
+1. **`/evals:connect`** (this skill) — link, wire OTLP, register the MCP tools.
+2. **`/evals:instrument`** — stamp `tessary.call_site.id` onto the repo's LLM call spans, then
+   exercise the app so tagged traffic reaches the platform. Call sites materialize from real
+   spans; nothing is inferred from code alone.
+3. **Connect the repo on the platform** (Settings → Git integration — the GitHub App). This is what lets the
+   platform read the code and open PRs against it.
+4. **The platform's observer does the rest**, on the org's schedule: it reads the repo, authors
+   the `.tessary/` bundle — call-site shards, code-tracked facts, failure modes, grader
+   definitions — and proposes it as a **draft PR**. The user reviews and merges; the merge imports
+   the bundle, and the platform then authors the grader verdict bodies from real traces. The same
+   loop keeps the bundle current as the code changes, and the user can always edit `.tessary/`
+   directly — the repo is the source of truth.
+
+If `status` shows an empty pipeline, the answer is always a missing step in that chain — usually
+step 2 (nothing tagged yet) or step 3 (repo not connected on the platform).
 
 ## Constraints
 
