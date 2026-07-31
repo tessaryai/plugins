@@ -105,9 +105,11 @@ There is no local generation step. Once the three preconditions hold —
 — the platform's **observer** authors the eval bundle for you, on your org's schedule: it reads the
 code, writes the `.tessary/` bundle (call-site shards, code-tracked facts like output schemas and
 tool declarations, failure modes, quality dimensions, grader definitions), and opens a **draft PR**
-against your repo. You review and merge; the merge imports the bundle into the platform, which then
-authors each grader's verdict body from real traces. The same loop keeps the bundle current as your
-code changes — every update arrives as a PR, never a silent write.
+against your repo. You review and merge; the merge imports the bundle into the platform. The
+imported graders are definitions without verdict bodies yet — generate the bodies from real traces
+with the **Generate** action on the project's Pipeline page (a deliberate, spend-incurring step, so
+it is yours to trigger, not automatic). The same loop keeps the bundle current as your code
+changes — every update arrives as a PR, never a silent write.
 
 The `.tessary/` directory in your repo is the **source of truth**: you can edit any of it directly
 (adjust a grader's gate, retire a failure mode, fix a description) and the platform imports your

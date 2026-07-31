@@ -215,9 +215,13 @@ There is no local generation step. The full path, in order:
 4. **The platform's observer does the rest**, on the org's schedule: it reads the repo, authors
    the `.tessary/` bundle — call-site shards, code-tracked facts, failure modes, grader
    definitions — and proposes it as a **draft PR**. The user reviews and merges; the merge imports
-   the bundle, and the platform then authors the grader verdict bodies from real traces. The same
-   loop keeps the bundle current as the code changes, and the user can always edit `.tessary/`
-   directly — the repo is the source of truth.
+   the bundle. The same loop keeps the bundle current as the code changes, and the user can always
+   edit `.tessary/` directly — the repo is the source of truth.
+5. **Generate the verdict bodies.** Imported graders are definitions with `_body_source: platform`
+   and no body yet — they cannot grade until the user triggers **Generate** on the project's
+   Pipeline page, which authors each body from real traces. This is deliberately manual (it incurs
+   LLM spend), so when you relay the hand-off, say it explicitly: "after you merge the bundle PR,
+   hit Generate on the Pipeline page to bring the graders to life."
 
 If `status` shows an empty pipeline, the answer is always a missing step in that chain — usually
 step 2 (nothing tagged yet) or step 3 (repo not connected on the platform).
