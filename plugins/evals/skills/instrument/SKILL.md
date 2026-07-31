@@ -206,7 +206,9 @@ Tell the user, plainly:
 4. Then make sure the repo is connected on the platform (Settings → Git integration — the GitHub App). Once
    tagged traffic is flowing and the repo is readable, the platform's observer authors the
    `.tessary/` bundle — call sites, failure modes, grader definitions — as a draft PR on the
-   org's schedule. Review and merge it; that is the whole bootstrap.
+   org's schedule. Review and merge it, then trigger **Generate** on the project's Pipeline page
+   to author the grader verdict bodies from real traces (deliberately manual — it incurs LLM
+   spend). That completes the bootstrap.
 
 ## When traces arrive but stay untagged
 
