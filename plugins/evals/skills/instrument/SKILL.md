@@ -1,6 +1,6 @@
 ---
 name: instrument
-description: Stamp `tessary.call_site.id` onto the spans your LLM calls already emit, so production telemetry binds to the call sites graders are keyed on. Run after /evals:connect and before /evals:synthesize-graders. Use when the user says "instrument my call sites", "tag call sites", "why are my traces unassigned", "my call sites are empty", or invokes /evals:instrument.
+description: Stamp `tessary.call_site.id` onto the spans your LLM calls already emit, so production telemetry binds to the call sites graders are keyed on. Run after /evals:connect — it is what makes the platform's observer able to author graders for this repo. Use when the user says "instrument my call sites", "tag call sites", "why are my traces unassigned", "my call sites are empty", or invokes /evals:instrument.
 ---
 
 # instrument — bind this repo's LLM calls to call sites
@@ -94,9 +94,9 @@ and report it — do not delete it, because production spans carrying that id ma
 
 ### 3 — Discover call sites
 
-Dispatch a discovery subagent (`subagent_type: Explore`). This is the same static analysis
-`synthesize-graders` Path B performs — an LLM call is **any place this repo causes a model to
-run**, however the request leaves the process. Search all four invocation classes:
+Dispatch a discovery subagent (`subagent_type: Explore`). An LLM call is **any place this repo
+causes a model to run**, however the request leaves the process. Search all four invocation
+classes:
 
 - **`sdk`** — in-process provider SDK / framework call: `messages.create`,
   `chat.completions.create`, `responses.create`, `generate_content`, `ai.generateText`/`streamText`,
@@ -181,17 +181,11 @@ un-prompted and un-schema'd, so do not skip them for being awkward to instrument
 
 ### 6 — Write the manifest
 
-Write `.tessary/pipeline/instrumentation.yaml` with an entry per tagged call site (§2 shape).
-This file is the handshake with `synthesize-graders`: it is how the generator knows which
-statically-discovered call sites are *supposed* to have telemetry, and therefore which missing
-traces are a real gap rather than dead code.
-
-Commit it. Also make sure the repo ignores the fetch cache, which `synthesize-graders` fills with
-traces pulled back down from the platform:
-
-```bash
-grep -qxF '.tessary/.cache/' .gitignore 2>/dev/null || echo '.tessary/.cache/' >> .gitignore
-```
+Write `.tessary/pipeline/instrumentation.yaml` with an entry per tagged call site (§2 shape), and
+commit it. This file is the durable record of what this skill tagged — it is how a later run (and
+the platform's observer, which reads the whole `.tessary/` bundle) knows which call sites are
+*supposed* to have telemetry, and therefore which missing traces are a real gap rather than dead
+code.
 
 ### 7 — Hand off
 
@@ -209,8 +203,10 @@ Tell the user, plainly:
    Each environment prints its tagged-span count and distinct call sites. A row reading `0 0`
    means no tagged span has arrived in that env yet.
 
-4. Then run `/evals:synthesize-graders`, which will refuse to generate for any call site with no
-   observed traces.
+4. Then make sure the repo is connected on the platform (Settings → Git — the GitHub App). Once
+   tagged traffic is flowing and the repo is readable, the platform's observer authors the
+   `.tessary/` bundle — call sites, failure modes, grader definitions — as a draft PR on the
+   org's schedule. Review and merge it; that is the whole bootstrap.
 
 ## When traces arrive but stay untagged
 

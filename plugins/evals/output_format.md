@@ -1,33 +1,36 @@
-# Output format reference
+# The `.tessary/` bundle — format reference
 
-The skill writes a directory of shards, not a single file. v0.4.0 broke the old
-single-`pipeline.yaml` layout into one shard per logical artifact so each shard
-is small enough to be written by a single subagent and the orchestrator never
-holds the full pipeline content in context.
+The bundle is a directory of shards, not a single file: one shard per logical artifact, small
+enough to be written and reviewed independently.
 
-Stick to these schemas exactly so re-running on the same inputs produces stable
-diffs and the per-grader / bundle validators pass.
+**Who writes it.** The bundle is authored and maintained by the **platform's observer**: it reads
+the repo on the org's schedule, writes these shards, and proposes every change as a draft PR the
+user reviews and merges. A human can edit any shard directly — the repo is the source of truth, and
+the platform imports whatever is at HEAD. (`/evals:instrument` writes exactly one shard,
+`pipeline/instrumentation.yaml`.) Earlier plugin versions synthesized this bundle locally; that
+path is retired, and the artifacts only it produced (noted under **Retired artifacts** below) are
+no longer written.
+
+**Who reads it.** The platform's importer, on every push that touches the bundle. It assembles the
+shards, mirrors them into the project (repo wins), and drops unknown YAML keys by design — which is
+why the parity anchor below exists. Stick to these schemas exactly.
 
 ```
 .tessary/
   pipeline/
-    meta.yaml                          # version, product_hint, runtime
-    packs.yaml                         # engaged packs + interview answers
-    product_profile.yaml               # step-0 product profile
+    meta.yaml                          # version, product_hint, runtime — the one REQUIRED shard
+    product_profile.yaml               # product profile
     invariants.yaml                    # implicit_invariants + invariant_coverage
+    instrumentation.yaml               # call_site_id -> file/line/method (/evals:instrument)
     call_sites/<id_path>.yaml          # one per call site (`::` -> `/`)
     chains.yaml                        # all detected chains
     failure_modes/<call_site_id_path>.yaml  # single_call failures for that site
     failure_modes/_chains.yaml         # chain failures (one file for all)
     quality_dimensions/<call_site_id_path>.yaml  # 1-5 quality axes per judgment site
     taxonomy.yaml                      # full taxonomy tree
+    capabilities.yaml                  # product-level tool/skill/MCP/subagent inventory
   graders/
     <call_site>/<failure>.yaml         # one per grader (`::` -> `/`, drop `::grader`)
-  datasets/
-    <call_site_id>.jsonl               # rows captured from the traces fetched for that call site
-  report.md
-  index.html                           # built by viewer.py
-  .synth-lock.yaml                     # content hashes from the last run
 ```
 
 Filenames nest the canonical `::`-delimited ID as folders (`::` → `/`). Grader
@@ -42,20 +45,10 @@ and quality-dimension shards (`quality_dimensions/<call_site_id_path>.yaml`). A 
 the `tessary.call_site.id` tag value, which normally contains no `::`, so it stays a flat filename
 (`support.answer` → `call_sites/support.answer.yaml`).
 
-## Loading the logical pipeline view
-
-Consumers that want the v0.3-style monolithic pipeline mapping can call
-`pipeline_io.load_pipeline(evals_dir)` (bundled with the plugin) to assemble
-every shard into one in-memory mapping with the same top-level keys
-v0.3 emitted (`version`, `product_hint`, `packs`, `product_profile`,
-`implicit_invariants`, `invariant_coverage`, `runtime`, `call_sites`, `chains`,
-`failure_modes`, `taxonomy`). The shard files on disk remain the source of truth;
-the assembled view is never written back to disk during synthesis.
-
 ## `.tessary/pipeline/meta.yaml`
 
 ```yaml
-version: "0.15.0"
+version: "0.16.0"
 product_hint: <string | null>
 
 runtime:
@@ -68,76 +61,39 @@ runtime:
     medium: <block | warn | report>       # default: warn
     low: <block | warn | report>          # default: report
   redaction_state: <none | partial | redacted | unknown>
-
-progress:                                 # added in schema 0.7.0 (phased synthesis)
-  sites_completed: <int>                  # call sites with all non-deferred graders emitted
-  sites_total: <int>                      # call sites discovered
-  deferred_failure_count: <int>           # failure modes recorded but not yet graded
 ```
 
-`version` is the synthesizer's on-disk schema version, not the plugin version.
-Bump only when the shard layout or shard schemas change. Current schema is
-`0.15.0` (0.7.0 added the `progress` block here, the `priorities.yaml` shard, and
-the `grader_deferred` field on failure modes; 0.8.0 added the `quality_dimensions/`
-shard and the `kind: score` grader for continuous 1–5 quality scoring; 0.9.0 added
-the `invocation` field on call sites so indirect LLM calls — agent CLIs, raw HTTP,
-sandbox runners — are discovered and tracked alongside in-process SDK calls; 0.10.0
-added `scope: trace` graders (grade the final turn of a multi-turn session given the
-prior n-1 messages), the `kind: agentic` grader (binary verdict from an agent in a
-sandbox via `agent_spec`), and the agent-session dataset row shape; 0.11.0 added the
-`default_grade_mode` field on call sites so multi-turn sites are flagged at discovery
-and their graders default to `scope: trace`; 0.12.0 added the `expected_spans` call-site
-field (telemetry nomenclature read from the call site's code, for platform span binding)
-and the grader `_body_source: platform` marker that defers `judge_prompt`/`rubric`
-authoring for `kind=llm_judge`/`score` to the platform — contract v8; 0.13.0 widened
-`_body_source` to the three-state body lifecycle {platform, platform-materialized, human}
-(the platform materializes the verdict body back into the repo via a GitHub PR, and a human
-edit promotes it to `human`), added the optional `_meta.materialized_at`/`body_digest`, added
-the `source: observed | inferred` provenance field on `expected_spans` entries, and removed
-the redundant grader fields `owner`/`cost_budget_tokens`/`latency_budget_ms_p95`/grader-level
-`compliance_tags`/`applies_when_check` — contract v9; 0.14.0 nests shard filenames as folders
-(`::` → `/`) instead of flattening them to `__`, and grader files drop the redundant trailing
-`::grader` — purely an on-disk filename layout change; the grader contract stays v9 and shard
-*contents* are unchanged); 0.15.0 adds the CODE-TRACKED FACTS — `output_schema` and `tools` on the call-site shard, and the `pipeline/capabilities.yaml` inventory — the declarations that describe the product's source rather than its traffic, which the platform reads from the repo and keeps in sync as the code changes. All three are optional and additive: a bundle that omits them parses exactly as before, and the grader contract stays v9.
+`version` is the bundle's on-disk schema version, not the plugin version. Bump only when the shard
+layout or shard schemas change. Current schema is `0.16.0`:
 
-## `.tessary/pipeline/priorities.yaml`
-
-The order in which phased synthesis processes call sites (added in schema 0.7.0).
-
-```yaml
-call_site_ids: [<string>, ...]   # call_site ids, most-important first
-ranking_rationale: <string>      # optional; how the order was chosen
-```
-
-## `.tessary/pipeline/packs.yaml`
-
-```yaml
-packs:
-  - id: <string>                     # pack id (see contract/pack.schema.json)
-    name: <string>
-    version: <string>
-    tier_hint: <free | included | addon | null>
-    enabled_by: <auto | explicit | tier_default>
-                                     # auto      = applies_when matched at step 0
-                                     # explicit  = user passed --pack <id>
-                                     # tier_default = consumer-product policy
-    interview_answers:
-      <question_id>:
-        answer: <free-form>
-        source: <product_profile | invariants | user | default>
-        evidence: <string | null>
-    contributes_compliance_tags: [<string>, ...]
-    content_digest: <hex>            # SHA-256 of pack.yaml + interview.md + failures.md
-    dependencies: [<pack_id>, ...]   # optional; carried from the pack manifest
-    conflicts:    [<pack_id>, ...]   # optional
-```
-
-`enabled_by` and `content_digest` are **orchestrator-added** at assembly time, not
-producer-standard pack-manifest fields: the pack author writes `pack.yaml` /
-`interview.md` / `failures.md`, and the orchestrator stamps `enabled_by` (how the pack
-was engaged) and `content_digest` (the SHA-256 of those three files) onto each entry
-when it writes the assembled `packs.yaml` via `pipeline_io.write_packs`. Treat them as
-a superset of the manifest, present only in the assembled bundle.
+- 0.9.0 added the `invocation` field on call sites so indirect LLM calls — agent CLIs, raw HTTP,
+  sandbox runners — are tracked alongside in-process SDK calls;
+- 0.10.0 added `scope: trace` graders (grade the final turn of a multi-turn session given the prior
+  n-1 messages) and the `kind: agentic` grader (binary verdict from an agent in a sandbox via
+  `agent_spec`);
+- 0.11.0 added the `default_grade_mode` field on call sites so multi-turn sites are flagged at
+  discovery and their graders default to `scope: trace`;
+- 0.12.0 added the `expected_spans` call-site field (telemetry nomenclature read from the call
+  site's code, for platform span binding) and the grader `_body_source: platform` marker that
+  defers `judge_prompt`/`rubric` authoring for `kind=llm_judge`/`score` to the platform —
+  contract v8;
+- 0.13.0 widened `_body_source` to the three-state body lifecycle
+  {platform, platform-materialized, human} (the platform materializes the verdict body back into
+  the repo via a GitHub PR, and a human edit promotes it to `human`), added the optional
+  `_meta.materialized_at`/`body_digest`, added the `source: observed | inferred` provenance field
+  on `expected_spans` entries, and removed the redundant grader fields
+  `owner`/`cost_budget_tokens`/`latency_budget_ms_p95`/grader-level
+  `compliance_tags`/`applies_when_check` — contract v9;
+- 0.14.0 nests shard filenames as folders (`::` → `/`) instead of flattening them to `__`, and
+  grader files drop the redundant trailing `::grader`;
+- 0.15.0 added the CODE-TRACKED FACTS — `output_schema` and `tools` on the call-site shard, and the
+  `pipeline/capabilities.yaml` inventory — the declarations that describe the product's source
+  rather than its traffic. All three are optional and additive;
+- 0.16.0 moved bundle authorship to the platform's observer and retired the synthesis-only
+  artifacts (`packs.yaml`, `priorities.yaml`, `datasets/`, `report.md`, `index.html`,
+  `.synth-lock.yaml`, the `progress` block in this shard). Shard schemas are unchanged; the grader
+  contract stays v9. A bundle still carrying the retired artifacts parses — they are ignored, not
+  errors.
 
 ## `.tessary/pipeline/product_profile.yaml`
 
@@ -178,10 +134,27 @@ invariant_coverage:
     likely_gap_in: [<call_site_id>, ...]
 ```
 
+## `.tessary/pipeline/instrumentation.yaml`
+
+Written by `/evals:instrument` — the durable record of which call sites are tagged in the code,
+where, and how. An id in this file is **frozen**: it is a foreign key held by every grader and every
+ingested span. See the instrument skill for the `state: stale | skipped` semantics.
+
+```yaml
+version: 1
+call_sites:
+  <call_site_id>:
+    file: <string>
+    line: <int>
+    method: <otel_attribute | wrapped_span>
+    tagged_at: <iso8601>
+    state: <stale | skipped>         # only when NOT a live tag; omit for the normal case
+    reason: <string>                 # optional; e.g. user_declined
+```
+
 ## `.tessary/pipeline/call_sites/<id>.yaml`
 
-One file per call site. The orchestrator never reads these in bulk; per-step
-subagents read only the specific shard they're working on.
+One file per call site.
 
 ```yaml
 id: <string>                       # the `tessary.call_site.id` span-tag value, verbatim. Never derived.
@@ -190,12 +163,13 @@ invocation: <sdk | cli_agent | http | sandbox_agent>  # how the model is reached
 provider: <string>                 # "anthropic" / "openai" / "litellm" / "other"
 model: <string | null>
 system_prompt: <string | null>     # often null for cli_agent/sandbox_agent (prompt lives in the external tool)
-shape: <enum>                      # see prompts/per_site_kit.md
+shape: <summarize | extract | rag_answer | classify | draft | route | tool_call | agent_step |
+        conversational_turn | embedding | rerank | guardrail | moderation | ensemble_vote | other>
 shape_confidence: <high | medium | low>
 default_grade_mode: <per_turn | per_conversation>  # schema 0.11.0; default per_turn.
                                    # per_conversation marks a multi-turn site (agents, chat) whose
                                    # turns share a trace and are graded once over the whole session;
-                                   # the orchestrator then authors this site's graders as scope: trace.
+                                   # its graders are then authored as scope: trace.
                                    # The platform treats this as the default; its per-call-site
                                    # curation toggle overrides it.
 intent: <string>
@@ -205,20 +179,19 @@ constraints:
     enforcement: <deterministic | judge>
 sample_count: <int>
 
-# Path B (static repo)
+# Where the call lives in the code (a starting hint, not a boundary)
 file_hint: <string | null>
 line_hint: <int | null>
-surrounding_code: <string | null>  # optional; the code snippet around the call site the discovery
-                                   # step read to derive shape/intent/constraints and expected_spans.
+surrounding_code: <string | null>  # optional; the code snippet around the call site that grounded
+                                   # shape/intent/constraints and expected_spans.
 
 # Telemetry nomenclature the call site's instrumentation emits (schema 0.12.0). OPTIONAL,
-# best-effort, orchestrator-owned — written by the discovery step. Two provenances (v9, `source`):
-# INFERRED (default) from explicit instrumentation visible in `surrounding_code` (OTel
-# start_span("…")/start_as_current_span, Langfuse name= / @observe(name=) /
-# update_current_observation(name=), logger/tracer names, the enclosing function name = the SDK
-# default span name, provider-SDK default naming); OBSERVED from the real spans fetched for this call
-# site — the span name is then a verified fact. Omitted / empty when no hint is found.
-# The platform uses it to bind a grader to the right captured spans/traces.
+# best-effort. Two provenances (v9, `source`): INFERRED (default) from explicit instrumentation
+# visible in `surrounding_code` (OTel start_span("…")/start_as_current_span, Langfuse name= /
+# @observe(name=) / update_current_observation(name=), logger/tracer names, the enclosing function
+# name = the SDK default span name, provider-SDK default naming); OBSERVED from the real spans
+# captured for this call site — the span name is then a verified fact. Omitted / empty when no hint
+# is found. The platform uses it to bind a grader to the right captured spans/traces.
 expected_spans:
   - match_field: <name | model | trace_id | metadata.<key>>  # what the matcher keys on
     match_pattern: <string>          # exact string or glob (* / ?), e.g. "checkout_summary"
@@ -255,15 +228,13 @@ tools:
     input_schema: <JSON Schema object | null>   # the tool's argument contract
     source: <string | null>                     # file:line of the declaration
 
-# From the fetched traces
+# From captured traces (populated platform-side; optional)
 source_spans:
   - trace_id: <hex>
     span_id: <hex>
     parent_span_id: <hex | null>
     service_name: <string | null>
     timestamp: <iso8601 | null>
-
-dataset_path: <string | null>      # e.g. "datasets/<id>.jsonl"
 
 observed:
   first_seen: <iso8601 | null>
@@ -278,12 +249,8 @@ observed:
   cost_estimate_usd: <float | null>
   redaction_state: <none | partial | redacted | unknown>
 
-discovered_at: <iso8601>           # written by step 1 subagent
+discovered_at: <iso8601>
 ```
-
-After step 2+3+4 has run, the same shard carries `shape`, `shape_confidence`,
-`intent`, and `constraints` (initially absent — step-1 writes only the static /
-trace-derived fields).
 
 `invocation` (schema 0.9.0) records *how* the model is reached, so indirect calls
 stay visible: `sdk` (in-process provider/framework SDK — the default and the only
@@ -292,7 +259,7 @@ value pre-0.9.0), `cli_agent` (the repo shells out to an agent/LLM CLI such as
 gateway, no SDK), `sandbox_agent` (an agent/LLM run inside a sandbox runner such as
 e2b/modal/daytona/docker). Absent is treated as `sdk`. Indirect sites usually have
 `system_prompt: null` (the prompt lives in the external tool) and no enforced output
-schema, which shifts their failure surface (see `prompts/per_site_kit.md`).
+schema, which shifts their failure surface.
 
 ## `.tessary/pipeline/chains.yaml`
 
@@ -321,22 +288,22 @@ failure_modes:
     description: <string>
     severity: <low | medium | high>
     layer: <A | B | C>
-    pack_ids: [<string>, ...]
+    pack_ids: [<string>, ...]        # legacy tag set; new failure modes leave it empty
     compliance_tags: [<string>, ...]
-    taxonomy_node_id: <string>       # populated by taxonomy step
+    taxonomy_node_id: <string>
     grader_id: <string | null>       # <failure_mode_id>::grader; null when deferred
-    grader_deferred: <bool>          # 0.7.0; true = recorded but no grader emitted yet
+    grader_deferred: <bool>          # true = recorded but no grader authored yet
 ```
 
-`grader_deferred` (schema 0.7.0): during the first sweep only `severity: high`
-failures are graded (`grader_deferred: false`, `grader_id` set). Medium/low
-failures are recorded with `grader_deferred: true` and `grader_id: null` until
-the user runs `--complete <call_site_id>`.
+`grader_deferred`: only `severity: high` failures get graders in the first authoring sweep
+(`grader_deferred: false`, `grader_id` set). Medium/low failures are recorded with
+`grader_deferred: true` and `grader_id: null` until a later authoring pass — the observer's, or a
+human's — clears them.
 
 ## `.tessary/pipeline/failure_modes/_chains.yaml`
 
 All chain failures live in one shard (small set, cross-chain visibility helps
-during dedup):
+during review):
 
 ```yaml
 failure_modes:
@@ -352,22 +319,21 @@ failure_modes:
     compliance_tags: [<string>, ...]
     taxonomy_node_id: <string>
     grader_id: <string | null>       # null when deferred
-    grader_deferred: <bool>          # 0.7.0; same semantics as single_call
+    grader_deferred: <bool>          # same semantics as single_call
 ```
 
 ## `.tessary/pipeline/quality_dimensions/<call_site_id>.yaml`
 
-One shard per **judgment** call site (added in schema 0.8.0). Quality dimensions are
-the continuous "how good is the output" axes scored 1–5 — distinct from failure
-modes, which are binary "what went wrong" checks. Each becomes a `kind: score`
-grader (see below). Mechanical sites (`embedding`, strict-schema `extract`, pure
-`guardrail`/`moderation`) have no shard.
+One shard per **judgment** call site. Quality dimensions are the continuous "how good is the
+output" axes scored 1–5 — distinct from failure modes, which are binary "what went wrong" checks.
+Each becomes a `kind: score` grader (see below). Mechanical sites (`embedding`, strict-schema
+`extract`, pure `guardrail`/`moderation`) have no shard.
 
 ```yaml
 quality_dimensions:
   - id: <string>                     # <call_site_id>::<dim_name>
     call_site_id: <string>
-    scope: single_call               # v0.8.0 scopes quality dimensions to single_call
+    scope: single_call
     name: <string>                   # snake_case axis name
     description: <string>            # what this axis measures
     why_it_matters: <string>         # why a sustained dip hurts the product
@@ -380,10 +346,9 @@ quality_dimensions:
     grader_id: <string>              # <id>::grader — the kind: score grader
 ```
 
-Quality dimensions are never deferred: every judgment call site must carry at
-least one, and each is graded in the first sweep. `validate.py --bundle` enforces
-both (a judgment-shape call site with zero quality dimensions is an error, in full
-and `--partial` mode alike).
+Quality dimensions are never deferred: every judgment call site must carry at least one, and each
+is graded in the first authoring sweep. The bundle validator enforces both (a judgment-shape call
+site with zero quality dimensions is an error, in full and `--partial` mode alike).
 
 ## `.tessary/pipeline/taxonomy.yaml`
 
@@ -419,17 +384,17 @@ capabilities:
 ```
 
 At most ONE capabilities shard per bundle — two means one of them is silently losing, so the
-platform's importer rejects the bundle rather than pick. Enforced platform-side (its parser sees the
-whole tree, including a `.yml` spelling this repo's loader never reads); `validate.py` does not
-re-check it.
+platform's importer rejects the bundle rather than pick. Enforced platform-side (its parser sees
+the whole tree, including a `.yml` spelling).
 
 ### Worked example — the parity anchor
 
 The two blocks below are the **canonical fixture** for the code-tracked facts. The platform's
-`CodeFactContractParityTest` holds a byte-identical copy and asserts every key binds to a field its
-importer actually consumes — the bundle parser drops unknown YAML keys by design, so a misspelled key
-is otherwise silent from both sides. The `parity-anchor` markers delimit the exact text; if you change
-either block, change the platform's copy in the same pair of PRs.
+`CodeFactContractParityTest` parses these `parity-anchor` blocks out of its vendored copy of this
+document and asserts every key binds to a field its importer actually consumes — the bundle parser
+drops unknown YAML keys by design, so a misspelled key is otherwise silent from both sides. The
+markers delimit the exact text; a change to either block must land with the platform re-syncing its
+vendored copy in the same pair of PRs.
 
 <!-- parity-anchor: call_site begin -->
 ```yaml
@@ -483,7 +448,7 @@ name: <string>
 kind: <llm_judge | deterministic | execution | agentic>
 _body_source: <platform | platform-materialized | human>   # present on kind=llm_judge / score only.
                                      # platform (v8) — body DEFERRED, judge_prompt/rubric empty; the
-                                     #   platform expands it on import.
+                                     #   platform authors it from real traces after import.
                                      # platform-materialized (v9) — the platform synced the generated
                                      #   body back into this repo; judge_prompt(/rubric) is PRESENT and
                                      #   frozen (_meta.locked_fields), with _meta.materialized_at/body_digest.
@@ -494,20 +459,20 @@ applies_when: <string | null>       # always LLM-evaluated (inline for judge/sco
                                      # separate LLM gate for deterministic). No applies_when_check (v6).
 
 # kind == llm_judge:
-# judge_prompt / rubric are NOT emitted by the plugin for a fresh deferral (v8) — they carry
-# `_body_source: platform` and the platform authors the judge body on import. (Pre-v8 files may
+# judge_prompt / rubric are NOT authored in-repo for a fresh deferral (v8) — they carry
+# `_body_source: platform` and the platform authors the judge body after import. (Pre-v8 files may
 # still carry an inline judge_prompt+rubric with no _body_source; that shape still validates.)
 # v9: once the platform materializes the body back into the repo, the file carries a PRESENT
 # judge_prompt+rubric with `_body_source: platform-materialized` (or `human` after a human edit) —
 # frozen, never re-authored.
 
 # kind == deterministic:
-deterministic_check: <string>
+deterministic_check: <string>        # prose spec of the check; the platform generates + runs the code
 
 # kind == execution:
 execution_spec: <string>
 
-# kind == agentic (verdict produced by an agent in a sandbox; emitted here, run by the platform):
+# kind == agentic (verdict produced by an agent in a sandbox; declared here, run by the platform):
 agent_spec:
   harness: opencode
   sandbox: {image: <string>, network: <none | egress | full>}
@@ -518,28 +483,24 @@ agent_spec:
 
 # v7: graders carry NO self_tests. Behavior is calibrated platform-side against golden
 # datasets (real labeled spans associated with the grader in evals-platform), not via
-# per-grader self-test cases. The self_test_pass_rate / self_test_variance fields are gone.
+# per-grader self-test cases.
 
 confidence: <high | medium | low>
 rationale: <string>
 taxonomy_node_id: <string>
 
 block_on_fail: <bool | null>
-pack_ids: [<string>, ...]
-# v9 removed the grader-level owner, cost_budget_tokens, latency_budget_ms_p95, and
-# compliance_tags fields. (The FAILURE-MODE-level compliance_tags is unchanged.)
+pack_ids: [<string>, ...]            # legacy tag set; new graders leave it empty
 dataset_refs:
   - trace_id: <hex>
     span_id: <hex>
     label: <string | null>
   - file: <"path:line">
-  - jsonl_path: <"datasets/<call_site_id>.jsonl">
 
 _meta:                              # optional block; when present, author /
                                      # synthesized_at / synth_inputs_digest are required
   author: <string>
-  author_contract_version: 8         # optional even when _meta is present (not gated
-                                     # by validate.py); stamped by the orchestrator
+  author_contract_version: 8         # optional even when _meta is present; stamped by the author
   synthesized_at: <iso8601>
   synth_inputs_digest: <hex>
   locked_fields: [<field>, ...]
@@ -549,109 +510,29 @@ _meta:                              # optional block; when present, author /
   body_digest: <hex>                 # v9 — canonical SHA-256 of the materialized body; a mismatch on
                                      # _body_source: platform-materialized signals a human edit (→ promote to human)
 
-# Present only when validate.py was unable to produce a clean grader after 3 retries.
+# Present only when validation was unable to produce a clean grader after retries.
 _validation_error: <string | null>
 ```
 
 ### Validator invariants
 
-The full rule list lives in `contract/AUTHORING_CONTRACT.md` (canonical for
-humans) and `contract/grader.schema.json` (canonical for machines).
-`validate.py` is the enforcer. This document only describes the **on-disk
-shape**; refer to the contract for the rules.
+The full rule list lives in `contract/AUTHORING_CONTRACT.md` (canonical for humans) and
+`contract/grader.schema.json` (canonical for machines). The **bundle validator is platform-owned**
+(it rides in the platform's observer sandbox as `tessary-evals-validate`, and runs in the
+platform's CI); this repo carries the contract documents, not the enforcer.
 
-Bundle-level invariants (FM↔grader bijection, chain DAG acyclicity, duplicate
-IDs, taxonomy reachability, layer-A/B/C coverage gates) are enforced by
-`validate.py --bundle .tessary/`. The bundle validator assembles the logical
-pipeline view from the shards before running its checks.
+Bundle-level invariants (FM↔grader bijection, chain DAG acyclicity, duplicate IDs, taxonomy
+reachability, coverage gates) are enforced by the bundle validator over the assembled shards.
 
-## `.tessary/datasets/<call_site_id>.jsonl`
+## Retired artifacts (pre-0.16.0)
 
-Optional. Written from the traces fetched for that call site (one row per representative
-span).
+Local synthesis used to write more than the shards above. These are **no longer produced**; a
+bundle still carrying them parses fine — the importer ignores them:
 
-```jsonl
-{"trace_id": "<hex>", "span_id": "<hex>", "parent_span_id": "<hex|null>", "timestamp": "<iso8601>", "input_messages": [{"role":"system|user|assistant|tool","content":"..."}], "observed_output": "<string>", "observed_finish_reason": "<string|null>", "observed_tokens_in": <int|null>, "observed_tokens_out": <int|null>, "redaction_state": "<none|partial|redacted>"}
-```
-
-Spans with `redaction_state: redacted` should be filtered out by the runner
-unless it has a re-hydration pathway.
-
-### Agent-session rows (schema 0.10.0)
-
-A row may capture one **session** as a turn sequence rather than one span — the natural shape for
-`scope: trace` graders (prior turns → final turn) and `kind: agentic` graders (which re-inspect the
-repo). This shape is **still read** by runners and viewers, but v0.20.0's `synthesize-graders` no
-longer produces it: it removed the local agent-session transcript input along with `--traces`, and
-now captures rows only from OTLP traces fetched from the linked project. Multi-turn sessions
-reconstructed from real traces (≥ 2 observations sharing a `trace_id`) use the span shape above.
-Fields beyond the span shape:
-
-```jsonl
-{"session_id": "<string>", "call_site_id": "<string>", "invocation": "<cli_agent|sandbox_agent>", "messages": [{"role": "<user|assistant|tool>", "content": "<string>", "tool_calls": [<obj>, ...], "tool_results": [<obj>, ...]}], "repo_state": {"commit": "<sha|null>", "git_diff": "<unified diff text|null>"}, "redaction_state": "<none|partial|redacted>"}
-```
-
-`messages` is the ordered turn+tool sequence. `repo_state` is optional and captured
-**per turn or per session boundary** so the git diff between two turns is available as
-text — a normal `llm_judge`/`trace` grader can read it directly, or a `kind: agentic`
-grader can recompute it in the sandbox. Omit `repo_state` when the session did not
-mutate a repo. These dataset rows are also the substrate for **golden datasets** — the
-spans a curator marks golden and labels per grader to calibrate it platform-side (v7).
-
-**Sourcing a `scope: trace` grader's history (schema 0.11.0).** The canonical source is
-**the final turn's self-contained input**: in practice (Langfuse / Claude-Code-style
-instrumentation) each turn's logged `input` already contains the full prior transcript,
-so the runner grades a multi-turn site by taking the **latest turn per trace** and
-judging its transcript-bearing input + final output — no per-turn stitching. The
-agent-session `messages[]` shape above is therefore **not required** for trace
-`llm_judge` graders; it is retained for `kind: agentic` graders (which re-inspect the
-repo) and for instrumentation that does *not* carry the whole transcript on the final
-turn.
-
-## `.tessary/.synth-lock.yaml`
-
-Written at the end of every successful run.
-
-```yaml
-version: 1
-synthesized_at: <iso8601>
-inputs_digest: <hex>                 # SHA-256 over the orchestrator inputs (repo digest + traces digest + product hint)
-shards:                              # SHA-256 of every pipeline/* shard file
-  pipeline/meta.yaml: <hex>
-  pipeline/packs.yaml: <hex>
-  pipeline/product_profile.yaml: <hex>
-  pipeline/invariants.yaml: <hex>
-  pipeline/chains.yaml: <hex>
-  pipeline/taxonomy.yaml: <hex>
-  pipeline/call_sites/<id_path>.yaml: <hex>
-  pipeline/failure_modes/<id_path>.yaml: <hex>
-  pipeline/failure_modes/_chains.yaml: <hex>
-graders:
-  <call_site>/<failure>: <hex>          # grader path under graders/ minus `.yaml`
-```
-
-On the next run, the orchestrator compares each grader file's current hash
-against the lock. A divergence on a file whose `_meta.locked_fields` is empty
-triggers a `WARN: <file> diverged from lock without locked_fields — pass
---force to overwrite or set locked_fields to preserve`. Shard divergences are
-informational only — shards under `pipeline/` are orchestrator-owned, not
-human-curated, so they are always overwritten on re-run.
-
-## `.tessary/report.md`
-
-```markdown
-# Synthesized eval pipeline
-
-**Product hint:** <hint>
-
-**Summary:** <N> call sites, <C> chains, <M> single-call failures + <X> chain failures, <K> graders (<single_K> single-call + <chain_K> chain, <F> failed validation, <L> low-confidence), <T> taxonomy nodes, <P> packs.
-
-## Engaged packs
-## Product profile
-## Implicit invariants
-## Failure taxonomy
-## Chains
-## Call sites
-## Observed production stats
-## Validation warnings (only when F > 0)
-```
+| Artifact | What it was |
+| --- | --- |
+| `pipeline/packs.yaml`, `pipeline/priorities.yaml` | Synthesis-run inputs (pack engagement, site ordering) |
+| `datasets/<call_site_id>.jsonl` | Replayable rows captured from fetched traces — superseded by platform-side golden datasets keyed to real spans |
+| `report.md`, `index.html` | The local visual report — superseded by the platform UI |
+| `.synth-lock.yaml` | Re-run safety hashes for the local synthesizer |
+| `.cache/` | Local trace-fetch cache (was always gitignored) |

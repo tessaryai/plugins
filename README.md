@@ -19,20 +19,20 @@ To update later:
 
 ## Plugins
 
-- [evals](#evals) — generate a calibrated eval suite for your LLM product.
+- [evals](#evals) — connect your repo to evals.tessary.ai and work with your evals from the coding agent.
 - [crew](#crew) — a multi-agent dev harness that triages, implements, reviews, and maintains your repo.
 
 ### evals
 
-Point `evals` at your repo and it generates a complete eval suite for your LLM features: one grader per failure mode (judge prompt, rubric, self-tests), plus a visual report you can open in your browser. Have production traces? Hand them in and graders get calibrated against real data.
+`evals` connects your repo to [evals.tessary.ai](https://evals.tessary.ai): a one-time device link, OTLP trace wiring, native platform tools in Claude Code, and `/evals:instrument` to tag your LLM call sites. From there the platform's observer authors and maintains your eval bundle — graders arrive as draft PRs against your repo, grounded in your real traffic.
 
 ```
 /plugin install evals@tessary
 ```
 
-Then run `/evals:synthesize-graders` in a Claude Code session, or just ask Claude to "synthesize evals for this repo."
+Then run `/evals:connect` in a Claude Code session, or just ask Claude to "connect this repo to tessary."
 
-See the [plugin README](./plugins/evals/README.md) for flags, packs, and validator usage.
+See the [plugin README](./plugins/evals/README.md) for the full flow.
 
 ### crew
 
