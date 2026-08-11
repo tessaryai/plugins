@@ -31,6 +31,8 @@ why the parity anchor below exists. Stick to these schemas exactly.
     capabilities.yaml                  # product-level tool/skill/MCP/subagent inventory
   graders/
     <call_site>/<failure>.yaml         # one per grader (`::` -> `/`, drop `::grader`)
+  sops/
+    <call_site_id>.yaml                # v3 SOP-conformance file (/evals:derive-sop)
 ```
 
 Filenames nest the canonical `::`-delimited ID as folders (`::` → `/`). Grader
@@ -523,6 +525,46 @@ platform's CI); this repo carries the contract documents, not the enforcer.
 
 Bundle-level invariants (FM↔grader bijection, chain DAG acyclicity, duplicate IDs, taxonomy
 reachability, coverage gates) are enforced by the bundle validator over the assembled shards.
+
+## `.tessary/sops/<call_site_id>.yaml`
+
+One **v3 SOP-conformance file per call site** — written by `/evals:derive-sop`, kept true by
+`/evals:reconcile-sop`, validated by the plugin's bundled `sop_lint.py`. Seven concepts, pure
+meaning, zero mechanism:
+
+```yaml
+agent: <call_site_id>                  # verbatim; same value as the span tag
+
+intents:
+  <intent-id>: {means: "<one sentence of demand-side meaning>"}
+
+observations:
+  <obs-id>: "<one atomic sentence>"    # or the frame-exemplar mapping form:
+  <obs-id>:
+    is: "<one atomic sentence>"
+    counts: ["<mini-scenario>", ...]       # 2–3 adjudicated exemplars total
+    counts_not: ["<mini-scenario>", ...]
+
+rules:
+  - in: <intent-id | [ids] | any>
+    when: <obs-id>                     # optional
+    unless: <obs-id>                   # optional
+    at: <session-start | session-end>  # optional
+    expect: <obs-id | {tool: t, before: it|t2, paired_by: k, within: conversation|turn}>
+    # — or —  never: <obs-id | {tool: t}>
+    # optional: either: [<obs-id>, ...] · of: <delegate-role>
+```
+
+The authoritative schema design note is `classifiers/experiments/SCHEMA-V3.md` in the
+evals-platform repo; the vendored linter (`sop_lint.py`, Python 3 + PyYAML only) is the local
+enforcer of its style laws (atomicity, specificity/hedge words, exemplar shape, `never:`
+polarity). Nothing mechanical — detectors, thresholds, patterns, label files, provenance
+anchors — is ever written into this file; the platform compiles all of that server-side.
+
+**The bundle importer does not read `sops/` today.** Getting the SOP into the platform's
+conformance engine is an ops-side seam (no tenant-facing endpoint yet), so the on-disk schema
+version is unchanged — the file rides in the repo, already authored and linted, until that seam
+opens.
 
 ## Retired artifacts (pre-0.16.0)
 
