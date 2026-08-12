@@ -116,6 +116,47 @@ The `.tessary/` directory in your repo is the **source of truth**: you can edit 
 version on push. The bundle's format is documented in [`output_format.md`](output_format.md); grader
 authoring rules live in [`contract/AUTHORING_CONTRACT.md`](contract/AUTHORING_CONTRACT.md).
 
+## Author the conformance SOP (`/evals:derive-sop`, `/evals:reconcile-sop`)
+
+The platform's **SOP-conformance classifier** watches a call site's production traffic for drift
+from its own standing procedure. What it needs from the repo is one **v3 SOP file per call site**
+(`.tessary/sops/<call_site_id>.yaml`): seven concepts — `agent`, `intents`/`means`,
+`observations`, `rules` (`in`/`when`/`unless`/`at` + `expect`|`never`) — **pure meaning, zero
+mechanism**. Detectors, thresholds, and bindings are compiled server-side by the platform and
+never appear in the file. The schema is specified in the evals-platform repo
+(`classifiers/experiments/SCHEMA-V3.md`).
+
+```mermaid
+flowchart LR
+    A["/evals:connect"] --> B["/evals:instrument"]
+    B --> C["platform observer<br/>authors .tessary/ bundle (PR)"]
+    B --> D["/evals:derive-sop<br/>.tessary/sops/&lt;call_site&gt;.yaml"]
+    D --> E["/evals:reconcile-sop<br/>on instruction changes"]
+    E -->|keeps it true| D
+```
+
+- **`/evals:derive-sop`** reads the call site's *whole* instruction surface — system prompts, tool
+  definitions, routing rules, wherever instructions live, duplicated or disjoint — and distills it
+  into intents, an atomic observation vocabulary (harvesting `counts:`/`counts_not:` frame
+  exemplars from the prompt's own clarifying asides), and rules mapping every instruction to
+  enforced-or-deferred. Contradictions between duplicated instruction sources come back to you as
+  findings, not silent choices.
+- **`/evals:reconcile-sop`** is the per-commit maintenance flow: re-read the whole surface (the
+  SOP stores **no provenance anchors, by design** — pointers rot), verify every sentence is still
+  true, and propose edits/retirements/additions with the evidence quoted in the proposal only.
+- **`sop_lint.py`** is the vendored validator both skills run (Python 3 + PyYAML, nothing else):
+  seven-concept parse with collect-all validation plus the style-law lint — atomicity errors,
+  unknown refs, exemplar shape, hedge-word and `never:`-polarity warnings. Worked examples ship
+  in [`sop_examples/`](sop_examples/); try it:
+
+  ```bash
+  python3 sop_lint.py sop_examples/policy_gpt.yaml sop_examples/broken.yaml
+  ```
+
+> **The deliverable is the authored, linted file in your repo.** Getting the SOP into the platform
+> is currently an ops-side seam — there is no tenant-facing upload endpoint yet — so the platform
+> team wires it in from the repo; nothing further to run locally.
+
 ## License
 
 MIT — see `LICENSE`.

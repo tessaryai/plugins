@@ -1,0 +1,31 @@
+# Deliberately-broken v3 SOP — demonstrates every lint class sop_lint.py implements.
+# Expected lint: FAIL — 5 errors, 3 warnings:
+#   ERROR   atomicity       — asks_without_repeating smuggles rule structure ("without")
+#   ERROR   unknown obs ref — rules[0] 'when:' names unknown_obs
+#   ERROR   unknown intent  — rules[1] 'in:' names unknown-intent
+#   ERROR   exemplar shape  — deflects_question 'counts:' is a bare string, not a list
+#   ERROR   structure       — rules[2] carries BOTH expect: and never: (exactly one required)
+#   WARNING specificity     — handles_properly hedges ("properly") with no frame exemplars
+#   WARNING never polarity  — refunds_and_apologizes looks compound ("issues ... and apologizes")
+#   WARNING exemplar count  — confirms_address carries 1 exemplar; frames want 2–3
+agent: broken-demo
+
+intents:
+  order-help: {means: "customer needs help with an order"}
+
+observations:
+  asks_without_repeating: "asks for the order id without repeating it back"
+  handles_properly:       "handles the refund properly"
+  refunds_and_apologizes: "issues a refund and apologizes for the delay"
+  deflects_question:
+    is: "declines to answer and redirects the customer elsewhere"
+    counts: "the customer asks about a refund and the agent changes the subject"
+  confirms_address:
+    is: "reads the delivery address back to the customer"
+    counts_not:
+      - "the agent asks for the address for the first time"
+
+rules:
+  - {in: any, when: unknown_obs, expect: asks_without_repeating}
+  - {in: [unknown-intent], never: refunds_and_apologizes}
+  - {in: any, when: handles_properly, expect: deflects_question, never: confirms_address}

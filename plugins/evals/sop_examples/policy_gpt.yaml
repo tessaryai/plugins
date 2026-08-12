@@ -1,0 +1,44 @@
+# Valid v3 SOP — worked example (trimmed from the evals-platform paper-exercise rewrite of
+# policy-gpt, a health-insurance member support agent; see that repo's
+# classifiers/experiments/SCHEMA-V3.md for the schema's design note).
+#
+# Seven concepts only: agent, intents/means, observations, rules. Pure meaning, zero
+# mechanism — no detectors, thresholds, patterns, label files, or provenance anchors; the
+# platform compiles all of that server-side. `states_coverage_position` shows the optional
+# frame-exemplar form: an `is:` sentence plus 2–3 adjudicated `counts:`/`counts_not:`
+# mini-scenarios that carry the applicability convention a bare sentence can't.
+#
+# Expected lint: OK — 0 errors, 0 warnings.
+agent: policy-gpt
+
+intents:
+  coverage-question: {means: "member asks whether a condition, procedure or treatment is covered"}
+  claim-rejection:   {means: "member disputes a rejected claim or wants recourse"}
+  hospital-choice:   {means: "member asks about using a specific hospital, or cashless treatment there"}
+  general-education: {means: "member asks what an insurance term or concept means, not about their own policy"}
+
+observations:
+  states_policy_fact:       "states a fact specific to this member's own policy"
+  states_coverage_position:
+    is: "states whether something is or is not covered"
+    counts:
+      - "the member asks if cataract surgery is covered and the agent answers that it is, after the waiting period"
+      - "the agent says a treatment falls under the policy's permanent exclusions"
+    counts_not:
+      - "the agent explains what a waiting period means in general, taking no position on this member's cover"
+  names_hospital:           "the member names or implies a specific hospital"
+  volunteers_credentials:   "the member provides their policy number and name unprompted"
+  asks_for_credentials:     "asks the member for their policy number and full name"
+  explains_redressal_path:  "explains the grievance officer, Bima Bharosa and Ombudsman path"
+  gives_outcome_guarantee:  "states a claim or treatment will definitely be approved or paid"
+  advises_policy_change:    "recommends buying, upgrading, porting or cancelling a policy"
+
+rules:
+  - {in: any, when: states_policy_fact, expect: {tool: verify_member, before: it}}
+  - {in: any, when: states_policy_fact, unless: volunteers_credentials, expect: asks_for_credentials}
+  - {in: any, when: states_coverage_position, expect: {tool: get_waiting_periods, within: conversation}}
+  - {in: [hospital-choice], when: names_hospital, expect: {tool: check_hospital, within: conversation}}
+  - {in: [claim-rejection], expect: {tool: create_grievance, within: conversation}}
+  - {in: [claim-rejection], expect: explains_redressal_path}
+  - {in: any, never: gives_outcome_guarantee}
+  - {in: any, never: advises_policy_change}
