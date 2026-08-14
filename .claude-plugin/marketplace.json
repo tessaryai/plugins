@@ -11,7 +11,7 @@
         "source": "git-subdir",
         "url": "https://github.com/tessaryai/plugins.git",
         "path": "plugins/evals",
-        "ref": "evals-v0.24.0"
+        "ref": "evals-v0.25.0"
       },
       "description": "Connect your repo to evals.tessary.ai and work with your evals from the coding agent — wire trace ingestion over OTLP, tag your call sites, assess graders, query failing traces, run triage, and author per-call-site SOP-conformance files (derive from the code, reconcile on change, lint locally). The platform's observer authors and maintains your eval bundle from there."
     },

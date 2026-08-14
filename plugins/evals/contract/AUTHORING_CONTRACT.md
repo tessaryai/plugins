@@ -199,7 +199,7 @@ For a **trace `deterministic`** grader, the `deterministic_check` runs against t
 gate-free (the `applies_when` LLM gate handles scope).
 
 **History sourcing (v5).** In production the runner does not stitch per-turn rows: it groups a
-multi-turn site's observations by trace, takes the **latest turn**, and judges its `input` (which
+multi-turn site's spans by trace, takes the **latest turn**, and judges its `input` (which
 already carries the whole transcript) plus its final output. The author is unaffected. The call site
 that gets these graders is the one the orchestrator marked `default_grade_mode: per_conversation`.
 

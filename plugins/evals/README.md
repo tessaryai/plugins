@@ -31,7 +31,7 @@ your browser), then registers the platform's authenticated tools into Claude Cod
 to this repo. After you reconnect the session, just ask the agent things like:
 
 - **"assess my call sites"** — it lists them and flags gaps, risky calls, and missing coverage
-- **"what's failing this week?"** — it queries real observations and verdicts
+- **"what's failing this week?"** — it queries real spans and classifier events
 - **"run triage on `<failure mode>`"** — it traces a failure to its root cause
 - **"show the grader for `<call site>`"** — it pulls the definition and recent verdicts
 
@@ -48,7 +48,7 @@ The platform exposes these as MCP tools the agent calls directly — no local fi
 | --- | --- |
 | `list_call_sites`, `list_graders`, `list_failure_modes`, `list_quality_dimensions` | Inventory the project's pipeline |
 | `get_grader`, `propose_grader_edit` | Read a grader's definition; propose a change |
-| `query_count`, `query_search`, `query_facets`, `query_timeseries` | Query real observations, tool calls, feedback, and signal events |
+| `query_count`, `query_search`, `query_facets`, `query_timeseries` | Query real spans, tool calls, and classifier events |
 | `run_triage`, `latest_triage`, `get_triage` | Trace a failure mode to its root cause |
 | `reload_pipeline` | Refresh after an import |
 

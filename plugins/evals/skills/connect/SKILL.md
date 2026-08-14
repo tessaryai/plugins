@@ -15,8 +15,8 @@ things and then gets out of the way:
 3. **Register** the platform's authenticated MCP server into Claude Code (privately, per-repo)
    so *you* — the coding agent — get native tools:
    `list_call_sites`, `list_graders`, `list_failure_modes`, `list_quality_dimensions`,
-   `query_count` / `query_search` / `query_facets` / `query_timeseries` (over observations,
-   tool calls, feedback, signal events), `run_triage` / `latest_triage` / `get_triage`,
+   `query_count` / `query_search` / `query_facets` / `query_timeseries` (over spans,
+   tool calls, classifier events), `run_triage` / `latest_triage` / `get_triage`,
    `get_grader`, `propose_grader_edit`, `reload_pipeline`.
 4. **Report** what's in the project so the user knows what they can do next.
 
@@ -195,7 +195,7 @@ Connected to <org>/<project>. ✅
 
 After you reconnect, just ask me things like:
   • "assess my call sites"            → I list them and flag gaps/risks
-  • "what's failing this week?"       → I query real observations + verdicts
+  • "what's failing this week?"       → I query real spans + classifier events
   • "run triage on <failure mode>"    → I trace a failure to its root cause
   • "show the grader for <call site>" → I pull its definition and recent verdicts
 
