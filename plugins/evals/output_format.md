@@ -108,10 +108,10 @@ product_profile:
       constraints: <string>
   business_model: <string | null>
   data_sensitivity:
-    - kind: <string>
+    - label: <string>
       evidence: <string>             # "<file path>: <reason>"
   regulatory_context:
-    - regime: <string>
+    - label: <string>
       evidence: <string>
   brand_voice_signals:
     - label: <string>
