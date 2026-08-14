@@ -596,7 +596,7 @@ class Coverage(NamedTuple):
 def _call_site_facets(proj: dict[str, Any], base_url_arg: str | None, env_id: str) -> Coverage:
     """Per-call-site span counts in one environment, plus the untagged span count.
 
-    One request: facet `observations` by `call_site_id`, filtered to the environment. Untagged spans
+    One request: facet `spans` by `call_site_id`, filtered to the environment. Untagged spans
     have a null `call_site_id`, so Postgres groups them into a **null bucket** that is ranked by count
     like any other — early on it is usually the largest. That bucket is the residue, never a call site.
 
@@ -608,7 +608,7 @@ def _call_site_facets(proj: dict[str, Any], base_url_arg: str | None, env_id: st
     """
     url = f"{_api_base(proj, base_url_arg)}/v1/query/facets"
     payload = {
-        "dataset": "observations",
+        "dataset": "spans",
         "field": "call_site_id",
         "filters": {"environment_id": env_id},
         "top_n": FACET_TOP_N,
@@ -638,9 +638,9 @@ def cmd_envs(args: argparse.Namespace) -> int:
         spans = sum(c for _, c in cov.tagged)
         sites = f"{len(cov.tagged)}+" if cov.truncated else str(len(cov.tagged))
         print(f"env\t{e['slug']}\t{spans}\t{sites}\t{str(bool(e.get('is_default'))).lower()}")
-    print("\n(spans = observations carrying a tessary.call_site.id tag. A span with no tag is invisible "
-          "to every call-site-scoped feature. The default env is where untagged-environment traffic "
-          "lands.)",
+    print("\n(the spans column counts only spans carrying a tessary.call_site.id tag. An untagged span "
+          "is invisible to every call-site-scoped feature. The default env is where "
+          "untagged-environment traffic lands.)",
           file=sys.stderr)
     return 0
 

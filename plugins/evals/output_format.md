@@ -114,7 +114,7 @@ product_profile:
     - regime: <string>
       evidence: <string>
   brand_voice_signals:
-    - signal: <string>
+    - label: <string>
       evidence: <string>
   notable_dependencies: [<string>, ...]
 ```
@@ -216,7 +216,7 @@ expected_spans:
 # stored list. There is no third state to express.
 
 # The structured output the call site's code declares, verbatim as a JSON Schema. Read by the
-# platform's Malformed Output classifier, which validates each observation's output against it. A
+# platform's Malformed Output classifier, which validates each span's output against it. A
 # declaration here WINS over the platform's own capture — the repo is the source of truth, so editing
 # this file is how a user corrects a stale one.
 output_schema: <JSON Schema object | null>
