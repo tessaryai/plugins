@@ -2,7 +2,8 @@
 
 A Claude Code plugin that connects your repo to [evals.tessary.ai](https://evals.tessary.ai) and lets
 you work with your evals **from the coding agent** — assess call sites, inspect graders, query
-failing traces, and run triage, all as native tools. Grader authoring itself lives on the platform:
+failing traces, and read the cases and root-cause reports the platform has opened, all as native
+read tools. Grader authoring itself lives on the platform:
 its observer reads your repo, proposes the `.tessary/` eval bundle as a draft PR, and keeps it
 current as your code changes.
 
@@ -32,7 +33,9 @@ to this repo. After you reconnect the session, just ask the agent things like:
 
 - **"assess my call sites"** — it lists them and flags gaps, risky calls, and missing coverage
 - **"what's failing this week?"** — it queries real spans and classifier events
-- **"run triage on `<failure mode>`"** — it traces a failure to its root cause
+- **"what's wrong with this project?"** — it pages the open cases worst-first, and reads the
+  root-cause report on any one of them
+- **"show me the conversation that failed"** — it finds the span and reads its raw payload
 - **"show the grader for `<call site>`"** — it pulls the definition and recent verdicts
 
 The link stores a project-scoped token under `~/.config/tessary-evals/credentials.json` and, because
@@ -42,26 +45,37 @@ committed file. Reconnect once after connecting so the tools load. To disconnect
 
 ### What you get natively after connecting
 
-The platform exposes these as MCP tools the agent calls directly — no local files, no Python per read:
+The platform exposes these as MCP tools the agent calls directly — no local files, no Python per read.
+**All of them read; none writes, spends, or starts an agent run.**
 
 | Tool | What it does |
 | --- | --- |
-| `get_project` | What this token is bound to — start here; no other tool takes a project argument |
-| `list_cases`, `get_case` | **What is wrong right now**: open cases worst-first, plus the coverage behind an all-clear |
+| `get_project` | What this token is bound to — start here; no other tool takes a project argument. Carries the `watching` block: classifiers enabled, call sites swept, traces in the last 24h |
+| `list_cases`, `get_case` | **What is wrong right now**: open cases worst-first, filterable by detector or call site, paged. `get_case` brings the root-cause report **inline** once one has finished |
 | `list_findings`, `get_finding` | Classifier drift findings — the aggregated cause behind many firings |
 | `list_call_sites`, `list_failure_modes`, `list_quality_dimensions` | Inventory the imported pipeline taxonomy |
-| `query_count`, `query_search`, `query_facets`, `query_timeseries` | Query real spans, tool calls, classifier events, and usage/cost rollups |
-| `get_span`, `get_trace` | Read the **raw payload** — the actual conversation text behind a flagged span |
-| `list_graders`, `get_grader`, `propose_grader_edit` | Read a grader's definition; propose a change |
-| `run_triage`, `latest_triage`, `get_triage` | Trace a failure mode to its root cause |
-| `list_rca_reports`, `get_rca_report` | Read the root-cause reports the platform ran on a degradation |
+| `list_traces`, `get_trace` | Find a trace by model, kind, call site, environment, status or keyword; then read the whole conversation with full payloads |
+| `list_spans`, `get_span` | The step grain — one LLM call, tool call or sub-agent. Keyword or semantic search, nine filters; `get_span` returns one span's **raw payload** |
+| `list_sessions`, `get_session` | One continuous interaction with one user, spanning many traces, with its totals |
+| `describe_dataset` | What each query dataset can be faceted and filtered by — read this instead of guessing a field name |
+| `query_count`, `query_timeseries`, `query_facets` | Aggregate over spans, tool calls, classifier events, and usage/cost rollups |
+| `query_search` | Row search over `tool_calls` and `classifier_events`. **Spans search lives on `list_spans`** |
+| `list_graders`, `get_grader` | Read a grader's definition with the curation overlay applied |
 
 **This table is a summary, not the contract.** `tools/list` is the authoritative catalogue and it answers
 *per token*: each tool declares a capability your org must hold to be offered it, so your project may be
 offered fewer tools than are listed here, and one your org does not hold reads as an unknown tool rather than
-a permission error. Graders and triage/RCA are the two gated groups; everything above them is open. Ask the
-server rather than assuming a fixed list — a hand-maintained copy is what left this table advertising a
-no-op for two releases.
+a permission error. Graders is now the **only** gated group — nine of the rows above are the surface's plural
+readers and every one of them is open. Ask the server rather than assuming a fixed list — a hand-maintained
+copy is what left this table advertising a no-op for two releases, and then five tools that no longer exist.
+
+**Lists find, gets read.** A list row carries typed columns and the stored input/output previews, never the
+full payload: fifty conversations is not a list, it is a context window spent before you have decided which
+trace you care about. Raw text comes from `get_span` / `get_trace`, or from `list_spans` with
+`fields: ["payload"]` on a page already narrowed to one trace or to a window of at most 24h.
+
+**Triage is a UI action.** There is no `run_triage` tool — a triage run is a platform-paid agent session, so
+starting one stays with a person. What reaches you is its output: `get_case` inlines the finished report.
 
 ## Make traces flow (OTLP)
 

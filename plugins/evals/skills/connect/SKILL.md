@@ -1,6 +1,6 @@
 ---
 name: connect
-description: Connect this repo to your evals.tessary.ai project and wire the platform's tools into Claude Code, so you can assess call sites, inspect graders, query failing traces, and run triage natively. Use when the user says "connect to evals", "link this repo to Tessary", "connect to evals.tessary.ai", "set up the evals platform", or invokes /evals:connect.
+description: Connect this repo to your evals.tessary.ai project and wire the platform's tools into Claude Code, so you can assess call sites, inspect graders, query failing traces, and read the cases and root-cause reports it has opened, natively. Use when the user says "connect to evals", "link this repo to Tessary", "connect to evals.tessary.ai", "set up the evals platform", or invokes /evals:connect.
 ---
 
 # connect — link this repo to evals.tessary.ai and load its tools
@@ -13,23 +13,31 @@ things and then gets out of the way:
    to the project (point it at `POST /v1/traces` with the link token). OTLP is the only supported
    ingestion path. This is the "detect the setup in the project and wire it to tessary" step.
 3. **Register** the platform's authenticated MCP server into Claude Code (privately, per-repo)
-   so *you* — the coding agent — get native tools. Roughly: `get_project` (what this token is
-   bound to), `list_cases` / `get_case` (what is wrong right now), `list_findings` /
-   `get_finding` (classifier drift), `list_call_sites` / `list_failure_modes` /
-   `list_quality_dimensions` (the imported taxonomy), `query_count` / `query_search` /
-   `query_facets` / `query_timeseries` (over spans, tool calls, classifier events, usage
-   rollups), `get_span` / `get_trace` (raw payloads — the actual conversation text), plus
-   graders (`list_graders`, `get_grader`, `propose_grader_edit`) and triage (`run_triage`,
-   `latest_triage`, `get_triage`, `list_rca_reports`, `get_rca_report`) where the org holds
-   those capabilities.
+   so *you* — the coding agent — get native tools. **Every one of them reads; there is no write,
+   nothing that spends, and nothing that starts an agent run.** Roughly: `get_project` (what this
+   token is bound to, plus whether anything is arriving at all), `list_cases` / `get_case` (what is
+   wrong right now — and `get_case` carries the root-cause report inline once one has finished),
+   `list_findings` / `get_finding` (classifier drift), `list_call_sites` / `list_failure_modes` /
+   `list_quality_dimensions` (the imported taxonomy), `list_traces` / `get_trace`, `list_spans` /
+   `get_span`, `list_sessions` / `get_session` (find the traffic, then read it — the `get_*` half is
+   where the raw conversation text lives), `describe_dataset` plus `query_count` /
+   `query_timeseries` / `query_facets` / `query_search` (aggregates over tool calls, classifier
+   events and usage rollups), and `list_graders` / `get_grader` where the org holds the graders
+   capability.
 
    **Do not treat that as a fixed list — read `tools/list` and report what it actually
-   returns.** Every tool declares a capability the org must hold to be offered it, so the real
-   catalogue is per-token and shorter for most projects; a tool the org does not hold reads as an
-   unknown tool, not a permission error. Naming tools from memory is how this skill spent two
-   releases telling the agent to call a tool that had become a no-op, while never mentioning
-   `get_span` / `get_trace` — the only tools that return raw conversation text, and the ones that
-   turn "a classifier flagged something" into a readable cause.
+   returns.** That instruction is the durable part of this step; the paragraph above it is a hint
+   about shape and it will drift again. Every tool declares a capability the org must hold to be
+   offered it, so the real catalogue is per-token and shorter for most projects; a tool the org does
+   not hold reads as an unknown tool, not a permission error. Naming tools from memory is how this
+   skill spent two releases telling the agent to call a tool that had become a no-op while never
+   mentioning `get_span` / `get_trace` — and then, one release later, still named five triage and RCA
+   tools the platform had deleted. Twice now the prose was wrong and `tools/list` was right.
+
+   **If the user asks for something no offered tool answers, say so — do not reach for a name you
+   remember.** Concretely: starting a triage run and editing a grader are not tools, by design.
+   Those are platform UI actions; your part is to read the result afterwards (a finished report
+   arrives inline on `get_case`).
 4. **Report** what's in the project so the user knows what they can do next.
 
 After this, the user assesses call sites by *talking to you* — you call the platform tools
@@ -251,8 +259,13 @@ step 2 (nothing tagged yet) or step 3 (repo not connected on the platform).
 - **The link is user-consented, per-session, per-project.** Do not re-link a different project
   without the user asking. One confirmation in the browser authorizes one project.
 - **Assessing call sites needs no new skill** — once connected, you list and evaluate them with the
-  registered MCP tools (`list_call_sites` + `query_*` + `get_span`/`get_trace` for the raw text)
-  directly. For "what is actually wrong with this project", start at `list_cases` rather than
-  reconstructing it from aggregates.
-- **Creating a call site is a write** the platform exposes through `import` (there is no MCP create
-  tool yet), so it goes through a separate import path — not this skill.
+  registered MCP tools (`list_call_sites` + `query_*` + `list_traces`/`list_spans` to find the
+  traffic + `get_span`/`get_trace` for the raw text) directly. For "what is actually wrong with this
+  project", start at `list_cases` rather than reconstructing it from aggregates.
+- **Read `get_project`'s `watching` block before calling an empty case list an all-clear.** It
+  reports how many classifiers are enabled, how many call sites they sweep, and how many traces
+  arrived in the last 24h. `traces_last_day: 0` means nothing is *arriving* — a different answer from
+  nothing being wrong, and the one that routes to `/evals:instrument`.
+- **The MCP surface writes nothing.** Creating a call site reaches the platform through `import`;
+  editing a grader, resolving a case and starting a triage run are UI actions. Each records a human
+  judgement or spends the platform's money, so none of them is a tool — do not look for one.
