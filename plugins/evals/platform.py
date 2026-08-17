@@ -4,8 +4,9 @@
 The **integration front door** driven by the `connect` skill: link a repo to a
 project, report project status, and wire the platform's authenticated MCP server
 into the user's Claude Code so the coding agent gets native tools
-(`list_call_sites`, `list_graders`, `query_*`, `run_triage`, `propose_grader_edit`,
-…) instead of shelling out to Python for every read.
+(`get_project`, `list_cases`, `list_call_sites`, `query_*`, `get_span`/`get_trace`,
+…) instead of shelling out to Python for every read. The catalogue is per-token and
+`tools/list` is its authority — never this docstring.
 
 Everything downstream of the link lives on the platform: the observer reads the
 repo on the org's schedule, authors and refreshes the `.tessary/` bundle through

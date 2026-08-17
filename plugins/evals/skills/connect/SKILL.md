@@ -13,11 +13,23 @@ things and then gets out of the way:
    to the project (point it at `POST /v1/traces` with the link token). OTLP is the only supported
    ingestion path. This is the "detect the setup in the project and wire it to tessary" step.
 3. **Register** the platform's authenticated MCP server into Claude Code (privately, per-repo)
-   so *you* — the coding agent — get native tools:
-   `list_call_sites`, `list_graders`, `list_failure_modes`, `list_quality_dimensions`,
-   `query_count` / `query_search` / `query_facets` / `query_timeseries` (over spans,
-   tool calls, classifier events), `run_triage` / `latest_triage` / `get_triage`,
-   `get_grader`, `propose_grader_edit`, `reload_pipeline`.
+   so *you* — the coding agent — get native tools. Roughly: `get_project` (what this token is
+   bound to), `list_cases` / `get_case` (what is wrong right now), `list_findings` /
+   `get_finding` (classifier drift), `list_call_sites` / `list_failure_modes` /
+   `list_quality_dimensions` (the imported taxonomy), `query_count` / `query_search` /
+   `query_facets` / `query_timeseries` (over spans, tool calls, classifier events, usage
+   rollups), `get_span` / `get_trace` (raw payloads — the actual conversation text), plus
+   graders (`list_graders`, `get_grader`, `propose_grader_edit`) and triage (`run_triage`,
+   `latest_triage`, `get_triage`, `list_rca_reports`, `get_rca_report`) where the org holds
+   those capabilities.
+
+   **Do not treat that as a fixed list — read `tools/list` and report what it actually
+   returns.** Every tool declares a capability the org must hold to be offered it, so the real
+   catalogue is per-token and shorter for most projects; a tool the org does not hold reads as an
+   unknown tool, not a permission error. Naming tools from memory is how this skill spent two
+   releases telling the agent to call a tool that had become a no-op, while never mentioning
+   `get_span` / `get_trace` — the only tools that return raw conversation text, and the ones that
+   turn "a classifier flagged something" into a readable cause.
 4. **Report** what's in the project so the user knows what they can do next.
 
 After this, the user assesses call sites by *talking to you* — you call the platform tools
@@ -239,6 +251,8 @@ step 2 (nothing tagged yet) or step 3 (repo not connected on the platform).
 - **The link is user-consented, per-session, per-project.** Do not re-link a different project
   without the user asking. One confirmation in the browser authorizes one project.
 - **Assessing call sites needs no new skill** — once connected, you list and evaluate them with the
-  registered MCP tools (`list_call_sites` + `query_*` + `run_triage`) directly.
+  registered MCP tools (`list_call_sites` + `query_*` + `get_span`/`get_trace` for the raw text)
+  directly. For "what is actually wrong with this project", start at `list_cases` rather than
+  reconstructing it from aggregates.
 - **Creating a call site is a write** the platform exposes through `import` (there is no MCP create
   tool yet), so it goes through a separate import path — not this skill.

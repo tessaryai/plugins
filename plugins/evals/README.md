@@ -46,11 +46,22 @@ The platform exposes these as MCP tools the agent calls directly — no local fi
 
 | Tool | What it does |
 | --- | --- |
-| `list_call_sites`, `list_graders`, `list_failure_modes`, `list_quality_dimensions` | Inventory the project's pipeline |
-| `get_grader`, `propose_grader_edit` | Read a grader's definition; propose a change |
-| `query_count`, `query_search`, `query_facets`, `query_timeseries` | Query real spans, tool calls, and classifier events |
+| `get_project` | What this token is bound to — start here; no other tool takes a project argument |
+| `list_cases`, `get_case` | **What is wrong right now**: open cases worst-first, plus the coverage behind an all-clear |
+| `list_findings`, `get_finding` | Classifier drift findings — the aggregated cause behind many firings |
+| `list_call_sites`, `list_failure_modes`, `list_quality_dimensions` | Inventory the imported pipeline taxonomy |
+| `query_count`, `query_search`, `query_facets`, `query_timeseries` | Query real spans, tool calls, classifier events, and usage/cost rollups |
+| `get_span`, `get_trace` | Read the **raw payload** — the actual conversation text behind a flagged span |
+| `list_graders`, `get_grader`, `propose_grader_edit` | Read a grader's definition; propose a change |
 | `run_triage`, `latest_triage`, `get_triage` | Trace a failure mode to its root cause |
-| `reload_pipeline` | Refresh after an import |
+| `list_rca_reports`, `get_rca_report` | Read the root-cause reports the platform ran on a degradation |
+
+**This table is a summary, not the contract.** `tools/list` is the authoritative catalogue and it answers
+*per token*: each tool declares a capability your org must hold to be offered it, so your project may be
+offered fewer tools than are listed here, and one your org does not hold reads as an unknown tool rather than
+a permission error. Graders and triage/RCA are the two gated groups; everything above them is open. Ask the
+server rather than assuming a fixed list — a hand-maintained copy is what left this table advertising a
+no-op for two releases.
 
 ## Make traces flow (OTLP)
 
