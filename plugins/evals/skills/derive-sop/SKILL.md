@@ -57,6 +57,16 @@ exemplars carry are the measured remainder.
 3. **Frame exemplars.** For the residue of judgement observations where no mechanism can be named,
    carry the adjudicated convention as 2–3 `counts:`/`counts_not:` mini-scenarios — plain English,
    meaning-level. This is where "a coverage question the agent deflects is still owed" lives.
+   A complete frame answers three questions, not one: what **opens** the obligation (a member ask
+   the agent engages substantively — or the agent **volunteering** the position unasked; openings
+   can be agent-side), how long it **persists** (typically until discharged or the conversation
+   ends — follow-ups, pushback, process questions and even wrap-up turns inside an opened
+   interaction stay owed), and the **carve-outs** (e.g. conversations where no position is taken
+   never open it; a refusal doesn't open it; an out-of-scope topic doesn't). Frames are
+   **per-rule** — two rules in the same SOP can carry different opening conditions and different
+   carve-outs, so derive each from its own instruction text rather than reusing a sibling's.
+   Exemplars attach to observations, so when two rules need different frames for the same
+   behavior, split the observation rather than blending the frames.
 4. **Prohibitions name atomic acts.** A `never:` target is one act (`gives_outcome_guarantee`),
    not a compound (`refunds_and_apologizes`); rare compound violations decompose into `when:` +
    an obligation.
@@ -117,6 +127,15 @@ exemplar, near-verbatim; "even if the member is only asking hypothetically" is a
 exemplar. These asides are adjudications the product team already made — capture them rather than
 inventing scenarios. Reserve the exemplar form for judgement observations that need it; plain
 behavioral atoms stay bare sentences.
+
+**Cover opening AND persistence, not just triggering.** Measured on real annotation gaps
+(style-law 3's frame dimensions): the costly mislabels are rarely about what triggers an
+obligation — they're persistence turns (the member's wrap-up "ok, will call the agent" after an
+unresolved coverage question is still owed) and agent-side openings (the agent volunteering a
+coverage position opens the obligation exactly as an ask does). When harvesting exemplars for an
+obligation-shaped observation, make at least one `counts:` a persistence or agent-side-opening
+scenario and at least one `counts_not:` a no-position/never-opened scenario, if the instruction
+surface supports them.
 
 ### 5 — Author the rules — every instruction lands somewhere
 

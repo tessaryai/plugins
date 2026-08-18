@@ -52,7 +52,9 @@ Walk the SOP line by line against what you just read:
 
 - **each intent** — does the demand still exist? does `means:` still describe it?
 - **each observation** — is the sentence still something the instructions call for or forbid?
-  do its `counts:`/`counts_not:` exemplars still reflect the conventions the asides state?
+  do its `counts:`/`counts_not:` exemplars still reflect the conventions the asides state — and,
+  where the instruction surface supports them, do they still cover all three frame dimensions
+  (what opens the obligation, that it persists, the carve-outs), not just the trigger?
 - **each rule** — is the instruction it enforces still present, with the same scope, trigger,
   and exception? has an `unless:` appeared or disappeared?
 - **each `# deferred:` comment** — is the instruction still there, and still inexpressible?
