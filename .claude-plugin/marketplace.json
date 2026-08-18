@@ -11,9 +11,9 @@
         "source": "git-subdir",
         "url": "https://github.com/tessaryai/plugins.git",
         "path": "plugins/evals",
-        "ref": "evals-v0.27.0"
+        "ref": "evals-v0.27.1"
       },
-      "description": "Connect your repo to evals.tessary.ai and work with your evals from the coding agent — wire trace ingestion over OTLP, tag your call sites, assess graders, query failing traces, read the cases and root-cause reports the platform opens, and author per-call-site SOP-conformance files (derive from the code, reconcile on change, lint locally). The platform's observer authors and maintains your eval bundle from there."
+      "description": "Connect your repo to evals.tessary.ai and work with your evals from the coding agent \u2014 wire trace ingestion over OTLP, tag your call sites, assess graders, query failing traces, read the cases and root-cause reports the platform opens, and author per-call-site SOP-conformance files (derive from the code, reconcile on change, lint locally). The platform's observer authors and maintains your eval bundle from there."
     },
     {
       "name": "crew",
@@ -23,7 +23,7 @@
         "path": "plugins/crew",
         "ref": "crew-v0.7.0"
       },
-      "description": "A multi-agent dev harness: hand it a goal and the orchestrator triages, implements, reviews, and maintains your repo — autonomously, up to a review-ready PR."
+      "description": "A multi-agent dev harness: hand it a goal and the orchestrator triages, implements, reviews, and maintains your repo \u2014 autonomously, up to a review-ready PR."
     }
   ]
 }
