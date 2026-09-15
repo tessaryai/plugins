@@ -27,7 +27,8 @@ To update later:
 
 `tessary` sets up [Tessary](https://github.com/tessaryai/tessary), the open-source, self-hosted reliability
 platform for AI agents in production. `/setup` installs and starts a local instance; `/instrument` tags your
-repo's model-call spans with `tessary.call_site.id` and wires OTLP export.
+repo's model-call spans with `tessary.call_site.id` and wires OTLP export; `/connect` registers the
+instance's read-only MCP tools (cases, findings, traces, spans) into this Claude Code session.
 
 ```
 /plugin install tessary@tessary
