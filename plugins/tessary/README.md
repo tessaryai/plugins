@@ -38,13 +38,19 @@ Wires your repo's tracing to Tessary's OTLP endpoint and tags every model-call s
 `tessary.call_site.id` attribute the platform's tools are keyed on. Also a thin pointer, at
 [`instrument.md`](https://github.com/tessaryai/tessary/blob/main/instrument.md).
 
-## Connect Claude Code to your instance
+## Connect Claude Code to your instance (`/connect`)
 
-Not in this release. `/tessary:connect` — which registers Tessary's MCP tools (read-only: cases,
-findings, traces, and spans) into this Claude Code session — ships in a follow-up release of this
-plugin. Until then, follow the **Client configuration** steps in
-[the MCP server docs](https://github.com/tessaryai/tessary/blob/main/docs/reference/mcp-server.mdx)
-to register it by hand.
+```
+/connect
+```
+
+Registers Tessary's MCP tools (read-only: cases, findings, traces, and spans) into this Claude
+Code session, scoped locally to this repo. There's no OAuth here — a self-hosted instance
+authenticates with an admin-scoped project API key you mint by hand under **Settings → MCP
+tokens**. This skill never sees, prints, or constructs a command carrying that token: you paste it
+into a hidden prompt run by the plugin's own helper script (`platform.py`), which stores it under
+`~/.config/tessary/credentials.json` (`chmod 600`) and registers the server with `claude mcp add
+--scope local`.
 
 ## License
 
