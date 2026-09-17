@@ -9,7 +9,7 @@ Settings -> MCP tokens in their own instance, and is shown only once in
 plaintext. So this script never fetches or constructs a token itself — a human
 runs `link` interactively (or exports TESSARY_ORIGIN / TESSARY_TOKEN for a
 headless run of THIS script) and types the value directly into a hidden
-prompt. The coding agent driving `/tessary:connect` never sees, prints, or
+prompt. The coding agent driving `/connect` never sees, prints, or
 constructs a shell command carrying the raw token.
 
 Subcommands (all stdlib-only, single-file):
@@ -34,7 +34,7 @@ Subcommands (all stdlib-only, single-file):
 Exit codes (the skill branches on these, so they are contract):
 
   0  ok
-  1  not linked (or the stored token was rejected) -> run `link` / /tessary:connect
+  1  not linked (or the stored token was rejected) -> run `link` / /connect
   2  the instance did not answer: network/TLS failure, or it answered with
      401/403/404/5xx. Also argparse's own usage-error code.
   127  the `claude` CLI isn't on PATH (mcp-add --run only)
@@ -96,6 +96,19 @@ def load_config() -> dict[str, Any]:
         return {"projects": {}}
 
 
+def _write_config_private(p: Path, cfg: dict[str, Any]) -> None:
+    """Write the credentials file with 0600 perms from the moment it's created —
+    the mode is applied by the open() syscall itself, not a chmod afterward, so
+    there's no window where a freshly-created file sits at the umask default
+    (typically 0644, world-readable) before this function narrows it."""
+    fd = os.open(p, os.O_CREAT | os.O_WRONLY | os.O_TRUNC, 0o600)
+    try:
+        with os.fdopen(fd, "w") as f:
+            f.write(json.dumps(cfg, indent=2))
+    finally:
+        os.chmod(p, 0o600)
+
+
 def save_credentials(repo: str, origin: str, token: str) -> None:
     p = config_path()
     p.parent.mkdir(parents=True, exist_ok=True)
@@ -105,8 +118,7 @@ def save_credentials(repo: str, origin: str, token: str) -> None:
         "token": token,
         "linked_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     }
-    p.write_text(json.dumps(cfg, indent=2))
-    os.chmod(p, 0o600)
+    _write_config_private(p, cfg)
 
 
 def linked_project(repo: str) -> dict[str, Any] | None:
@@ -117,7 +129,7 @@ def _require_link(repo: str) -> dict[str, Any]:
     proj = linked_project(repo)
     if not proj:
         print("this repo isn't linked to a Tessary instance yet — run `platform.py link` "
-              "(or /tessary:connect) first.", file=sys.stderr)
+              "(or /connect) first.", file=sys.stderr)
         raise SystemExit(1)
     return proj
 
@@ -296,7 +308,7 @@ def cmd_mcp_add(args: argparse.Namespace) -> int:
 
     if not _claude_available():
         print("the `claude` CLI isn't on PATH, so I can't register the MCP server — your existing "
-              "registration (if any) is untouched. Fix PATH and re-run `/tessary:connect`.",
+              "registration (if any) is untouched. Fix PATH and re-run `/connect`.",
               file=sys.stderr)
         return 127
 
@@ -306,7 +318,7 @@ def cmd_mcp_add(args: argparse.Namespace) -> int:
     if res.returncode != 0:
         sys.stderr.write(res.stderr or res.stdout)
         print(f"\n`claude mcp add` failed (exit {res.returncode}). Any previous '{MCP_SERVER_NAME}' "
-              "registration was removed during this refresh — re-run `/tessary:connect` to restore it.",
+              "registration was removed during this refresh — re-run `/connect` to restore it.",
               file=sys.stderr)
         return res.returncode
     print(f"Registered MCP server '{MCP_SERVER_NAME}' -> {origin.rstrip('/')}/mcp (local scope).")
@@ -323,9 +335,7 @@ def _forget_credentials(repo: str) -> bool:
     if key not in cfg.get("projects", {}):
         return False
     del cfg["projects"][key]
-    p = config_path()
-    p.write_text(json.dumps(cfg, indent=2))
-    os.chmod(p, 0o600)
+    _write_config_private(config_path(), cfg)
     return True
 
 
