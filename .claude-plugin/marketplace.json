@@ -24,6 +24,16 @@
         "ref": "crew-v0.7.0"
       },
       "description": "A multi-agent dev harness: hand it a goal and the orchestrator triages, implements, reviews, and maintains your repo \u2014 autonomously, up to a review-ready PR."
+    },
+    {
+      "name": "tessary",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/tessaryai/plugins.git",
+        "path": "plugins/tessary",
+        "ref": "tessary-v0.1.0"
+      },
+      "description": "Self-host Tessary, an open-source agent reliability platform, and wire your repo's tracing to it \u2014 install and start the local instance, instrument your model-call spans with tessary.call_site.id, and connect Claude Code's MCP tools to a project so the agent can read cases, findings, and traces natively."
     }
   ]
 }

@@ -1,0 +1,19 @@
+{
+  "name": "tessary",
+  "description": "Self-host Tessary, an open-source agent reliability platform, and wire your repo's tracing to it — install and start the local instance, instrument your model-call spans with tessary.call_site.id, and connect Claude Code's MCP tools to a project so the agent can read cases, findings, and traces natively.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Tessary AI"
+  },
+  "homepage": "https://github.com/tessaryai/tessary",
+  "repository": "https://github.com/tessaryai/plugins",
+  "license": "MIT",
+  "keywords": [
+    "tessary",
+    "llm",
+    "observability",
+    "otel",
+    "mcp",
+    "coding-agent"
+  ]
+}

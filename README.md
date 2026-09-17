@@ -19,8 +19,23 @@ To update later:
 
 ## Plugins
 
+- [tessary](#tessary) — self-host the open-source Tessary reliability platform and wire your repo's tracing to it.
 - [evals](#evals) — connect your repo to evals.tessary.ai and work with your evals from the coding agent.
 - [crew](#crew) — a multi-agent dev harness that triages, implements, reviews, and maintains your repo.
+
+### tessary
+
+`tessary` sets up [Tessary](https://github.com/tessaryai/tessary), the open-source, self-hosted reliability
+platform for AI agents in production. `/setup` installs and starts a local instance; `/instrument` tags your
+repo's model-call spans with `tessary.call_site.id` and wires OTLP export.
+
+```
+/plugin install tessary@tessary
+```
+
+Then run `/setup` in a Claude Code session, or just ask Claude to "set up tessary."
+
+See the [plugin README](./plugins/tessary/README.md) for the full flow.
 
 ### evals
 
