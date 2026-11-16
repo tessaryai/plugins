@@ -1,0 +1,124 @@
+{
+  "_about": "Default CRM schema for the gtm plugin. /gtm:setup creates these five databases under a parent page the user picks, or maps an existing set onto these logical names. Each property has a logical_name; config.notion.field_map.<database>.<logical_name> holds the user's actual property name (default: the 'name' below). Each select option is a logical option; config.notion.status_map (contact Status) and config.notion.option_map.<database>.<logical_name> hold the actual option names (default: identical). Relations name their target database by logical name and the property on the other side (dual_property) so both sides are created as one two-way relation.",
+  "version": 1,
+  "databases": [
+    {
+      "logical_name": "contacts",
+      "title": "Contacts",
+      "description": "One page per person. The page body holds the dated log lines and campaign markers.",
+      "properties": [
+        {"logical_name": "name", "name": "Name", "type": "title"},
+        {"logical_name": "email", "name": "Email", "type": "email"},
+        {"logical_name": "linkedin", "name": "LinkedIn", "type": "url"},
+        {"logical_name": "phone", "name": "Phone", "type": "phone_number"},
+        {"logical_name": "location", "name": "Location", "type": "rich_text"},
+        {"logical_name": "status", "name": "Status", "type": "select",
+         "options": ["New", "Contacted", "Responded", "Discovery", "Lead", "Archived", "Do Not Contact", "Disqualified"]},
+        {"logical_name": "do_not_contact", "name": "Do Not Contact", "type": "checkbox"},
+        {"logical_name": "dnc_reason", "name": "DNC Reason", "type": "rich_text"},
+        {"logical_name": "dnc_set_on", "name": "DNC Set On", "type": "date"},
+        {"logical_name": "email_status", "name": "Email Status", "type": "select",
+         "options": ["Verified", "Verified - Low Confidence", "Needs Review", "Not Found"]},
+        {"logical_name": "first_contacted", "name": "First Contacted", "type": "date"},
+        {"logical_name": "lead_source", "name": "Lead Source", "type": "select",
+         "options": ["LinkedIn", "Email", "Warm Intro", "Inbound", "Cold Outreach", "Import"]},
+        {"logical_name": "designation", "name": "Designation", "type": "select",
+         "options": ["Founder", "CEO", "CXO", "VP", "Manager", "Individual Contributor"]},
+        {"logical_name": "notes", "name": "Notes", "type": "rich_text"},
+        {"logical_name": "company", "name": "Company", "type": "relation", "target": "companies", "dual_property": "Contacts"},
+        {"logical_name": "campaign", "name": "Campaign", "type": "relation", "target": "campaigns", "dual_property": "Contacts"},
+        {"logical_name": "deal", "name": "Deal", "type": "relation", "target": "pipeline", "dual_property": "Contacts"},
+        {"logical_name": "meetings", "name": "Meetings", "type": "relation", "target": "meetings", "dual_property": "Contacts"}
+      ]
+    },
+    {
+      "logical_name": "companies",
+      "title": "Companies",
+      "description": "One page per organization.",
+      "properties": [
+        {"logical_name": "name", "name": "Name", "type": "title"},
+        {"logical_name": "website", "name": "Website", "type": "url"},
+        {"logical_name": "linkedin", "name": "LinkedIn", "type": "url"},
+        {"logical_name": "description", "name": "Description", "type": "rich_text"},
+        {"logical_name": "employees", "name": "Employees", "type": "number"},
+        {"logical_name": "headquarters", "name": "Headquarters", "type": "rich_text"},
+        {"logical_name": "icp", "name": "ICP", "type": "select",
+         "options": ["Strong fit", "Fit", "Not a fit"]},
+        {"logical_name": "icp_notes", "name": "ICP Notes", "type": "rich_text"},
+        {"logical_name": "vertical", "name": "Vertical", "type": "select",
+         "options": ["SaaS", "Fintech", "Healthcare", "E-commerce", "Developer Tools", "AI / ML", "Services", "Other"]},
+        {"logical_name": "contacts", "name": "Contacts", "type": "relation", "target": "contacts", "dual_property": "Company"},
+        {"logical_name": "deals", "name": "Deals", "type": "relation", "target": "pipeline", "dual_property": "Company"}
+      ]
+    },
+    {
+      "logical_name": "pipeline",
+      "title": "Pipeline",
+      "description": "One page per deal or opportunity.",
+      "properties": [
+        {"logical_name": "name", "name": "Name", "type": "title"},
+        {"logical_name": "stage", "name": "Stage", "type": "select",
+         "options": ["First Call", "Interested", "Discovery", "Proposal", "Pilot", "Won", "Lost", "On Hold"]},
+        {"logical_name": "company", "name": "Company", "type": "relation", "target": "companies", "dual_property": "Deals"},
+        {"logical_name": "contacts", "name": "Contacts", "type": "relation", "target": "contacts", "dual_property": "Deal"},
+        {"logical_name": "value", "name": "Value", "type": "number"},
+        {"logical_name": "expected_close", "name": "Expected Close", "type": "date"},
+        {"logical_name": "next_steps", "name": "Next Steps", "type": "rich_text"},
+        {"logical_name": "likelihood", "name": "Likelihood", "type": "select",
+         "options": ["High", "Medium", "Low"]}
+      ]
+    },
+    {
+      "logical_name": "campaigns",
+      "title": "Campaigns",
+      "description": "One page per campaign. The page body holds the sequence and copy in the format of reference/campaign-page.md.",
+      "properties": [
+        {"logical_name": "name", "name": "Campaign Name", "type": "title"},
+        {"logical_name": "status", "name": "Status", "type": "select",
+         "options": ["Review", "Active", "Paused", "Completed"]},
+        {"logical_name": "type", "name": "Type", "type": "select",
+         "options": ["LinkedIn", "Email", "Mixed", "Warm Intro"]},
+        {"logical_name": "start_date", "name": "Start Date", "type": "date"},
+        {"logical_name": "end_date", "name": "End Date", "type": "date"},
+        {"logical_name": "notes", "name": "Notes", "type": "rich_text"},
+        {"logical_name": "contacts", "name": "Contacts", "type": "relation", "target": "contacts", "dual_property": "Campaign"}
+      ]
+    },
+    {
+      "logical_name": "meetings",
+      "title": "Meetings",
+      "description": "One page per meeting held or booked with a contact.",
+      "properties": [
+        {"logical_name": "name", "name": "Meeting name", "type": "title"},
+        {"logical_name": "date", "name": "Date", "type": "date"},
+        {"logical_name": "contacts", "name": "Contacts", "type": "relation", "target": "contacts", "dual_property": "Meetings"},
+        {"logical_name": "recording_url", "name": "Recording URL", "type": "url"},
+        {"logical_name": "summary", "name": "Summary", "type": "rich_text"},
+        {"logical_name": "source", "name": "Source", "type": "select",
+         "options": ["Fathom", "Granola", "Fireflies", "Otter", "Calendar", "Manual"]}
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "logical_name": "funnel",
+      "title": "Funnel",
+      "parent": "the same parent page as the databases",
+      "description": "A plain page that /gtm:funnel replaces in full on each run. It holds one 'As of YYYY-MM-DD' line and the funnel tables. Nothing else goes on it, because each run replaces the whole content. Its id is stored in config notion.funnel_page_id.",
+      "initial_content": "As of: not run yet. Run /gtm:funnel to fill this page."
+    }
+  ],
+  "relation_pairs": [
+    {"from": "contacts.company", "to": "companies.contacts"},
+    {"from": "contacts.campaign", "to": "campaigns.contacts"},
+    {"from": "contacts.deal", "to": "pipeline.contacts"},
+    {"from": "contacts.meetings", "to": "meetings.contacts"},
+    {"from": "companies.deals", "to": "pipeline.company"}
+  ],
+  "create_order": ["companies", "campaigns", "pipeline", "meetings", "contacts"],
+  "create_notes": [
+    "Create each database first without its relation properties, then add the relations in a second pass once every target data source id is known.",
+    "Each two-way relation appears on both databases above, but it is one relation. Create it once, from the 'from' side in relation_pairs, as a dual relation whose dual_property is the 'to' property name. Do not create it again from the other side.",
+    "Status, Email Status, Stage and every other choice field is a select, never a Notion status property."
+  ]
+}
