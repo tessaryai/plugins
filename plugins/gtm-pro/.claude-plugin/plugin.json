@@ -1,0 +1,22 @@
+{
+  "name": "gtm-pro",
+  "displayName": "Tessary GTM Pro",
+  "description": "The full edition of Tessary GTM, with helper scripts for large CRMs. Host your CRM in Notion and run your go-to-market flow from Claude Code or Claude Cowork: set up or map the databases, import from another CRM, sweep your inbox, calendar, LinkedIn and outreach tools into the CRM every day, build and write campaigns in your voice, send them with safety gates, and report the funnel.",
+  "version": "0.3.0",
+  "author": {
+    "name": "Tessary AI"
+  },
+  "homepage": "https://github.com/tessaryai/plugins",
+  "repository": "https://github.com/tessaryai/plugins",
+  "license": "MIT",
+  "keywords": [
+    "gtm",
+    "crm",
+    "notion",
+    "sales",
+    "outreach",
+    "campaigns",
+    "linkedin",
+    "founder"
+  ]
+}

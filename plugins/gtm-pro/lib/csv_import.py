@@ -5,7 +5,7 @@ Works for any CRM that can export CSV (Google Sheets, Salesforce, Airtable,
 HubSpot, Pipedrive, Attio exports, plain spreadsheets) and for the JSON rows
 an API import writes out after it flattens them to CSV. This script never
 writes to Notion and never reaches the network. It reads the file, normalizes
-it, finds duplicates and writes a plan. The /gtm:import skill shows the plan
+it, finds duplicates and writes a plan. The /gtm-pro:import skill shows the plan
 to the user and then applies it through the Notion path in
 reference/notion-access.md.
 

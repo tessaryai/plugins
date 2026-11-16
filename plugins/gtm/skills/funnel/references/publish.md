@@ -1,6 +1,6 @@
 # Publish the funnel
 
-Publishing always uses the Notion MCP tools (`notion-fetch`, `notion-create-pages`, `notion-update-page`), loaded with ToolSearch. `lib/notion_rest.py` has no replace command, so the REST path is never used here. Read each tool's schema at run time and use only the parameters it defines.
+Publishing always uses the Notion MCP tools (`notion-fetch`, `notion-create-pages`, `notion-update-page`), loaded with ToolSearch. Read each tool's schema at run time and use only the parameters it defines.
 
 ## 1. Find or create the Funnel page
 
@@ -10,7 +10,7 @@ Publishing always uses the Notion MCP tools (`notion-fetch`, `notion-create-page
    - The result is a database or a data source, not a page: stop and report under Needs you. Never replace a database.
 3. Not set, and `notion.parent_page_id` is set: create the page, unless the run is a dry run.
    - `notion-create-pages` with the parent page as parent (check the schema for the page-parent shape), title `Funnel`, content `As of: not run yet. Run /gtm:funnel to fill this page.` (from `${CLAUDE_PLUGIN_ROOT}/templates/schema.json`, `pages[0]`).
-   - Save the new id: `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/config.py set notion.funnel_page_id <id>`.
+   - Save the new id as `notion.funnel_page_id` in config.json (Read the file, change only that key, Write it back; `${CLAUDE_PLUGIN_ROOT}/reference/config.md`, No Python, step 3).
    - Record it under Decisions ("created the Funnel page under <parent title> (was: not set)").
 4. Not set, and no parent page: do not publish. Under Needs you: "Pick the page for the funnel: run /gtm:setup, or set notion.funnel_page_id to an empty page."
 
@@ -20,7 +20,7 @@ From the fetch in step 1, look for child pages, child databases or linked databa
 
 ## 3. Replace the content
 
-1. Read `<work>/out/funnel_tables.md` in full.
+1. Read `<work>/funnel_tables.md` in full.
 2. Call `notion-update-page` with the page id and the command the schema gives for replacing the whole page content (at the time of writing `replace_content`, with the new text in `new_str`). Pass the file's full text, unchanged.
 3. Do not pass any parameter that allows deleting child pages or content. If Notion answers that content or child pages would be deleted, stop. That is a hard stop (`${CLAUDE_PLUGIN_ROOT}/reference/notion-access.md`, Hard stops). Report it under BLOCKED; do not retry with a changed payload.
 4. Any other error: retry once after a few seconds. If it fails again, the publish failed: go to Blocked in `SKILL.md`.
@@ -31,7 +31,7 @@ This is the only full-page replace in the gtm plugin. Never use it on any page o
 
 `notion-fetch` the page again and check:
 
-- The first line holds `As of <as_of date>` from `funnel_summary.json`.
+- The first line holds `As of <today's date>` as written in `funnel_tables.md`.
 - There is a `Cold outbound` and a `Warm outbound` heading (and `Inbound` when the run had an inbound file).
 - Each table has a `Total` row whose numbers match the `Total` rows in `funnel_tables.md`.
 

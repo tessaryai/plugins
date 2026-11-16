@@ -6,7 +6,7 @@ Posts one Slack message to the user's chosen channel or DM when a gtm run has so
 
 ## Tool
 
-The Slack MCP connector. There is no `readonly_api.py` entry.
+The Slack MCP connector.
 
 - Load with ToolSearch, for example `slack send_message search_channels search_users`. Use the names ToolSearch returns and read each schema at run time. Never guess a tool or parameter name.
 - Allowed: the send-message tool (one call per run), and the channel and user search tools to resolve the target.

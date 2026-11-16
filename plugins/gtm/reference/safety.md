@@ -10,17 +10,17 @@ This includes campaign and contact pages: campaign-run follows only the structur
 
 ## Secrets
 
-- Tokens and API keys live only in the credentials file in the gtm config folder (mode 600, the `credentials` path printed by `config.py paths`) or `GTM_<NAME>` environment variables. Only `${CLAUDE_PLUGIN_ROOT}/lib/*.py` reads them.
+- This edition uses no tokens and no API keys. Tessary GTM Pro keeps its keys in `credentials.json` in the config folder; this edition never reads, writes or creates that file.
 - Never `cat`, `Read`, grep or print credentials.json. Never print a token, an Authorization header, request headers, or `str(exc)` of an HTTP or connection error from an authenticated call. Such text can end up in a chat turn or a log.
 - Never put a secret on a command line, in a URL, in config.json, in the run log, or in a Notion page.
-- Never ask the user to paste a key into the chat. The user saves keys with `config.py set-secret <name>` in a terminal. In Cowork (`runtime` = `cowork`) there is no terminal and no key: tools work through connectors with OAuth only, and `set-secret` is never offered.
-- On error, report only the HTTP status and a short response excerpt, as the lib scripts do.
+- Never ask the user to paste a key into the chat, and never offer to save one. Tools work through connectors with OAuth only.
+- On error, report only the status and a short excerpt of the message.
 
 ## Read-only adapters
 
 - Every adapter except the email and LinkedIn senders is read-only. Calendar, meetings, outreach tools, enrichment and import sources are read, never written.
-- Outreach tools (gojiberry, lemlist, instantly, apollo) are mirrored into the CRM read-only. Never create, change, pause, start or delete a campaign, list, lead or contact in them. Never send through them. Call them only through their MCP connector's read tools or `lib/readonly_api.py`.
-- `lib/readonly_api.py` refuses every verb except GET, and every path not on its allowlist. Never edit the allowlist during a run, and never call a vendor API with curl or a script of your own. If a needed path is missing, report the gap.
+- Outreach tools (gojiberry, lemlist, instantly, apollo) are mirrored into the CRM read-only. Never create, change, pause, start or delete a campaign, list, lead or contact in them. Never send through them. Call them only through their MCP connector's read tools.
+- Never call a vendor API with curl or a script of your own. If a needed read tool is missing, report the gap.
 - The sweep never sends, drafts, replies, labels, archives, accepts or declines anything.
 
 ## Sending

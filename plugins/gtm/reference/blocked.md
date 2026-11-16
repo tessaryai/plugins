@@ -1,6 +1,6 @@
 # Blocked adapters
 
-An adapter is blocked when its tool cannot run in this session: the MCP connector is missing or fails auth, an API key is missing or refused (readonly_api exit code 2), Chrome is not connected, LinkedIn shows a login page, a CAPTCHA or a warning, or a Notion tool is missing.
+An adapter is blocked when its tool cannot run in this session: the MCP connector is missing or fails auth, the tool has no connector in the session, Chrome is not connected, LinkedIn shows a login page, a CAPTCHA or a warning, or a Notion tool is missing.
 
 A blocked adapter is never treated as clean, and never stays silent.
 
@@ -11,19 +11,18 @@ Run this at the start of every skill, for each adapter the run needs:
 1. Read the adapter list from config (`adapters.*`).
 2. For each adapter, open its file `${CLAUDE_PLUGIN_ROOT}/adapters/<kind>/<tool>.md` and run its Preflight check. Typical checks:
    - MCP connector: load its tools with ToolSearch; call one cheap read (for example list one item). Missing tools or an auth error = blocked.
-   - readonly_api: `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py <tool> check`. Exit 2 = blocked. Not with `runtime` = `cowork` or without Python (Cowork, below).
    - Chrome (LinkedIn): load the Claude in Chrome tools, open a new tab on the LinkedIn feed, and check from a screenshot that it is not a login page or CAPTCHA. Tools missing or not connected = blocked.
-   - Notion: load the Notion tools and fetch the Contacts data source. With `notion.access` = `rest` (never in Cowork), also run `notion_rest.py schema <contacts id>`.
+   - Notion: load the Notion tools and fetch the Contacts data source.
 3. Mark each adapter `ok` or `blocked` with what you saw (the error status or the screen state, never a token or raw exception text).
 4. If Notion itself is blocked, stop the run after the notification: nothing can be written. Report it.
 
 ## Cowork
 
-With `runtime` = `cowork` (or when `python3` is missing), a tool works only through its connector:
+This edition follows these rules in Cowork and in Claude Code alike: a tool works only through its connector.
 
-- Never run `lib/readonly_api.py` or `lib/notion_rest.py`, and never call a vendor API with curl. The Cowork virtual machine cannot reach them. One exception: the reachability probe in `/gtm:setup` step 0 (`curl` to `https://api.notion.com/` with no token, header or body, once), which runs before the runtime is known and sends no data.
-- A tool with no connector in the session is blocked, even when its adapter file names an API key. Fix text: "Connect a connector for <tool>, or run this routine from Claude Code."
-- Never offer `set-secret`. Use the fix text above instead of the key fix below.
+- Never call a vendor API with curl or a script. The Cowork virtual machine cannot reach them. One exception: the reachability probe in `/gtm:setup` step 0 (`curl` to `https://api.notion.com/` with no token, header or body, once), which runs before the runtime is known and sends no data.
+- A tool with no connector in the session is blocked, even when its adapter file names an API key. Fix text: the upgrade message when Tessary GTM Pro could read the tool with a key (`${CLAUDE_PLUGIN_ROOT}/reference/upgrade.md`, trigger 3), else "Connect a connector for <tool>."
+- Never offer to save a key.
 
 ## During the run
 
@@ -39,8 +38,8 @@ Put a `BLOCKED` section first in the run log entry and first in the final report
 
 - "Reconnect the Gmail connector in Claude settings."
 - "Open Chrome, sign in to LinkedIn, and check the Claude extension is connected."
-- "Save a working key: run `python3 -I -B <plugin root>/lib/config.py set-secret fathom_api_key` in a terminal." (Claude Code only. In Cowork: "Connect a connector for fathom, or run this routine from Claude Code.")
-- "Share the CRM pages with your Notion integration, or set notion.access to mcp."
+- "Connect a connector for fathom." When the user wants the tool without a connector: the upgrade message (`${CLAUDE_PLUGIN_ROOT}/reference/upgrade.md`).
+- "Add or reconnect the Notion connector in Claude settings."
 
 ## One notification per run
 

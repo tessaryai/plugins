@@ -1,0 +1,9 @@
+@@ replace
+ With a Notion token it reads copy with `notion_rest.py blocks` and uses `plain_text`. Without one, see
+@@ with
+ See
+@@ drop-line - Prefer REST: when a Notion token exists
+@@ replace
+(`<br />` in the connector's fetch view, `\n` inside one REST paragraph)
+@@ with
+(`<br />` in the connector's fetch view)

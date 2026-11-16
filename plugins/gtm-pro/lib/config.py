@@ -586,17 +586,17 @@ def validate(cfg: dict) -> list:
     elif notion.get("access") == "rest" and not get_secret("notion_token"):
         err("notion.access is 'rest' but no notion_token is saved; run set-secret notion_token or set access to 'mcp'")
     if not _notion_id_ok(notion.get("parent_page_id", "")):
-        err("notion.parent_page_id is empty, a placeholder or not a Notion id (32 hex characters); run /gtm:setup")
+        err("notion.parent_page_id is empty, a placeholder or not a Notion id (32 hex characters); run /gtm-pro:setup")
     for db in DATABASES:
         value = (notion.get("data_sources") or {}).get(db, "")
         if _is_placeholder(str(value)):
-            err(f"notion.data_sources.{db} is empty or a placeholder; run /gtm:setup")
+            err(f"notion.data_sources.{db} is empty or a placeholder; run /gtm-pro:setup")
         elif not _notion_id_ok(value):
             err(f"notion.data_sources.{db} {value!r} is not a Notion data source id (32 hex characters, dashes optional)")
     if notion.get("access") == "mcp":
         missing_views = [db for db in DATABASES if not (notion.get("views") or {}).get(db)]
         if missing_views:
-            warn(f"notion.views has no view URL for {', '.join(missing_views)}; MCP index reads need a view URL (rows and SQL mode have a small workspace quota); run /gtm:setup databases to record them")
+            warn(f"notion.views has no view URL for {', '.join(missing_views)}; MCP index reads need a view URL (rows and SQL mode have a small workspace quota); run /gtm-pro:setup databases to record them")
     try:
         field_defaults, option_defaults = schema_defaults()
     except (OSError, json.JSONDecodeError):
@@ -629,7 +629,7 @@ def validate(cfg: dict) -> list:
         elif kind not in ("select", "status"):
             err(f"notion.select_payload.{prop_ref} must be 'select' or 'status'")
     if _is_placeholder(str(notion.get("funnel_page_id", ""))):
-        warn("notion.funnel_page_id is empty; setup normally creates the Funnel page, and /gtm:funnel creates it under notion.parent_page_id if it is still missing")
+        warn("notion.funnel_page_id is empty; setup normally creates the Funnel page, and /gtm-pro:funnel creates it under notion.parent_page_id if it is still missing")
 
     adapters = cfg.get("adapters", {})
     for kind in ("email", "calendar", "linkedin"):
@@ -765,7 +765,7 @@ def _paths_dict() -> dict:
 
 def _cmd_check(_args) -> int:
     if not config_path().exists():
-        print(f"error: {config_path()} does not exist; run /gtm:setup")
+        print(f"error: {config_path()} does not exist; run /gtm-pro:setup")
         return 1
     issues = validate(load())
     for level, msg in issues:

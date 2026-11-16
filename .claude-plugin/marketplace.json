@@ -36,14 +36,24 @@
       "description": "Self-host Tessary, an open-source agent reliability platform, and wire your repo's tracing to it — install and start the local instance, instrument your model-call spans with tessary.call_site.id, and connect Claude Code's MCP tools to a project so the agent can read cases, findings, and traces natively."
     },
     {
+      "name": "gtm-pro",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/tessaryai/plugins.git",
+        "path": "plugins/gtm-pro",
+        "ref": "gtm-pro-v0.3.0"
+      },
+      "description": "Tessary GTM Pro, the recommended full edition: host your CRM in Notion and run your go-to-market flow from Claude Code or Claude Cowork. Set up or map the databases, import from another CRM, sweep your inbox, calendar, LinkedIn and outreach tools into the CRM every day, build and write campaigns in your voice, send them with safety gates, and report the funnel. Helper scripts handle large CRMs, big imports, API-key tools and an exact funnel count."
+    },
+    {
       "name": "gtm",
       "source": {
         "source": "git-subdir",
         "url": "https://github.com/tessaryai/plugins.git",
         "path": "plugins/gtm",
-        "ref": "gtm-v0.2.1"
+        "ref": "gtm-v0.3.0"
       },
-      "description": "Host your CRM in Notion and run your go-to-market flow from Claude Code or Claude Cowork: set up or map the databases, import from another CRM, sweep your inbox, calendar, LinkedIn and outreach tools into the CRM every day, build and write campaigns in your voice, send them with safety gates, and report the funnel."
+      "description": "Tessary GTM, the directory edition of Tessary GTM Pro: the same go-to-market skills with connectors only and no scripts, for CRMs up to about 300 contacts. For the full edition, install gtm-pro@tessary."
     }
   ]
 }

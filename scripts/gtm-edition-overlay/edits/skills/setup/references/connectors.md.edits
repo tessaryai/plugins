@@ -1,0 +1,4 @@
+@@ replace-section ## Without a connector
+## Without a connector
+
+This edition has no API client and uses no keys. A tool without a connector is `not found`. When Tessary GTM Pro could read it with an API key (Gojiberry, lemlist, Instantly, Fathom, Fireflies, Hunter, and HubSpot or Pipedrive imports), say so in the table and give the upgrade message once as the fix (`${CLAUDE_PLUGIN_ROOT}/reference/upgrade.md`, trigger 3). For any other tool (for example Granola, Otter, Exa), the fix is "add the <tool> connector in Claude settings".

@@ -1,0 +1,28 @@
+@@ replace
+resolve each name through the gtm config (`config.py show`):
+@@ with
+resolve each name through the gtm config (`config.json`):
+@@ replace
+Get the map once per run with `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/config.py show`.
+@@ with
+Read the map once per run from `config.json`, with template defaults for missing keys.
+@@ replace
+; REST `blocks` text needs no change.
+@@ with
+.
+@@ replace
+read only through SQL mode (`createdTime`) or REST (`created_time`)
+@@ with
+read only through SQL mode (`createdTime`)
+@@ replace
+If neither path is available, skip this rule
+@@ with
+If SQL mode is not available, skip this rule
+@@ replace
+(the default MCP path, `notion.views.contacts`) and REST without a filter:
+@@ with
+(the default MCP path, `notion.views.contacts`):
+@@ replace
+(rows mode, or REST `query` with a filter)
+@@ with
+(rows mode)

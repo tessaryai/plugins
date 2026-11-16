@@ -6,7 +6,7 @@ Reads the user's Google Calendar for meetings with contacts: booked (future), he
 
 ## Tool
 
-The Google Calendar MCP connector. There is no `readonly_api.py` entry for it.
+The Google Calendar MCP connector.
 
 - Load with ToolSearch, for example `google calendar list_events get_event`. Use the names ToolSearch returns and read each schema at run time.
 - Allowed: `list_events`, `get_event`, `list_calendars`.

@@ -11,7 +11,7 @@ Build the list of people a campaign will reach, and put them in the CRM. This sk
 Shared rules live in the plugin reference files. Read them once per run and follow them:
 
 - `${CLAUDE_PLUGIN_ROOT}/reference/crm-rules.md`: names through the config map, DNC rule, matching, log lines, relations.
-- `${CLAUDE_PLUGIN_ROOT}/reference/notion-access.md`: MCP or REST for each operation, payload shapes.
+- `${CLAUDE_PLUGIN_ROOT}/reference/notion-access.md`: MCP operations, payload shapes, large CRMs.
 - `${CLAUDE_PLUGIN_ROOT}/reference/campaign-page.md`: campaign properties and header lines.
 - `${CLAUDE_PLUGIN_ROOT}/reference/blocked.md`, `${CLAUDE_PLUGIN_ROOT}/reference/safety.md`, `${CLAUDE_PLUGIN_ROOT}/reference/run-log.md`.
 
@@ -49,9 +49,9 @@ Detail for this skill:
 
 ### 1. Preflight
 
-Before the first step: if `python3` is not found (`command not found`), follow `${CLAUDE_PLUGIN_ROOT}/reference/config.md`, No Python. Run `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/config.py paths` and check `source` and `dir`: when they are not the project folder the user works in, rerun with `cd <project folder> &&` in front (`config.md`, Which folder is active). With `runtime` = `cowork`, use connectors only (`config.md`, Runtime: cowork, and `${CLAUDE_PLUGIN_ROOT}/reference/blocked.md`, Cowork).
+Before the first step: this edition has no scripts, so follow `${CLAUDE_PLUGIN_ROOT}/reference/config.md`, No Python, for the whole run. Find the active config folder with the folder command in No Python, step 1, run from the project folder the user works in (`cd <project folder> &&` in front), read `config.json` and `state.json` with the Read tool, and check the config by hand (No Python, step 5). Use connectors only, whatever `runtime` says (`config.md`, Runtime: cowork, and `${CLAUDE_PLUGIN_ROOT}/reference/blocked.md`, Cowork).
 
-1. Load config: `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/config.py show`. Note `adapters.enrichment`, `adapters.linkedin`, `owner.*`, `paths.icp`, the field, status and option maps. Run `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/config.py check`; stop on errors and show them.
+1. Load config: read `config.json`. Note `adapters.enrichment`, `adapters.linkedin`, `owner.*`, `paths.icp`, the field, status and option maps. Check it by hand (`config.md`, No Python, step 5); stop on errors and show them.
 2. Choose the Notion path and load the Notion tools (`${CLAUDE_PLUGIN_ROOT}/reference/notion-access.md`). Fetch the Contacts, Companies and Campaigns schemas once. Check that every option this run writes exists: contact Status `New`, Lead Source `Cold Outreach`, the four Email Status options, Company ICP options, campaign Status `Review`. A missing option means that write is skipped and listed under Needs you.
 3. Run the Preflight check of each enrichment adapter in `adapters.enrichment` (`${CLAUDE_PLUGIN_ROOT}/adapters/enrichment/<tool>.md`). Mark each `ok` or `blocked`. The Exa preflight is a ToolSearch only and spends nothing; an Exa auth or quota error can first show at the first real call, and Exa is then blocked. If `adapters.enrichment` is empty, offer `mcp` when the session has an enrichment connector, else `exa` when its connector is present, and say how to add one in `/gtm:setup`.
 4. If every enrichment adapter is blocked, stop after the BLOCKED report. There is nothing to source from: LinkedIn only confirms candidates, it is not a source in v1.
@@ -59,7 +59,7 @@ Before the first step: if `python3` is not found (`command not found`), follow `
 
 ### 2. ICP
 
-1. Read the ICP file at the `icp` path printed by `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/config.py paths` (it follows `paths.icp`).
+1. Read the ICP file at the `icp` path (`paths.icp`, else `icp.md` in the active config folder) (it follows `paths.icp`).
 2. If it is missing or still has lines in angle brackets, offer to fill it now: copy `${CLAUDE_PLUGIN_ROOT}/templates/icp.example.md` to that `icp` path and ask the user for each section (firmographics, buyer titles, pains, signals, exclusions, negative ICP, fit scoring). Save their words. Do not guess a section the user skips; leave it empty and say that scoring will be weaker.
 3. Restate the ICP in five lines or fewer and confirm it is the audience for this campaign. Ask for any campaign-specific narrowing (one vertical, one region, one title).
 
@@ -103,7 +103,7 @@ Follow `references/crm-writes.md`, Write: create missing companies, create new c
 
 ### 11. Run log and report
 
-Append one entry to the run log, the `run_log` path printed by `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/config.py paths` (format below). Then give the final report in the same order. End with the next step: "Run `/gtm:campaign-write campaign=<name>` to write the sequence and personalize messages. The campaign stays at Review until you set it to Active."
+Append one entry to the run log, `logs.md` in the active config folder (format below). Then give the final report in the same order. End with the next step: "Run `/gtm:campaign-write campaign=<name>` to write the sequence and personalize messages. The campaign stays at Review until you set it to Active."
 
 ## Blocked
 

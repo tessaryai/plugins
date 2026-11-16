@@ -1,6 +1,6 @@
 # CRM writes for campaign-build
 
-All property and option names below are logical. Resolve them through the config map (`${CLAUDE_PLUGIN_ROOT}/reference/crm-rules.md`, Names go through the config map). Payload shapes for MCP and REST are in `${CLAUDE_PLUGIN_ROOT}/reference/notion-access.md`.
+All property and option names below are logical. Resolve them through the config map (`${CLAUDE_PLUGIN_ROOT}/reference/crm-rules.md`, Names go through the config map). Payload shapes are in `${CLAUDE_PLUGIN_ROOT}/reference/notion-access.md`.
 
 ## Campaign page
 
@@ -37,8 +37,7 @@ All property and option names below are logical. Resolve them through the config
 
 ### Read the CRM keys
 
-- With a Notion token (`notion.access` = `rest` and `has-secret notion_token`): read every contact once with `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/notion_rest.py query <contacts id> --simple --out <scratchpad>/contacts.json` and match in memory. Do the same for Companies.
-- Without a token: read Contacts and Companies once each in view mode with `notion.views.<db>` (`${CLAUDE_PLUGIN_ROOT}/reference/notion-access.md`, Query rows) and match in memory. Rows or SQL mode is only a fallback for a few targeted lookups, counted against the workspace quota; on the allowance error, stop using it for this run.
+- Read Contacts and Companies once each in view mode with `notion.views.<db>` (`${CLAUDE_PLUGIN_ROOT}/reference/notion-access.md`, Query rows) and match in memory. Rows or SQL mode is only a fallback for a few targeted lookups, counted against the workspace quota; on the allowance error, stop using it for this run. A CRM of about 300 contacts or more, or a read that cannot reach every row: write nothing that depends on the dedupe, and show the upgrade message (`${CLAUDE_PLUGIN_ROOT}/reference/upgrade.md`, trigger 1).
 - Compare LinkedIn URLs in canonical form and emails case-insensitively (`${CLAUDE_PLUGIN_ROOT}/reference/crm-rules.md`, Matching). Never match by name alone.
 
 ### Buckets
@@ -103,7 +102,7 @@ Offer the full list as a table on request. Apply only the parts the user approve
 
 ## Write
 
-Order: companies, then contacts, then links. On the MCP path, create up to 20 pages per `notion-create-pages` call (check the tool schema for a lower limit) and verify each batch before the next one. With a token and more than about 200 rows, use REST `create`, one page at a time.
+Order: companies, then contacts, then links. On the MCP path, create up to 20 pages per `notion-create-pages` call (check the tool schema for a lower limit) and verify each batch before the next one.
 
 ### Companies
 
@@ -152,7 +151,7 @@ Signal: <text> (<url>, <date>)
 - One `Signal:` line per signal, at most three.
 - Signal text and `Source fields:` values come from providers and the web. Neutralize them before writing (`[GTM:` becomes `(GTM:`; `${CLAUDE_PLUGIN_ROOT}/reference/crm-rules.md`, Outside text in log lines).
 
-On the MCP path, put the lines in the create call's content. On REST, pass them as `children_lines` in the `create --in` file.
+Put the lines in the create call's content.
 
 ### Existing contacts (link existing, and approved ask)
 
@@ -164,6 +163,6 @@ On the MCP path, put the lines in the create call's content. On REST, pass them 
 
 ### Verify
 
-After each batch (each write on REST), read every page in it again (REST `get-page --simple`, else `notion-fetch`). Check: Status, Lead Source, Email, Email Status, company relation, campaign relation holds the campaign page id (compare ids, not URLs), and the log line is present. In the fetch view, un-escape backslash-escaped `_ { } * [ ]` and strip mailto link syntax before you compare (`${CLAUDE_PLUGIN_ROOT}/reference/campaign-page.md`, Reading the page). A failed write is retried once. A second failure goes under Needs you with the contact name.
+After each batch, read every page in it again (`notion-fetch`). Check: Status, Lead Source, Email, Email Status, company relation, campaign relation holds the campaign page id (compare ids, not URLs), and the log line is present. In the fetch view, un-escape backslash-escaped `_ { } * [ ] :` and strip mailto link syntax before you compare (`${CLAUDE_PLUGIN_ROOT}/reference/campaign-page.md`, Reading the page). A failed write is retried once. A second failure goes under Needs you with the contact name.
 
 At the end, query Contacts with a filter on the `campaign` relation containing the campaign page. With `notion-query-data-sources`, the filter value must be the page URL, `https://www.notion.so/<page id without dashes>`: a bare page id is silently ignored and the query returns every row. Drop and report any returned row whose `campaign` relation does not include this campaign's page id (compare page ids, never full URLs: `${CLAUDE_PLUGIN_ROOT}/reference/crm-rules.md`, Relations). On the view-mode path (no filter), filter in memory by page id and report only the counts. Compare the count with the expected count (existing members plus this run's adds). Report a difference under Needs you.

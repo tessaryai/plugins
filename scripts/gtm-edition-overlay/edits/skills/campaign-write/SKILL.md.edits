@@ -1,0 +1,12 @@
+@@ replace
+1. Load config (`python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/config.py show`) and check it (`... check`).
+@@ with
+1. Load config (read `config.json`) and check it by hand (`config.md`, No Python, step 5).
+@@ replace
+ A Notion token makes verification exact (`references/page-writes.md`); without one, say that copy is checked through the connector's text view.
+@@ with
+ Say that copy is checked through the connector's text view (`references/page-writes.md`).
+@@ replace
+After a filtered read (rows mode or REST with a filter),
+@@ with
+After a filtered read (rows mode),

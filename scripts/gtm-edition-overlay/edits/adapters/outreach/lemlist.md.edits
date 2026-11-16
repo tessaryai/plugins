@@ -1,0 +1,30 @@
+@@ replace
+Preferred: a lemlist MCP connector, if the session has one.
+@@ with
+A lemlist MCP connector.
+@@ replace
+Fallback: `readonly_api.py` tool `lemlist`, secret `lemlist_api_key`. Allowed paths: `/api/team`, `/api/campaigns`, `/api/campaigns/<id>`, `/api/campaigns/<id>/export`, `/api/activities`, `/api/unsubscribes`.
+@@ with
+Without a connector, lemlist is blocked in this edition. Tessary GTM Pro reads it with an API key (`${CLAUDE_PLUGIN_ROOT}/reference/upgrade.md`, trigger 3).
+@@ drop-line - API: `python3 -I -B
+@@ replace
+`RO` means `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py lemlist get`. Write output to the scratchpad.
+@@ with
+Each step names a lemlist path, the parameters to pass, and the file to save. Call the connector's read tool for that path with those parameters, and save its result to that file in the scratchpad with the Write tool.
+@@ replace-section ## Blocked signs and fix
+## Blocked signs and fix
+
+- Connector missing: "Add the lemlist connector in Claude settings." When the user wants lemlist without a connector, add the upgrade message (`${CLAUDE_PLUGIN_ROOT}/reference/upgrade.md`).
+- Connector auth error: "Reconnect the lemlist connector."
+@@ replace
+`RO /api/campaigns --out <s>/lm-campaigns.json`.
+@@ with
+call the read tool for `/api/campaigns`; save the result as `<s>/lm-campaigns.json`.
+@@ replace
+`RO /api/activities --param campaignId=<id> --param limit=100 --param offset=<n> --out <s>/lm-act-<id>-<n>.json`.
+@@ with
+call the read tool for `/api/activities` with `campaignId` = `<id>`, `limit` = 100 and `offset` = `<n>`; save each page as `<s>/lm-act-<id>-<n>.json`.
+@@ replace
+`RO /api/unsubscribes --out <s>/lm-unsub.json` (page
+@@ with
+call the read tool for `/api/unsubscribes`; save the result as `<s>/lm-unsub.json` (page

@@ -6,7 +6,7 @@ Finds companies and people that match the ICP, and reads company sites and recen
 
 ## Tool
 
-MCP connector only. `lib/readonly_api.py` has no Exa entry, because Exa search is a POST API.
+MCP connector only.
 
 Find the tools with ToolSearch, for example the query `exa web search fetch`. Typical tools (names carry a server prefix that differs per session; read each schema at run time):
 

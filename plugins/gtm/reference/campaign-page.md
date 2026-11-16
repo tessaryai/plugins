@@ -139,15 +139,14 @@ Run fields: first_name=Ada; company=Analytical Engines; hook=your post on compil
 
 ## What campaign-run sends
 
-Only text found word for word on the campaign page or the contact page, after merge fields are filled. It never writes, edits, shortens or "improves" copy. With a Notion token it reads copy with `notion_rest.py blocks` and uses `plain_text`. Without one, see `${CLAUDE_PLUGIN_ROOT}/reference/notion-access.md`, Exact copy text.
+Only text found word for word on the campaign page or the contact page, after merge fields are filled. It never writes, edits, shortens or "improves" copy. See `${CLAUDE_PLUGIN_ROOT}/reference/notion-access.md`, Exact copy text.
 
 ## Reading the page
 
 Every reader (campaign-run, and campaign-write when it verifies) parses the page by these rules:
 
-- Prefer REST: when a Notion token exists, read the page with `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/notion_rest.py blocks <page_id>` and use each block's `plain_text`. That text is not escaped.
-- Soft line breaks: a header block or a step can arrive as one paragraph whose label lines are joined by soft line breaks (`<br />` in the connector's fetch view, `\n` inside one REST paragraph). Split such a paragraph on the soft breaks and treat each part as its own line. A step whose labels are joined this way is still a valid step.
-- Fetch view escaping: the connector's `notion-fetch` text view escapes some characters and rewrites some text. Before you compare or parse, un-escape backslash-escaped `_`, `{`, `}`, `*`, `[` and `]` (`first\_name` is `first_name`, `\{\{subject\_3\}\}` is `{{subject_3}}`), and turn mailto links back into the address (`[ada@example.com](mailto:ada@example.com)` is `ada@example.com`). This applies to label lines, `Run fields:` lines and copy.
+- Soft line breaks: a header block or a step can arrive as one paragraph whose label lines are joined by soft line breaks (`<br />` in the connector's fetch view). Split such a paragraph on the soft breaks and treat each part as its own line. A step whose labels are joined this way is still a valid step.
+- Fetch view escaping: the connector's `notion-fetch` text view escapes some characters and rewrites some text. Before you compare or parse, un-escape backslash-escaped `_`, `{`, `}`, `*`, `[`, `]` and `:` (`first\_name` is `first_name`, `\{\{subject\_3\}\}` is `{{subject_3}}`), and turn mailto links back into the address (`[ada@example.com](mailto:ada@example.com)` is `ada@example.com`). This applies to label lines, `Run fields:` lines and copy.
 - Fence language: ignore the language label on a code block, whatever it is: `txt`, `text`, `plain text`, `plaintext`, `javascript`, `markdown`, `none` or no label at all, or any other. The fetch view labels an unlabelled fence `javascript`, and the label a writer sets may not persist. The label never matters and is never part of the copy.
 - If the text still does not read back exactly after these steps, treat the copy as unreadable: skip that step and list it under Needs you.
 

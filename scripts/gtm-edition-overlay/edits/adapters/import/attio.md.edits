@@ -1,0 +1,18 @@
+@@ replace
+The read-only API client cannot list Attio records: Attio's record listing is a POST query (`/v2/objects/{object}/records/query`), and `${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py` sends GET only. `readonly_api.py attio` can check the key (`/v2/self`), list objects and attributes, and fetch a single record by id, which is not enough for an import.
+
+So without a connector, use the CSV export
+@@ with
+Without a connector, use the CSV export
+@@ replace
+ do the same for Companies if the user wants company fields beyond name and domain.
+
+If the user has an Attio key saved (`attio_api_key`, via `python3 -I -B <absolute plugin root>/lib/config.py set-secret attio_api_key` in their own terminal; Claude Code only), use it only for the preflight and to read attribute definitions (`/v2/objects/people/attributes`), which helps map status options.
+@@ with
+ do the same for Companies if the user wants company fields beyond name and domain. This edition takes a CSV of about 200 rows or fewer; a larger Attio CRM without a connector needs Tessary GTM Pro (`${CLAUDE_PLUGIN_ROOT}/reference/upgrade.md`, trigger 2).
+@@ drop-line - Key only: `python3 -I -B
+@@ replace
+then the `csv_import.py` plan.
+@@ with
+then the plan (apply.md, Plan by hand).
+@@ drop-line | `attio check` exit 2 |

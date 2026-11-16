@@ -1,0 +1,8 @@
+@@ replace
+`csv_import.py` already guesses one (`status_suggested`) from the tables below; this file is the source of truth for the script.
+@@ with
+Use the tables below; they are the source of truth.
+@@ replace
+The script also reads HubSpot's internal values:
+@@ with
+Also map HubSpot's internal values the same way:

@@ -1,0 +1,17 @@
+@@ drop-line - Token present: `python3 -I -B
+@@ replace
+   - No token: `notion-fetch` on the page.
+@@ with
+   - `notion-fetch` on the page.
+@@ replace
+joined by `<br />` (fetch view) or by `\n` inside one REST paragraph.
+@@ with
+joined by `<br />` (fetch view).
+@@ replace
+Read and write paths (MCP or REST) follow
+@@ with
+Read and write paths follow
+@@ replace
+when the path gives it (REST only; view mode and `notion-fetch` do not)
+@@ with
+when a counted SQL lookup gives it (view mode and `notion-fetch` do not)

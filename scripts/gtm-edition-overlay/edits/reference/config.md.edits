@@ -1,0 +1,110 @@
+@@ replace
+Never hardcode a runtime path: run `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/config.py paths` and use the location it prints (keys `config`, `credentials`, `state`, `run_log`, `imports`, `voice`, `icp`).
+@@ with
+Never hardcode a runtime path: find the active folder as Which folder is active says, and use the files in it (`config.json`, `state.json`, `logs.md`, `imports/`, `voice.md`, `icp.md`; `paths.voice` and `paths.icp` can move the last two).
+@@ replace-section ## Which folder is active
+## Which folder is active
+
+The first match wins, in this order (the folder command in No Python, step 1, does it in one line):
+
+1. `GTM_CONFIG_DIR`, when the environment variable is set (a second workspace, a scheduled run pointed at a project folder).
+2. A `.gtm/` folder that holds `config.json`, in the current working directory or any parent. Setup creates `./.gtm/` in the project folder with `config.json` from the template and a `.gtm/.gitignore` that holds the line `credentials.json`.
+3. `~/.config/gtm`.
+
+A `.gtm/` folder without `config.json` is ignored. Discovery starts from the shell's current folder. In Cowork that may not be the connected project folder: in every preflight, run the folder command with `cd <project folder> &&` in front, and check that the folder it prints is the one you expect.
+
+| File | Holds | Who writes it |
+|---|---|---|
+| `config.json` | Settings below. No secrets. | `/gtm:setup`, the user |
+| `credentials.json` | Notion token and API keys of Tessary GTM Pro. This edition never reads, writes or creates it. | Tessary GTM Pro only |
+| `state.json` | Per-adapter cursors, the import progress (`import`) and the funnel baseline (`funnel`). | sweep, import and funnel, with the Read and Write tools (No Python, step 6). campaign-run keeps no state here. |
+| `imports/<run_id>/` | Work files of one import (contacts.csv, raw/, mapping.json, status_table.json, keys.json, plan.json, done.jsonl). They hold contact data, never a key. They live here, not in the session scratchpad, so `/gtm:import resume` works in a later session. | `/gtm:import` |
+| `logs.md` | Run log, one entry per run. | every skill (`${CLAUDE_PLUGIN_ROOT}/reference/run-log.md`) |
+| `voice.md` | The user's writing voice. | setup, campaign-write |
+| `icp.md` | The ideal customer profile. | setup, campaign-build |
+
+Templates: `${CLAUDE_PLUGIN_ROOT}/templates/config.example.json`, `voice.example.md`, `icp.example.md`, `schema.json`.
+@@ replace-section ## The config CLI
+## Secrets
+
+This edition has no keys. Never Read, Write or create `credentials.json`, never `cat` it, and never offer to save a key. Treat every secret as not set. Never ask the user to paste a key into the chat. A tool that needs a key and has no connector is blocked, with the upgrade message as its fix (`${CLAUDE_PLUGIN_ROOT}/reference/upgrade.md`).
+@@ replace
+| `notion.access` | `"mcp"` or `"rest"` | `"mcp"` | all | `rest` means a token is saved and bulk work uses `lib/notion_rest.py`. See `${CLAUDE_PLUGIN_ROOT}/reference/notion-access.md`. |
+@@ with
+| `notion.access` | `"mcp"` or `"rest"` | `"mcp"` | all | Tessary GTM Pro writes `rest` when a Notion token is saved. This edition always uses MCP: it reads `rest` as `mcp` and leaves the value as it is. See `${CLAUDE_PLUGIN_ROOT}/reference/notion-access.md`. |
+@@ replace
+`lib/funnel.py` maps them through `notion.option_map`
+@@ with
+the funnel maps them through `notion.option_map`
+@@ replace
+The funnel baseline (the last accepted counts) is stored in `state.json` under `adapters.funnel`. Only `lib/funnel.py` writes it.
+@@ with
+The funnel baseline (the last accepted counts) is stored in `state.json` under `adapters.funnel`. Only the funnel skill writes it, in the shape `${CLAUDE_PLUGIN_ROOT}/skills/funnel/SKILL.md` gives, which Tessary GTM Pro also reads.
+@@ replace
+Set a path only to keep the file somewhere else; `~` is expanded. `config.py paths` prints the resolved files.
+@@ with
+Set a path only to keep the file somewhere else; `~` is expanded.
+@@ replace-section ## Runtime: cowork
+## Runtime: cowork
+
+Claude Cowork runs shell commands in a virtual machine whose network reaches only Anthropic hosts by default, has no terminal for the user, and may not keep files in its home folder between sessions. This edition follows the rules below in Cowork and in Claude Code alike, whatever `runtime` says:
+
+- Notion goes through the Notion connector only.
+- Never call a vendor API with curl or a script. An adapter that has no connector in the session is blocked (`${CLAUDE_PLUGIN_ROOT}/reference/blocked.md`, Cowork). When the tool would need an API key, the fix is the upgrade message (`${CLAUDE_PLUGIN_ROOT}/reference/upgrade.md`).
+- No key is saved anywhere.
+- In Cowork, keep the config in the connected project folder (`.gtm/`). Warn when the config is in the home folder.
+- Setup sets `runtime` to `cowork` in Cowork and to `claude-code` otherwise, so that Tessary GTM Pro reads the same config correctly after a switch.
+@@ replace
+Some environments (often Cowork) have no `python3`. Test it once per run with the preflight's first command, `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/config.py check`. When it fails with `command not found` (or `python3: not found`), every skill still runs, with these changes:
+@@ with
+This edition has no scripts, so every skill always runs this way, in Claude Code and in Cowork. Never run `python3` for a gtm task, even when it is installed:
+@@ replace
+Never Read, Write or create `credentials.json`: with no Python there are no keys, so treat every secret as not set and `notion.access` as `mcp`.
+@@ with
+Never Read, Write or create `credentials.json`: this edition has no keys, so treat every secret as not set and `notion.access` as `mcp`. A `rest` value that Tessary GTM Pro wrote stays as it is.
+@@ replace
+5. Before you use the config, check it by hand. Stop on any of these, as `check` would:
+@@ with
+5. Before you use the config, check it by hand. Stop on any of these:
+@@ replace
+   - `notion.access` is not `mcp` (without Python REST cannot run); `runtime` is not `claude-code` or `cowork`.
+@@ with
+   - `notion.access` is not `mcp` or `rest` (this edition reads `rest` as `mcp`); `runtime` is not `claude-code` or `cowork`.
+@@ replace
+   For every other rule, if you cannot tell whether it holds, treat it as failed and stop. This hand check replaces `check` only; it does not replace any safety gate.
+@@ with
+   For every other rule, if you cannot tell whether it holds, treat it as failed and stop. This hand check is the config check of this edition (Tessary GTM Pro runs the same rules with a script); it does not replace any safety gate.
+@@ replace
+Replace only the one adapter key you move, at the same point the skill would run `state-set`.
+@@ with
+Replace only the one adapter key you move, at the point where the skill says to write that cursor. Read the file again just before you write it, and keep every other key as it is.
+@@ replace
+8. `/gtm:import` takes only a CSV of 200 rows or fewer. Map the columns yourself, show the mapping and a preview of the first rows, dedupe by email and LinkedIn URL against the view-mode index, and write in batches of 20 with a yes before the first batch and a check after each one. HubSpot, Pipedrive and Attio: ask for a CSV export instead.
+9. `/gtm:funnel` reports `BLOCKED: needs Python` and stops. Never count the funnel by hand.
+@@ with
+8. `/gtm:import` takes a CSV of about 200 rows or fewer, or a HubSpot, Pipedrive or Attio import of about 200 contacts or fewer through that tool's connector. Map the columns yourself, show the mapping and a preview of the first rows, dedupe by email, LinkedIn URL and Source ID against the view-mode index, and write in batches of 20 with a yes before the first batch and a check after each one. A larger import, or a CRM with no connector in the session, needs Tessary GTM Pro (`${CLAUDE_PLUGIN_ROOT}/reference/upgrade.md`); a CSV export of 200 rows or fewer still works here.
+9. `/gtm:funnel` counts by hand only when there are about 150 counted contacts or fewer, and publishes only when a second, independent count gives the same numbers (`${CLAUDE_PLUGIN_ROOT}/skills/funnel/SKILL.md`). Above that it reports `BLOCKED` and shows the upgrade message (`${CLAUDE_PLUGIN_ROOT}/reference/upgrade.md`).
+@@ replace
+10. Every safety gate applies unchanged without Python:
+@@ with
+10. Every safety gate applies unchanged in this edition:
+@@ replace-section ## Validation
+## Validation
+
+This edition checks the config by hand, with the rules in No Python, step 5. Tessary GTM Pro runs the same rules with a script. Warn (and go on) when a `notion.views.*` value is empty, `notion.funnel_page_id` is empty, `owner.own_domains` is empty, the voice or ICP file does not exist yet, or, in Cowork, the config is in the home folder.
+@@ replace
+`funnel` (the funnel baseline, written only by `lib/funnel.py`)
+@@ with
+`funnel` (the funnel baseline, written only by the funnel skill)
+@@ replace
+- Write cursors with `config.py state-set <adapter> '<json>'` at the end of the run, after the CRM writes are verified.
+@@ with
+- Write cursors into `state.json` (No Python, step 6) at the end of the run, after the CRM writes are verified.
+@@ replace
+The `run_log` path printed by `config.py paths`, newest entry last.
+@@ with
+`logs.md` in the active config folder, newest entry last.
+@@ replace
+set it with `config.py set notion.select_payload '{"contacts.status":"status"}'`, never with a dotted key.
+@@ with
+in config.json it reads `"select_payload": {"contacts.status": "status"}` inside `notion`, never a nested `contacts` object.

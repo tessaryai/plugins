@@ -6,7 +6,7 @@ Sends one push notification to the user's devices when a gtm run has something b
 
 ## Tool
 
-The `PushNotification` tool of the Claude Code session. There is no MCP connector and no `readonly_api.py` entry.
+The `PushNotification` tool of the Claude Code session. There is no MCP connector.
 
 - It is often deferred. Load it with ToolSearch (`select:PushNotification`) and read its schema at run time. Pass only the parameters the schema defines. Never guess a parameter name.
 - Allowed: one `PushNotification` call per run.
@@ -39,7 +39,7 @@ gtm <skill> blocked: <adapters or problem>. <first fix>. Needs you: <n>.
 
 Example: `gtm sweep blocked: gmail, chrome. Reconnect the Gmail connector in Claude settings. Needs you: 3.`
 
-A push message has no link. The user opens the run log (the `run_log` path printed by `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/config.py paths`) or the Notion page for detail.
+A push message has no link. The user opens the run log (`logs.md` in the active config folder) or the Notion page for detail.
 
 ## Cursor
 

@@ -1,0 +1,27 @@
+@@ replace-section ## Tool
+## Tool
+
+A Pipedrive MCP connector in the session. Find it with ToolSearch (`pipedrive persons deals organizations`), read each tool's schema, and use only its list and get tools. Never call a tool that adds, updates, merges or deletes anything.
+
+Without a connector: a CSV export of about 200 rows or fewer (`${CLAUDE_PLUGIN_ROOT}/adapters/import/csv.md`). A larger CRM without a connector needs Tessary GTM Pro, which reads Pipedrive with an API token (`${CLAUDE_PLUGIN_ROOT}/reference/upgrade.md`, triggers 2 and 3). Never ask for a token in the chat.
+@@ drop-line - API: `python3 -I -B
+@@ replace
+with `--out`. Prefer the v2 endpoints;
+@@ with
+with the Write tool, as the connector returned it. The endpoint names below say which objects to read and how Pipedrive pages them. Prefer the v2 endpoints;
+@@ replace
+then the `csv_import.py` plan.
+@@ with
+then the plan (apply.md, Plan by hand).
+@@ replace
+On HTTP 429, readonly_api retries with backoff and honours `Retry-After`. If it still fails,
+@@ with
+On a rate-limit error from the connector, wait the time it gives (or 10 seconds) and repeat that page once. If it still fails,
+@@ replace-section ## Blocked signs and fix
+## Blocked signs and fix
+
+| Sign | Fix |
+|---|---|
+| Connector tools missing | "Add the Pipedrive connector in Claude settings, or export a CSV of 200 rows or fewer." For a larger CRM, add the upgrade message (`${CLAUDE_PLUGIN_ROOT}/reference/upgrade.md`). |
+| Connector auth error | "Reconnect the Pipedrive connector in Claude settings." |
+| 404 or 410 on an endpoint | The API version changed. Report it; use the CSV export meanwhile. |

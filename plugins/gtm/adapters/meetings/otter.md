@@ -6,7 +6,7 @@ Reads meetings recorded by Otter: title, time, attendees, summary and the conver
 
 ## Tool
 
-Only an Otter MCP connector. Otter has no public read API that `readonly_api.py` covers, so without a connector this adapter is blocked.
+Only an Otter MCP connector. Without a connector this adapter is blocked.
 
 Find the connector with ToolSearch (`otter meetings conversations`). Read the schemas and pick a tool that lists conversations or meetings in a date range and, if needed, a tool that reads one conversation's summary. Use only read tools. Never share, edit, delete or export a conversation, and never add the assistant to a meeting.
 

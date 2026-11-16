@@ -1,6 +1,6 @@
 # Run log
 
-Every gtm skill run appends exactly one entry to the run log, newest last, and ends with a final report in the chat that uses the same order. The run log is the `run_log` path printed by `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/config.py paths`; it follows the active config folder, so never hardcode it. Create the file with the line `# gtm run log` when it does not exist. Never rewrite or delete earlier entries.
+Every gtm skill run appends exactly one entry to the run log, newest last, and ends with a final report in the chat that uses the same order. The run log is `logs.md` in the active config folder; it follows the active config folder, so never hardcode it. Create the file with the line `# gtm run log` when it does not exist. Never rewrite or delete earlier entries.
 
 ## Order inside an entry
 
@@ -32,7 +32,7 @@ When a skill used Notion MCP rows or SQL mode, add `- Notion: view-mode reads <n
 - BLOCKED: <adapter — what happened — fix>
 - Needs you: <...>
 - Decisions: <...>
-- Notion: <created | mapped> databases <names>; access <mcp | rest>
+- Notion: <created | mapped> databases <names>; access mcp
 - Adapters: <kind: tool — ok | blocked>
 - Files: config.json <written | updated>, voice.md <...>, icp.md <...>
 - Schedules: <routine — when — where (local scheduled task | /schedule | /loop | none)>
@@ -43,7 +43,7 @@ When a skill used Notion MCP rows or SQL mode, add `- Notion: view-mode reads <n
 ```
 ## YYYY-MM-DD HH:MM <timezone> — import
 - BLOCKED / Needs you / Decisions
-- Source: <csv file name | hubspot | pipedrive | attio> via <MCP connector | readonly_api | CSV>
+- Source: <csv file name | hubspot | pipedrive | attio> via <MCP connector | CSV>
 - Plan: rows <n>, create <n>, update <n>, unchanged <n>, skip <n>, conflict <n>; companies new <n>
 - Applied: created <n>, updated <n>, unchanged <n>, failed <n>; verified <n of n>
 - Conflicts left for you: <row — reason>

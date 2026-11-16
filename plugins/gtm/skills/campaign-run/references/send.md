@@ -12,7 +12,7 @@ Only this skill sends, and only in a live run. Send one message at a time, in th
 1. Fresh gate read. Read the contact again (properties and body) and run every gate in `plan.md`, Gates. A new reply line, a STOP marker, suppression or a Status of Responded or later stops here.
 2. Build the final text.
    - Copy source `this page`: the code block under the step heading. Copy source `contact page`: the block under `<campaign_key> Step <n> <channel>` on the contact page, and for email a `Subject:` line there if the campaign page has none.
-   - With a token, read the copy and the `Run fields:` line with `notion_rest.py blocks` and use `plain_text`. Without one, use the normalized fetch text (`plan.md`, Read a campaign page, step 2): never send text that still holds a fetch-view escape such as `\_` or a mailto link.
+   - Use the normalized fetch text (`plan.md`, Read a campaign page, step 2): never send text that still holds a fetch-view escape such as `\_` or a mailto link.
    - Fill each `{{field}}` from `Run fields:`, and nothing else. Change no other character.
    - Check for gaps (`plan.md`, Gates 7). A gap skips the step.
    - Keep the exact text for the verify step.
@@ -27,7 +27,7 @@ Only this skill sends, and only in a live run. Send one message at a time, in th
    - Marker: `YYYY-MM-DD — [GTM:<campaign_key>:S<n>-<LI|EM>] <event>. Action: campaign-run (<adapter>).` Examples of `<event>`: `LinkedIn invite sent, no note`, `LinkedIn invite sent with note`, `LinkedIn profile visited`, `LinkedIn message sent`, `Email sent: "<subject>"`. Check that the same marker is not on the page before you append, in the normalized body text (`plan.md`, Contact state).
    - Status: if the logical Status is New, set Contacted (forward only, select payload, `crm-rules.md`, Gates before any Status write). Never move Status past Contacted in this step.
    - First Contacted: set it to today only when it is empty. It is write-once.
-   - MCP: `notion-update-page` with `insert_content` at the end for the marker, and `update_properties` for Status and First Contacted. REST: `notion_rest.py append` then `notion_rest.py update`. Shapes in `notion-access.md`, Payload rules.
+   - MCP: `notion-update-page` with `insert_content` at the end for the marker, and `update_properties` for Status and First Contacted. Shapes in `notion-access.md`, Payload rules.
 7. Read the page again. Confirm the marker, Status and First Contacted. A mismatch goes under Reconcile.
 8. Wait as the adapter says before the next contact.
 

@@ -1,0 +1,4 @@
+@@ replace
+MCP connector only. `lib/readonly_api.py` has no Exa entry, because Exa search is a POST API.
+@@ with
+MCP connector only.

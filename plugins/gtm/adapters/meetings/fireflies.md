@@ -6,16 +6,11 @@ Reads meetings recorded by Fireflies: title, time, attendees, summary and the tr
 
 ## Tool
 
-Preferred: a Fireflies MCP connector. Find it with ToolSearch (`fireflies transcripts meetings`). Read the schemas; use only tools that list or read transcripts and summaries. Never call a tool that uploads audio, deletes, shares or changes a transcript, or adds the bot to a meeting.
+A Fireflies MCP connector. Find it with ToolSearch (`fireflies transcripts meetings`). Read the schemas; use only tools that list or read transcripts and summaries. Never call a tool that uploads audio, deletes, shares or changes a transcript, or adds the bot to a meeting.
 
-Fallback: the read-only GraphQL endpoint through `readonly_api.py` (tool `fireflies`, secret `fireflies_api_key`). The client refuses any query that contains `mutation` or `subscription`.
+Without the connector, Fireflies is blocked in this edition. Tessary GTM Pro reads it with an API key (`${CLAUDE_PLUGIN_ROOT}/reference/upgrade.md`, trigger 3).
 
-```
-python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py fireflies graphql \
-  --query-file <scratchpad>/ff-query.graphql --variables-file <scratchpad>/ff-vars.json --out <scratchpad>/ff-<n>.json
-```
-
-A query shape that matched the Fireflies schema at the time of writing (check the field names against the current Fireflies API docs or an error message before relying on it):
+When the connector takes a GraphQL query, never send one that contains `mutation` or `subscription`. A query shape that matched the Fireflies schema at the time of writing (check the field names against the current Fireflies API docs or an error message before relying on it):
 
 ```graphql
 query Transcripts($fromDate: DateTime, $toDate: DateTime, $limit: Int, $skip: Int) {
@@ -35,7 +30,6 @@ Variables: `{"fromDate": "<cursor ISO>", "toDate": "<now ISO>", "limit": 50, "sk
 ## Preflight check
 
 - Connector: list one transcript. A result or an empty list is ok.
-- API: `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py fireflies check`. Exit 0 ok, exit 2 blocked. Not with `runtime` = `cowork` or without Python (`${CLAUDE_PLUGIN_ROOT}/reference/blocked.md`, Cowork).
 
 ## Read procedure
 
@@ -61,8 +55,8 @@ Moves only when every page was read.
 
 ## Blocked signs and fix
 
-- Connector missing and no key: "Add the Fireflies connector in Claude settings, or save a key: run `python3 -I -B <plugin root>/lib/config.py set-secret fireflies_api_key` in a terminal." (Claude Code only. In Cowork: "Connect a connector for fireflies, or run this routine from Claude Code.")
-- Auth error or exit 2: "Reconnect the Fireflies connector, or save a new Fireflies API key with set-secret." (In Cowork: "Reconnect the Fireflies connector.")
+- Connector missing: "Add the Fireflies connector in Claude settings." When the user wants Fireflies without a connector, add the upgrade message (`${CLAUDE_PLUGIN_ROOT}/reference/upgrade.md`).
+- Auth error: "Reconnect the Fireflies connector."
 
 ## Write / send capability
 

@@ -1,0 +1,16 @@
+@@ replace
+   - Get the config: `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/config.py check`, then `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/config.py show`. Keep the field map, status map, option map, `owner.*`, `adapters.*` and `sending.*` for the run. If `check` fails, stop and report the errors.
+@@ with
+   - Get the config: read `config.json` and check it by hand (`config.md`, No Python, step 5). Keep the field map, status map, option map, `owner.*`, `adapters.*` and `sending.*` for the run. If the check fails, stop and report the errors.
+@@ replace
+ (REST `query` when a token exists)
+@@ with
+
+@@ replace
+ REST: `notion_rest.py query` with the relation filter. After a filtered read (rows mode or REST with a filter),
+@@ with
+ After a filtered read (rows mode),
+@@ replace
+ With an Active campaign and no token, suggest a Notion token under Needs you once (in Cowork, suggest running the bulk read from Claude Code with a token, pointed at the project folder, instead).
+@@ with
+ When the Contacts read cannot reach every row, or the CRM has about 300 contacts or more, show the upgrade message once (`${CLAUDE_PLUGIN_ROOT}/reference/upgrade.md`, trigger 1). Never send to a contact whose page or markers you could not read.

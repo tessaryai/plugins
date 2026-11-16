@@ -1,0 +1,8 @@
+@@ replace
+1. Load config: `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/config.py show`. Note `adapters.enrichment`, `adapters.linkedin`, `owner.*`, `paths.icp`, the field, status and option maps. Run `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/config.py check`; stop on errors and show them.
+@@ with
+1. Load config: read `config.json`. Note `adapters.enrichment`, `adapters.linkedin`, `owner.*`, `paths.icp`, the field, status and option maps. Check it by hand (`config.md`, No Python, step 5); stop on errors and show them.
+@@ replace
+MCP or REST for each operation, payload shapes.
+@@ with
+MCP operations, payload shapes, large CRMs.

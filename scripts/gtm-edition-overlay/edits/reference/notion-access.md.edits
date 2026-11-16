@@ -1,0 +1,83 @@
+@@ replace
+Every gtm skill works with only the Notion MCP connector. When the user saved a Notion integration token in setup, bulk work goes through REST with `${CLAUDE_PLUGIN_ROOT}/lib/notion_rest.py`. This file says which path each operation uses.
+@@ with
+Every gtm skill works with only the Notion MCP connector. This file says how each operation uses it, and where the connector stops.
+@@ replace-section ## Choose the path
+## Choose the path
+
+Always MCP. This edition has no REST path and no Notion token, so ignore `notion.access` (Tessary GTM Pro may have written `rest`; leave it as it is).
+@@ replace-section ## Cowork and no Python
+## Large CRMs and the query quota
+
+The connector can stop a run in two ways. Both are limits of this edition (`${CLAUDE_PLUGIN_ROOT}/reference/upgrade.md`, trigger 1):
+
+- The rows and SQL quota runs out (Query rows, below). Switch to view mode at once and finish the run. Show the upgrade message only when view mode cannot do the same work.
+- The CRM is too large to read reliably in view mode: about 300 contacts or more, or a view-mode read that cannot reach every row. Apply what you read, report the read as incomplete, state your estimate of the contact count, and show the upgrade message.
+@@ replace-section ## Operations
+## Operations
+
+| Operation | MCP path |
+|---|---|
+| Find a page or database by name | `notion-search` |
+| Read a data source schema (properties, select options) | `notion-fetch` on the database or data source |
+| Read every row of a database (index, export) | `notion-query-data-sources` in view mode with `notion.views.<db>` (Query rows, below) |
+| Small targeted lookup with a filter | `notion-query-data-sources` in rows or SQL mode, counted against the quota (Query rows) |
+| Read one page's properties | `notion-fetch` |
+| Read page body blocks with exact text | `notion-fetch` (see Exact copy text below) |
+| Read a page's created time | SQL mode, `createdTime` column (counted, Query rows) |
+| Create a page in a data source | `notion-create-pages` with the data source as parent, up to 20 pages per call (Payload rules) |
+| Update properties | `notion-update-page` (check its schema for the update command) |
+| Append text to a page body | `notion-update-page`, command `insert_content`, position end (never `replace_content`) |
+| Create a database | `notion-create-database` (setup only) |
+| Add or change properties or select options | `notion-update-data-source` (setup only) |
+
+Write work files in the session scratchpad, never in the plugin folder or the user's repo. One exception: `/gtm:import` keeps its work files in `<imports>/<run_id>/` (the `imports` folder in the active config folder), so that `resume` works in a later session (`${CLAUDE_PLUGIN_ROOT}/reference/config.md`).
+@@ replace
+4. On the allowance error, switch to view mode (or REST) at once and finish the run.
+@@ with
+4. On the allowance error, switch to view mode at once and finish the run.
+@@ replace
+5. The REST path (`notion_rest.py query`) has no such quota. Recommend a Notion integration token under Needs you for any CRM with an Active campaign or more than about 200 contacts. In Cowork, where a token can never be used, suggest instead that the user run the bulk read from Claude Code with a Notion token, pointed at the project folder (`GTM_CONFIG_DIR=<project folder>/.gtm`).
+@@ with
+5. When view mode cannot finish the work, or the CRM has about 300 contacts or more, follow Large CRMs and the query quota, above. Tessary GTM Pro reads with a Notion token, which has no such quota.
+@@ replace
+(rows mode with a relation filter, or REST `query --filter`)
+@@ with
+(rows mode with a relation filter)
+@@ replace
+- Large CRMs. Use view mode (Query rows). If a read still cannot reach every row, report the check as incomplete, apply what you read, and suggest under Needs you that the user add a Notion token in `/gtm:setup` for bulk reads. In Cowork, where a token can never be used, suggest instead that the user run the bulk read from Claude Code with a Notion token, pointed at the project folder (`GTM_CONFIG_DIR=<project folder>/.gtm`).
+@@ with
+- Large CRMs. Use view mode (Query rows). If a read still cannot reach every row, report the check as incomplete, apply what you read, and show the upgrade message (Large CRMs and the query quota, above).
+@@ replace
+Only SQL (`createdTime` column, counted against the quota) and REST (`created_time`) give it. Without them,
+@@ with
+Only SQL (`createdTime` column, counted against the quota) gives it. Without it,
+@@ replace
+With a token, always read copy with `notion_rest.py blocks` and use each block's `plain_text`. Without a token, `notion-fetch` the page
+@@ with
+`notion-fetch` the page
+@@ replace
+The two paths take different property shapes. Read the tool schema each run;
+@@ with
+Read the tool schema each run;
+@@ delete-section ### REST (`lib/notion_rest.py`)
+@@ replace
+; REST then uses `{"status": {"name": ...}}` for that property only, and MCP filters use the status filter type.
+@@ with
+; MCP filters then use the status filter type for that property.
+@@ replace
+(`notion-fetch` or `notion_rest.py schema`)
+@@ with
+(`notion-fetch`)
+@@ replace
+Append with `insert_content` at the end, or with REST `append`.
+@@ with
+Append with `insert_content` at the end.
+@@ replace-section ## Tokens
+## Tokens
+
+This edition uses no Notion token. Never read, `cat` or create the credentials file, and never ask for a token. See `${CLAUDE_PLUGIN_ROOT}/reference/safety.md`.
+@@ replace
+in MCP rows (often a JSON string of a list) and as ids in REST; the same page
+@@ with
+in MCP rows (often a JSON string of a list), and as bare ids elsewhere; the same page

@@ -1,8 +1,8 @@
 {
   "name": "gtm",
   "displayName": "Tessary GTM",
-  "description": "Host your CRM in Notion and run your go-to-market flow from Claude Code or Claude Cowork: set up or map the databases, import from another CRM, sweep your inbox, calendar, LinkedIn and outreach tools into the CRM every day, build and write campaigns in your voice, send them with safety gates, and report the funnel.",
-  "version": "0.2.1",
+  "description": "Host your CRM in Notion and run your go-to-market flow from Claude Code or Claude Cowork, with connectors only and no scripts: set up or map the databases, import a small CRM, sweep your inbox, calendar, LinkedIn and outreach tools into the CRM every day, build and write campaigns in your voice, send them with safety gates, and report the funnel. For large CRMs, big imports and API-key tools, install Tessary GTM Pro (gtm-pro@tessary).",
+  "version": "0.3.0",
   "author": {
     "name": "Tessary AI"
   },

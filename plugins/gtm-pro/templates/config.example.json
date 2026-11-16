@@ -1,0 +1,250 @@
+{
+  "version": 1,
+  "owner": {
+    "name": "Your Name",
+    "emails": [
+      "you@example.com"
+    ],
+    "own_domains": [
+      "example.com"
+    ],
+    "timezone": "America/New_York",
+    "working_days": [
+      "Mon",
+      "Tue",
+      "Wed",
+      "Thu",
+      "Fri"
+    ],
+    "send_window": {
+      "start": "09:00",
+      "end": "17:00"
+    }
+  },
+  "notion": {
+    "access": "mcp",
+    "parent_page_id": "00000000000000000000000000000000",
+    "data_sources": {
+      "contacts": "00000000-0000-0000-0000-000000000001",
+      "companies": "00000000-0000-0000-0000-000000000002",
+      "pipeline": "00000000-0000-0000-0000-000000000003",
+      "campaigns": "00000000-0000-0000-0000-000000000004",
+      "meetings": "00000000-0000-0000-0000-000000000005"
+    },
+    "field_map": {
+      "contacts": {
+        "name": "Name",
+        "email": "Email",
+        "linkedin": "LinkedIn",
+        "phone": "Phone",
+        "location": "Location",
+        "status": "Status",
+        "do_not_contact": "Do Not Contact",
+        "dnc_reason": "DNC Reason",
+        "dnc_set_on": "DNC Set On",
+        "email_status": "Email Status",
+        "first_contacted": "First Contacted",
+        "lead_source": "Lead Source",
+        "designation": "Designation",
+        "notes": "Notes",
+        "company": "Company",
+        "campaign": "Campaign",
+        "deal": "Deal",
+        "meetings": "Meetings"
+      },
+      "companies": {
+        "name": "Name",
+        "website": "Website",
+        "linkedin": "LinkedIn",
+        "description": "Description",
+        "employees": "Employees",
+        "headquarters": "Headquarters",
+        "icp": "ICP",
+        "icp_notes": "ICP Notes",
+        "vertical": "Vertical",
+        "contacts": "Contacts",
+        "deals": "Deals"
+      },
+      "pipeline": {
+        "name": "Name",
+        "stage": "Stage",
+        "company": "Company",
+        "contacts": "Contacts",
+        "value": "Value",
+        "expected_close": "Expected Close",
+        "next_steps": "Next Steps",
+        "likelihood": "Likelihood"
+      },
+      "campaigns": {
+        "name": "Campaign Name",
+        "status": "Status",
+        "type": "Type",
+        "start_date": "Start Date",
+        "end_date": "End Date",
+        "notes": "Notes",
+        "contacts": "Contacts"
+      },
+      "meetings": {
+        "name": "Meeting name",
+        "date": "Date",
+        "contacts": "Contacts",
+        "recording_url": "Recording URL",
+        "summary": "Summary",
+        "source": "Source"
+      }
+    },
+    "status_map": {
+      "New": "New",
+      "Contacted": "Contacted",
+      "Responded": "Responded",
+      "Discovery": "Discovery",
+      "Lead": "Lead",
+      "Archived": "Archived",
+      "Do Not Contact": "Do Not Contact",
+      "Disqualified": "Disqualified"
+    },
+    "option_map": {
+      "contacts": {
+        "email_status": {
+          "Verified": "Verified",
+          "Verified - Low Confidence": "Verified - Low Confidence",
+          "Needs Review": "Needs Review",
+          "Not Found": "Not Found"
+        },
+        "lead_source": {
+          "LinkedIn": "LinkedIn",
+          "Email": "Email",
+          "Warm Intro": "Warm Intro",
+          "Inbound": "Inbound",
+          "Cold Outreach": "Cold Outreach",
+          "Import": "Import"
+        },
+        "designation": {
+          "Founder": "Founder",
+          "CEO": "CEO",
+          "CXO": "CXO",
+          "VP": "VP",
+          "Manager": "Manager",
+          "Individual Contributor": "Individual Contributor"
+        }
+      },
+      "companies": {
+        "icp": {
+          "Strong fit": "Strong fit",
+          "Fit": "Fit",
+          "Not a fit": "Not a fit"
+        },
+        "vertical": {
+          "SaaS": "SaaS",
+          "Fintech": "Fintech",
+          "Healthcare": "Healthcare",
+          "E-commerce": "E-commerce",
+          "Developer Tools": "Developer Tools",
+          "AI / ML": "AI / ML",
+          "Services": "Services",
+          "Other": "Other"
+        }
+      },
+      "pipeline": {
+        "stage": {
+          "First Call": "First Call",
+          "Interested": "Interested",
+          "Discovery": "Discovery",
+          "Proposal": "Proposal",
+          "Pilot": "Pilot",
+          "Won": "Won",
+          "Lost": "Lost",
+          "On Hold": "On Hold"
+        },
+        "likelihood": {
+          "High": "High",
+          "Medium": "Medium",
+          "Low": "Low"
+        }
+      },
+      "campaigns": {
+        "status": {
+          "Review": "Review",
+          "Active": "Active",
+          "Paused": "Paused",
+          "Completed": "Completed"
+        },
+        "type": {
+          "LinkedIn": "LinkedIn",
+          "Email": "Email",
+          "Mixed": "Mixed",
+          "Warm Intro": "Warm Intro"
+        }
+      },
+      "meetings": {
+        "source": {
+          "Fathom": "Fathom",
+          "Granola": "Granola",
+          "Fireflies": "Fireflies",
+          "Otter": "Otter",
+          "Calendar": "Calendar",
+          "Manual": "Manual"
+        }
+      }
+    },
+    "select_payload": {},
+    "funnel_page_id": "00000000000000000000000000000006",
+    "views": {
+      "contacts": "",
+      "companies": "",
+      "pipeline": "",
+      "campaigns": "",
+      "meetings": ""
+    }
+  },
+  "adapters": {
+    "email": "gmail",
+    "calendar": "google",
+    "linkedin": "chrome",
+    "meetings": [],
+    "outreach": [],
+    "enrichment": [],
+    "notify": {
+      "kind": "push",
+      "slack_channel": ""
+    }
+  },
+  "sending": {
+    "mode": "live",
+    "sender_email": "you@example.com",
+    "linkedin_daily_invite_cap": 10,
+    "email_daily_cap": 40,
+    "reply_lookback_days": 30,
+    "event_window_days": 14
+  },
+  "sweep": {
+    "first_run_lookback_days": 7,
+    "calendar_lookahead_days": 7,
+    "max_meeting_attendees": 15,
+    "exclude_labels": []
+  },
+  "funnel": {
+    "start_month": null,
+    "pilot_stages": [
+      "Pilot"
+    ],
+    "customer_stages": [
+      "Won"
+    ],
+    "warm_lead_sources": [
+      "Warm Intro"
+    ],
+    "inbound_lead_sources": [
+      "Inbound"
+    ],
+    "drop_tolerance_pct": 0,
+    "rise_tolerance_pct": 25,
+    "max_blank_pct": 10,
+    "inbound": []
+  },
+  "paths": {
+    "voice": "",
+    "icp": ""
+  },
+  "runtime": "claude-code"
+}

@@ -35,7 +35,7 @@ Ask in one message, with your best guesses filled in (for example the connected 
 
 ## Config keys
 
-Set each with `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/config.py set <key> '<json>'`. Values are parsed as JSON, else kept as a string. Quote JSON in single quotes.
+Write each into config.json with the Read and Write tools (`${CLAUDE_PLUGIN_ROOT}/reference/config.md`, No Python, step 3): the dotted key is the path in the JSON object (`owner.name` is `"name"` inside `"owner"`). The example values below are the JSON values, shown in single quotes.
 
 | Key | Example value |
 |---|---|
@@ -46,13 +46,13 @@ Set each with `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/config.py set <key> '<jso
 | `owner.timezone` | `Europe/London` |
 | `owner.working_days` | `'["Mon","Tue","Wed","Thu","Fri"]'` |
 | `owner.send_window` | `'{"start":"09:00","end":"17:00"}'` |
-| `notion.access` | `mcp` or `rest` (rest only after `has-secret notion_token` exits 0, never in Cowork) |
+| `notion.access` | `mcp` (this edition never writes `rest`; keep a `rest` that Tessary GTM Pro wrote) |
 | `notion.parent_page_id` | page id |
 | `notion.data_sources` | `'{"contacts":"<id>","companies":"<id>","pipeline":"<id>","campaigns":"<id>","meetings":"<id>"}'` |
 | `notion.field_map` | the full map from step 4 (all five databases) |
 | `notion.status_map` | all eight logical statuses |
 | `notion.option_map` | the full map from step 4 |
-| `notion.select_payload` | `'{}'`, or `'{"contacts.status":"status"}'` when that property is a real Notion status property. Flat keys, never a dotted `set` path. |
+| `notion.select_payload` | `'{}'`, or `'{"contacts.status":"status"}'` when that property is a real Notion status property. Flat keys, never a nested object. |
 | `notion.funnel_page_id` | page id |
 | `adapters.email` / `adapters.calendar` / `adapters.linkedin` | `gmail`, `outlook`, `google`, `chrome`, or `null` |
 | `adapters.meetings` / `adapters.outreach` / `adapters.enrichment` | JSON list, `'[]'` when none |
@@ -62,11 +62,11 @@ Set each with `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/config.py set <key> '<jso
 | `sending.linkedin_daily_invite_cap` | `10` |
 | `sending.email_daily_cap` | `40` |
 | `sweep.exclude_labels` | `'["Warmup"]'`, or `'[]'` when the user has no warm-up or sequencer label |
-| `paths.voice` / `paths.icp` | keep the default `""` (the voice and ICP files in the config folder; `config.py paths` prints them) |
+| `paths.voice` / `paths.icp` | keep the default `""` (the voice and ICP files in the config folder) |
 
 The rest (`sending.reply_lookback_days`, `sending.event_window_days`, `sweep.*`, `funnel.*`) keep their defaults unless the user asks. Their meaning is in `${CLAUDE_PLUGIN_ROOT}/reference/config.md`.
 
-Never put a secret in config.json. `config.py set` refuses secret-like keys; if it refuses, the value belongs in `set-secret`.
+Never put a secret in config.json: no key whose name holds `token`, `secret`, `password` or `api_key`.
 
 ## Re-run diff
 
