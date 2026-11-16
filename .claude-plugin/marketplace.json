@@ -13,7 +13,7 @@
         "path": "plugins/evals",
         "ref": "evals-v0.27.1"
       },
-      "description": "Connect your repo to evals.tessary.ai and work with your evals from the coding agent \u2014 wire trace ingestion over OTLP, tag your call sites, assess graders, query failing traces, read the cases and root-cause reports the platform opens, and author per-call-site SOP-conformance files (derive from the code, reconcile on change, lint locally). The platform's observer authors and maintains your eval bundle from there."
+      "description": "Connect your repo to evals.tessary.ai and work with your evals from the coding agent — wire trace ingestion over OTLP, tag your call sites, assess graders, query failing traces, read the cases and root-cause reports the platform opens, and author per-call-site SOP-conformance files (derive from the code, reconcile on change, lint locally). The platform's observer authors and maintains your eval bundle from there."
     },
     {
       "name": "crew",
@@ -23,7 +23,7 @@
         "path": "plugins/crew",
         "ref": "crew-v0.7.0"
       },
-      "description": "A multi-agent dev harness: hand it a goal and the orchestrator triages, implements, reviews, and maintains your repo \u2014 autonomously, up to a review-ready PR."
+      "description": "A multi-agent dev harness: hand it a goal and the orchestrator triages, implements, reviews, and maintains your repo — autonomously, up to a review-ready PR."
     },
     {
       "name": "tessary",
@@ -33,7 +33,7 @@
         "path": "plugins/tessary",
         "ref": "tessary-v0.2.0"
       },
-      "description": "Self-host Tessary, an open-source agent reliability platform, and wire your repo's tracing to it \u2014 install and start the local instance, instrument your model-call spans with tessary.call_site.id, and connect Claude Code's MCP tools to a project so the agent can read cases, findings, and traces natively."
+      "description": "Self-host Tessary, an open-source agent reliability platform, and wire your repo's tracing to it — install and start the local instance, instrument your model-call spans with tessary.call_site.id, and connect Claude Code's MCP tools to a project so the agent can read cases, findings, and traces natively."
     },
     {
       "name": "gtm",
@@ -41,7 +41,7 @@
         "source": "git-subdir",
         "url": "https://github.com/tessaryai/plugins.git",
         "path": "plugins/gtm",
-        "ref": "gtm-v0.2.0"
+        "ref": "gtm-v0.2.1"
       },
       "description": "Host your CRM in Notion and run your go-to-market flow from Claude Code or Claude Cowork: set up or map the databases, import from another CRM, sweep your inbox, calendar, LinkedIn and outreach tools into the CRM every day, build and write campaigns in your voice, send them with safety gates, and report the funnel."
     }
