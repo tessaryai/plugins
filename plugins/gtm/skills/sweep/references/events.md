@@ -51,7 +51,7 @@ Add an item (channel, contact, date, verbatim text) when:
 
 - a neutral reply asks for something: a meeting, a time, pricing, a contract, legal, privacy or security questions, an introduction, or it shows strong feeling;
 - a booking or a meeting request involves an unmatched person, and the event has 1 to 3 external attendees. Bookings with more unmatched attendees are counted, not listed (`Unmatched bookings with 4 or more attendees: <n>`). Events skipped by the calendar adapter (more than `sweep.max_meeting_attendees` external attendees, or a recurring internal-style series with no matched contact) are never listed;
-- an unmatched person writes like a prospect, customer or investor (not a recruiter, not a sales pitch, not a newsletter);
+- an unmatched person writes like a prospect, customer or investor (not a recruiter, not a sales pitch, not a newsletter, and not mailbox warm-up mail: skip threads with a `sweep.exclude_labels` label and those `${CLAUDE_PLUGIN_ROOT}/adapters/email/gmail.md`, Read procedure step 7, marks as warm-up);
 - a suppressed contact replied or booked;
 - a needed select option or property is missing (`${CLAUDE_PLUGIN_ROOT}/reference/notion-access.md`, Select options);
 - a Status write failed twice (`STATUS_UPDATE_FAILED`);

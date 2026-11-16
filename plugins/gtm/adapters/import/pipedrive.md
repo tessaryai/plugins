@@ -16,6 +16,8 @@ How the user gets the token: in Pipedrive, avatar menu → Personal preferences 
 python3 -I -B <absolute plugin root>/lib/config.py set-secret pipedrive_api_token
 ```
 
+Claude Code only; in Cowork use the connector or a CSV export.
+
 Never ask for the token in the chat.
 
 Fallback: CSV export (`${CLAUDE_PLUGIN_ROOT}/adapters/import/csv.md`).
@@ -23,7 +25,7 @@ Fallback: CSV export (`${CLAUDE_PLUGIN_ROOT}/adapters/import/csv.md`).
 ## Preflight check
 
 - Connector: list one person. Auth error or missing tools = blocked.
-- API: `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py pipedrive check`. Exit 0 = ok, 2 = blocked.
+- API: `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py pipedrive check`. Exit 0 = ok, 2 = blocked. Not with `runtime` = `cowork` or without Python (`${CLAUDE_PLUGIN_ROOT}/reference/blocked.md`, Cowork).
 
 ## Read procedure
 
@@ -77,8 +79,8 @@ Pipedrive limits requests per token in a rolling window, and the limit depends o
 
 | Sign | Fix |
 |---|---|
-| Connector tools missing | "Add the Pipedrive connector in Claude settings, or save your API token with set-secret pipedrive_api_token, or export a CSV." |
-| `check` exit 2 with 401 | "The Pipedrive token is invalid. Copy it again from Personal preferences → API and run set-secret pipedrive_api_token." |
+| Connector tools missing | "Add the Pipedrive connector in Claude settings, or save your API token with set-secret pipedrive_api_token, or export a CSV." (Claude Code only. In Cowork: "Connect a connector for pipedrive, or export a CSV.") |
+| `check` exit 2 with 401 | "The Pipedrive token is invalid. Copy it again from Personal preferences → API and run set-secret pipedrive_api_token." (Claude Code only. In Cowork: "Connect a connector for pipedrive, or export a CSV.") |
 | 404 or 410 on an endpoint | The API version changed. Report the path; use the CSV export meanwhile. |
 
 ## Write / send capability

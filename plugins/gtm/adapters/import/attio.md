@@ -12,12 +12,12 @@ The read-only API client cannot list Attio records: Attio's record listing is a 
 
 So without a connector, use the CSV export (`${CLAUDE_PLUGIN_ROOT}/adapters/import/csv.md`): in Attio, open the People object (or the list to import) → … → Export as CSV; do the same for Companies if the user wants company fields beyond name and domain.
 
-If the user has an Attio key saved (`attio_api_key`, via `python3 -I -B <absolute plugin root>/lib/config.py set-secret attio_api_key` in their own terminal), use it only for the preflight and to read attribute definitions (`/v2/objects/people/attributes`), which helps map status options.
+If the user has an Attio key saved (`attio_api_key`, via `python3 -I -B <absolute plugin root>/lib/config.py set-secret attio_api_key` in their own terminal; Claude Code only), use it only for the preflight and to read attribute definitions (`/v2/objects/people/attributes`), which helps map status options.
 
 ## Preflight check
 
 - Connector: one cheap read (list objects, or query one person). Auth error or missing tools = blocked; offer the CSV path.
-- Key only: `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py attio check`. Exit 0 = the key works, but the import still goes through CSV.
+- Key only: `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py attio check`. Exit 0 = the key works, but the import still goes through CSV. Not with `runtime` = `cowork` or without Python (`${CLAUDE_PLUGIN_ROOT}/reference/blocked.md`, Cowork).
 
 ## Read procedure
 
@@ -64,7 +64,7 @@ Attio limits reads per second per workspace. On a rate-limit error from the conn
 |---|---|
 | No Attio connector | "Add the Attio connector in Claude settings, or export People as CSV from Attio." |
 | Connector auth error | "Reconnect the Attio connector in Claude settings." |
-| `attio check` exit 2 | "The Attio key is invalid or lacks read scopes. Create a new key with read access and run set-secret attio_api_key." |
+| `attio check` exit 2 | "The Attio key is invalid or lacks read scopes. Create a new key with read access and run set-secret attio_api_key." (Claude Code only. In Cowork: "Connect a connector for attio, or export a CSV.") |
 
 ## Write / send capability
 

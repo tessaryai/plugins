@@ -21,7 +21,7 @@ Config chooses the adapters (`adapters.*` in the gtm config, see `${CLAUDE_PLUGI
 
 When the session has an MCP connector for the tool, use it. Load its tools with ToolSearch and read each tool's schema at run time; never guess tool or parameter names. Use only its read tools (and, for email and LinkedIn in campaign-run, its send tool).
 
-Otherwise use the read-only API client `${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py` with the user's key from `~/.config/gtm/credentials.json`. Tools with an entry there: gojiberry, lemlist, instantly, apollo, hubspot, pipedrive, attio, fathom, hunter, fireflies (GraphQL read queries only). Run `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py tools` for each tool's base URL, key name and allowed GET paths.
+Otherwise, in Claude Code, use the read-only API client `${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py` with the user's key from the credentials file in the active config folder (the `credentials` path printed by `config.py paths`; never read it yourself). Tools with an entry there: gojiberry, lemlist, instantly, apollo, hubspot, pipedrive, attio, fathom, hunter, fireflies (GraphQL read queries only). Run `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py tools` for each tool's base URL, key name and allowed GET paths.
 
 ```
 python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py <tool> check
@@ -32,6 +32,10 @@ python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py fireflies graphql --quer
 Exit 0 done, 1 refused (verb, path or bad input), 2 the tool cannot be read: the adapter is blocked. Paging is the caller's job: repeat `get` with the tool's page or cursor parameter until the tool says there is no more.
 
 A tool with neither a connector nor an API entry (for example granola without a connector) is blocked with the fix "add the <tool> connector in Claude settings".
+
+### Cowork: connectors only
+
+With `runtime` = `cowork` in the config, or when `python3` is missing, the API client is never used: the Cowork virtual machine cannot reach vendor APIs. An adapter whose Tool section names an API key works only through its connector. Without one it is blocked with the fix "connect a connector for <tool>, or run this routine from Claude Code". Never offer `set-secret` there. Rules: `${CLAUDE_PLUGIN_ROOT}/reference/blocked.md`, Cowork.
 
 ## Sections every adapter file has
 

@@ -10,9 +10,9 @@ The Gmail MCP connector. It is the only path; there is no `readonly_api.py` entr
 
 - Load the tools with ToolSearch, for example the query `gmail search_threads get_thread send_message`. The names carry a server prefix that differs per session. Use the names ToolSearch returns.
 - Read each tool's schema at run time and pass exactly the parameters it defines. The parameter names below were correct at the time of writing; the live schema wins.
-- Read tools: `search_threads`, `get_thread`.
+- Read tools: `search_threads`, `get_thread`, and `list_labels` (read-only; only to map label ids such as `Label_123` to display names, for `sweep.exclude_labels`).
 - Send tool: `send_message`, used only by `/gtm:campaign-run` (see Write / send capability).
-- Forbidden in every skill: `create_draft`, `update_draft`, `reply`, `forward`, every label, spam, trash and untrash tool, and attachment downloads. The sweep uses only the two read tools.
+- Forbidden in every skill: `create_draft`, `update_draft`, `reply`, `forward`, every tool that creates, changes, applies or removes a label, every spam, trash and untrash tool, and attachment downloads. The sweep uses only the read tools.
 
 ## Preflight check
 
@@ -22,15 +22,17 @@ Call `search_threads` with the query `newer_than:1d` and `pageSize` 1. A result,
 
 Window: from the cursor date (`after`) to now. With no cursor, `sweep.first_run_lookback_days` days back. Gmail `after:` takes `YYYY/MM/DD` and is inclusive.
 
-1. Main query: `after:<date> -category:updates -category:promotions -category:social -category:forums`. The category filters remove most newsletters and notifications; in practice they cut the volume by about three quarters.
+Excluded labels: for each name in `sweep.exclude_labels` (a mailbox warm-up or sequencer label), add `-label:"<name>"` to the main and sent queries. The operator takes the display name; a label id such as `Label_123` matches nothing. When a thread still shows a label id you cannot place, call `list_labels` once per run to map ids to names, and skip threads that carry an excluded label. Count skipped threads in the run log.
+
+1. Main query: `after:<date> -category:updates -category:promotions -category:social -category:forums`, plus the excluded labels. The category filters remove most newsletters and notifications; in practice they cut the volume by about three quarters.
 2. System mail query: `after:<date> (from:mailer-daemon OR from:postmaster OR subject:"out of office" OR subject:"automatic reply" OR subject:"undeliverable")`.
-3. Sent query: `after:<date> in:sent`. This finds mail the user sent by hand.
-4. For each query, use `view` = `THREAD_VIEW_METADATA_ONLY` and `pageSize` 20. A page of 50 metadata threads passed the tool's output limit in testing. Follow `pageToken` until no token is returned. If you stop before the last page, the read is incomplete: report it, apply what you read, and do not move the cursor.
+3. Sent query: `after:<date> in:sent`, plus the excluded labels. This finds mail the user sent by hand. The main query already returns most sent threads, so run this one with `view` = `THREAD_VIEW_IDS_ONLY` and `pageSize` 50, follow `pageToken` to the end, and open with `get_thread` only the thread ids the main query did not return.
+4. For the main and system mail queries, use `view` = `THREAD_VIEW_METADATA_ONLY` and `pageSize` 20 (the sent query: step 3). A page of 50 metadata threads passed the tool's output limit in testing. Follow `pageToken` until no token is returned. If you stop before the last page, the read is incomplete: report it, apply what you read, and do not move the cursor.
    - Dedupe threads by thread id across the three queries: a thread can appear in both the main and the `in:sent` query. Process each thread once.
    - `search_threads` returns at most 5 messages per thread, and some can be older than the window. Use each message's own date: drop messages dated before the window, and never treat an old message as new activity.
 5. From the metadata, collect every address in `sender`, `toRecipients` and `ccRecipients`. Drop addresses in `owner.emails` and on `owner.own_domains`.
 6. Resolve the remaining addresses against the CRM in one pass (the sweep's matching step). Do not search Gmail one contact at a time: a person can reply from a second address.
-7. `THREAD_VIEW_METADATA_ONLY` has no subject and no snippet, so the prospect, newsletter and system-mail rules cannot be applied from the list. Open a thread in full (`get_thread`, `messageFormat` `PLAIN_TEXT`) before you apply them, and only when it may matter: an address matched a contact, the sending domain matches exactly one contact, it is system mail that names a contact's address, or the sender looks like a prospect (a person at a company domain, not a newsletter or a tool). Read the whole thread in both directions.
+7. `THREAD_VIEW_METADATA_ONLY` has no subject and no snippet, so the prospect, newsletter and system-mail rules cannot be applied from the list. Open a thread in full (`get_thread`, `messageFormat` `PLAIN_TEXT`) before you apply them, and only when it may matter: an address matched a contact, the sending domain matches exactly one contact, it is system mail that names a contact's address, or the sender looks like a prospect (a person at a company domain, not a newsletter or a tool). Mailbox warm-up mail often reads like a prospect: signs are an excluded or unknown user label, near-uniform send times, and stock replies such as "Hi <name>, Thanks for ..." between strangers. Treat such threads as warm-up, never list them under Needs you, and if `sweep.exclude_labels` is empty, suggest once under Needs you that the user add the warm-up label in `/gtm:setup`. Read the whole thread in both directions.
 8. Resolve each inbound message by sender address, then reply-to address, then a quoted earlier message in the thread that went to a known contact address, then the sending domain (domain rule in `${CLAUDE_PLUGIN_ROOT}/reference/crm-rules.md`, Matching). Only after all four fail is it unmatched.
 
 ### Reply check for a set of contacts (campaign-run)

@@ -8,7 +8,7 @@ The calendar adapter does not create Meetings pages. It only logs bookings and s
 
 1. Group events by `external_id` (one meeting).
 2. Match each attendee to a contact (`${CLAUDE_PLUGIN_ROOT}/reference/crm-rules.md`, Matching). The user's own addresses are never contacts. When the adapter gives attendee names but no emails (the Fathom connector), it resolves them first through the calendar event at the same time, then by a unique contact name, as its file says (`${CLAUDE_PLUGIN_ROOT}/adapters/meetings/fathom.md`, Output). Such a match is a Decision.
-3. A meeting with no matched attendee creates no page. List it under Unmatched (title, date, attendee addresses). If it looks like a sales call with a prospect, list it under Needs you, because the user may want to add the person.
+3. A meeting with no matched attendee creates no page. List it under Unmatched (title, date, attendee addresses or names). This includes a meeting whose calendar event has no attendees or that has no calendar event at all; never drop it silently. If it looks like a sales call with a prospect, or its title names a person or a domain other than the user, list it under Needs you, because the user may want to add the person.
 
 ## 2. Find or create the Meetings page
 

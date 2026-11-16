@@ -49,6 +49,8 @@ Detail for this skill:
 
 ### 1. Preflight
 
+Before the first step: if `python3` is not found (`command not found`), follow `${CLAUDE_PLUGIN_ROOT}/reference/config.md`, No Python. Run `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/config.py paths` and check `source` and `dir`: when they are not the project folder the user works in, rerun with `cd <project folder> &&` in front (`config.md`, Which folder is active). With `runtime` = `cowork`, use connectors only (`config.md`, Runtime: cowork, and `${CLAUDE_PLUGIN_ROOT}/reference/blocked.md`, Cowork).
+
 1. Load config: `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/config.py show`. Note `adapters.enrichment`, `adapters.linkedin`, `owner.*`, `paths.icp`, the field, status and option maps. Run `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/config.py check`; stop on errors and show them.
 2. Choose the Notion path and load the Notion tools (`${CLAUDE_PLUGIN_ROOT}/reference/notion-access.md`). Fetch the Contacts, Companies and Campaigns schemas once. Check that every option this run writes exists: contact Status `New`, Lead Source `Cold Outreach`, the four Email Status options, Company ICP options, campaign Status `Review`. A missing option means that write is skipped and listed under Needs you.
 3. Run the Preflight check of each enrichment adapter in `adapters.enrichment` (`${CLAUDE_PLUGIN_ROOT}/adapters/enrichment/<tool>.md`). Mark each `ok` or `blocked`. The Exa preflight is a ToolSearch only and spends nothing; an Exa auth or quota error can first show at the first real call, and Exa is then blocked. If `adapters.enrichment` is empty, offer `mcp` when the session has an enrichment connector, else `exa` when its connector is present, and say how to add one in `/gtm:setup`.

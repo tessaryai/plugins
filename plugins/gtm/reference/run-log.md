@@ -1,6 +1,6 @@
 # Run log
 
-Every gtm skill run appends exactly one entry to the run log, newest last, and ends with a final report in the chat that uses the same order. The run log is the `run_log` path printed by `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/config.py paths`; it follows `GTM_CONFIG_DIR`, so never hardcode it. Create the file with the line `# gtm run log` when it does not exist. Never rewrite or delete earlier entries.
+Every gtm skill run appends exactly one entry to the run log, newest last, and ends with a final report in the chat that uses the same order. The run log is the `run_log` path printed by `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/config.py paths`; it follows the active config folder, so never hardcode it. Create the file with the line `# gtm run log` when it does not exist. Never rewrite or delete earlier entries.
 
 ## Order inside an entry
 

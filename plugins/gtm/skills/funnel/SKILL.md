@@ -41,6 +41,7 @@ Detail for this skill:
 ## Steps
 
 1. Preflight.
+   - Before the first step: if `python3` is not found (`command not found`), follow `${CLAUDE_PLUGIN_ROOT}/reference/config.md`, No Python. Run `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/config.py paths` and check `source` and `dir`: when they are not the project folder the user works in, rerun with `cd <project folder> &&` in front (`config.md`, Which folder is active). With `runtime` = `cowork`, use connectors only (`config.md`, Runtime: cowork, and `${CLAUDE_PLUGIN_ROOT}/reference/blocked.md`, Cowork). Without Python the funnel cannot count: report `BLOCKED: needs Python` with the fix "run /gtm:funnel from Claude Code, or where python3 is installed", and stop. Never count by hand.
    - `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/config.py check`. On errors about `notion.data_sources`, `notion.field_map`, `notion.status_map` or `funnel.*`, stop and report them under Needs you with the fix ("run /gtm:setup").
    - `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/config.py show` once, for the field map, option map, `funnel.*` and `notion.funnel_page_id`.
    - Choose the Notion path (`notion-access.md`, Choose the path). Load the Notion MCP tools with ToolSearch and read their schemas, even on the REST path: publishing always uses MCP.
@@ -66,7 +67,7 @@ List here, each with its fix:
 
 - Contacts with a blank First Contacted (from `funnel_blanks.txt`; give the count and up to 10 names). Fix: set the date on the contact, or run `/gtm:sweep`.
 - Every `note:` line from the script (unmapped Status values, stage names with no option map entry, no deal at a Pilot or Customer stage). Fix: map the option in config, or change `funnel.*`.
-- An MCP export that could not read every row (`references/export.md`). Fix: save a Notion token with `/gtm:setup`.
+- An MCP export that could not read every row (`references/export.md`). Fix: save a Notion token with `/gtm:setup` (in Cowork: run `/gtm:funnel` from Claude Code with a token, pointed at the same project folder).
 
 ## Blocked
 

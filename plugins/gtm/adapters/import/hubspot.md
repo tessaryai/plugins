@@ -10,7 +10,7 @@ Preferred: a HubSpot MCP connector in the session. Find it with ToolSearch (`hub
 
 Otherwise: `${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py hubspot`, secret `hubspot_token`. Run `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py tools` for the allowed GET paths.
 
-How the user gets a token: in HubSpot, Settings → Integrations → Private Apps (newer accounts: Development → Legacy apps → Private app) → create a private app with read-only scopes only: `crm.objects.contacts.read`, `crm.objects.companies.read`, `crm.objects.deals.read`, `crm.schemas.contacts.read`, `crm.schemas.deals.read` (plus `crm.objects.owners.read` if they want owners). Copy the access token, then run in their own terminal:
+How the user gets a token: in HubSpot, Settings → Integrations → Private Apps (newer accounts: Development → Legacy apps → Private app) → create a private app with read-only scopes only: `crm.objects.contacts.read`, `crm.objects.companies.read`, `crm.objects.deals.read`, `crm.schemas.contacts.read`, `crm.schemas.deals.read` (plus `crm.objects.owners.read` if they want owners). Copy the access token, then run in their own terminal (Claude Code only; in Cowork use the connector or a CSV export):
 
 ```
 python3 -I -B <absolute plugin root>/lib/config.py set-secret hubspot_token
@@ -23,7 +23,7 @@ Fallback: CSV export (`${CLAUDE_PLUGIN_ROOT}/adapters/import/csv.md`).
 ## Preflight check
 
 - Connector: one cheap read (list one contact). Auth error or missing tools = blocked.
-- API: `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py hubspot check`. Exit 0 = ok, 2 = blocked. A 403 on a later object means a missing scope; report which object.
+- API: `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py hubspot check`. Exit 0 = ok, 2 = blocked. A 403 on a later object means a missing scope; report which object. Not with `runtime` = `cowork` or without Python (`${CLAUDE_PLUGIN_ROOT}/reference/blocked.md`, Cowork).
 
 ## Read procedure
 
@@ -73,10 +73,10 @@ Private apps get about 100 to 190 requests per 10 seconds depending on the plan,
 
 | Sign | Fix |
 |---|---|
-| Connector tools missing | "Add the HubSpot connector in Claude settings, or save a private app token with set-secret hubspot_token, or export a CSV." |
-| `check` exit 2 with 401 | "The HubSpot token is invalid or revoked. Create a new private app token and run set-secret hubspot_token." |
+| Connector tools missing | "Add the HubSpot connector in Claude settings, or save a private app token with set-secret hubspot_token, or export a CSV." (Claude Code only. In Cowork: "Connect a connector for hubspot, or export a CSV.") |
+| `check` exit 2 with 401 | "The HubSpot token is invalid or revoked. Create a new private app token and run set-secret hubspot_token." (Claude Code only. In Cowork: "Connect a connector for hubspot, or export a CSV.") |
 | 403 on one object | "Add the read scope for <object> to the private app." |
-| `no key saved` | Give the set-secret command above. |
+| `no key saved` | Give the set-secret command above (Claude Code only; in Cowork: "Connect a connector for hubspot, or export a CSV."). |
 
 ## Write / send capability
 

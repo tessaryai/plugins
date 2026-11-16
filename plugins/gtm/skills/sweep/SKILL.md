@@ -55,6 +55,8 @@ Read these once per run and follow them. This file does not repeat them.
 
 ### 1. Preflight
 
+Before the first step: if `python3` is not found (`command not found`), follow `${CLAUDE_PLUGIN_ROOT}/reference/config.md`, No Python. Run `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/config.py paths` and check `source` and `dir`: when they are not the project folder the user works in, rerun with `cd <project folder> &&` in front (`config.md`, Which folder is active). With `runtime` = `cowork`, use connectors only (`config.md`, Runtime: cowork, and `${CLAUDE_PLUGIN_ROOT}/reference/blocked.md`, Cowork).
+
 1. `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/config.py check`. Exit 1: stop and report the errors under Needs you (point to `/gtm:setup`).
 2. `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/config.py show` once: keep `owner.*`, `notion.*`, `adapters.*`, `sweep.*`.
 3. Choose the Notion path (`notion-access.md`, Choose the path). Load the Notion tools with ToolSearch. Fetch the Contacts data source. Notion blocked: notify and stop; nothing can be written.

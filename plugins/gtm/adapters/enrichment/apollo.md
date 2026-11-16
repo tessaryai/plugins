@@ -15,7 +15,7 @@ Fallback: `lib/readonly_api.py apollo` with the secret `apollo_api_key`. Its all
 ## Preflight check
 
 - Connector: load the tools. Call the account, usage or credit tool if one exists; else run the cheapest search with one result. A result = ok. Missing tools or an auth error = blocked.
-- No connector: `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py apollo check` tells whether the key works, but sourcing still needs the connector. Report: blocked, "no Apollo connector".
+- No connector: `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py apollo check` tells whether the key works, but sourcing still needs the connector. Report: blocked, "no Apollo connector". Not with `runtime` = `cowork` or without Python (`${CLAUDE_PLUGIN_ROOT}/reference/blocked.md`, Cowork).
 
 ## Read procedure
 

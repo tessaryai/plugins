@@ -86,6 +86,9 @@ def normalize_id(value: str) -> str:
 
 
 def _token() -> str:
+    refusal = gtm_config.direct_api_refusal()
+    if refusal:
+        raise gtm_config.ConfigError(refusal + " (set notion.access to mcp)")
     token = gtm_config.get_secret("notion_token")
     if not token:
         raise NotionAPIError("no-token", "no notion_token saved; run config.py set-secret notion_token or use the MCP path")

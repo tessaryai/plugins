@@ -15,7 +15,7 @@ Never call the lemlist API another way. See `${CLAUDE_PLUGIN_ROOT}/reference/saf
 ## Preflight check
 
 - Connector: list campaigns. A result or an empty list is ok.
-- API: `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py lemlist check` (reads `/api/team`). Exit 0 ok, exit 2 blocked.
+- API: `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py lemlist check` (reads `/api/team`). Exit 0 ok, exit 2 blocked. Not with `runtime` = `cowork` or without Python (`${CLAUDE_PLUGIN_ROOT}/reference/blocked.md`, Cowork).
 
 ## Read procedure
 
@@ -61,7 +61,7 @@ Write the full merged map. A campaign that failed keeps its old value.
 
 ## Blocked signs and fix
 
-- Exit 2 or a connector auth error: "Save a working lemlist API key: run `python3 -I -B <plugin root>/lib/config.py set-secret lemlist_api_key` in a terminal, or reconnect the lemlist connector."
+- Exit 2 or a connector auth error: "Save a working lemlist API key: run `python3 -I -B <plugin root>/lib/config.py set-secret lemlist_api_key` in a terminal, or reconnect the lemlist connector." (Claude Code only. In Cowork: "Connect a connector for lemlist, or run this routine from Claude Code.")
 - Exit 1 (refused path): report under Needs you; never edit the allowlist.
 
 ## Write / send capability

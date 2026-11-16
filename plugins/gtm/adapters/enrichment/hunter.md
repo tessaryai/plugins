@@ -22,7 +22,7 @@ Costs, parameters and status values below were written from Hunter's public docu
 
 ## Preflight check
 
-`python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py hunter check`. Exit 0 = ok, exit 2 = blocked. Then read the balance:
+`python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py hunter check`. Exit 0 = ok, exit 2 = blocked. Not with `runtime` = `cowork` or without Python (`${CLAUDE_PLUGIN_ROOT}/reference/blocked.md`, Cowork). Then read the balance:
 
 ```
 python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py hunter get /v2/account --out <scratchpad>/hunter-account.json
@@ -69,7 +69,7 @@ None.
 
 ## Blocked signs and fix
 
-- `readonly_api.py hunter check` exit 2 with 401: "Save a working key: run `python3 -I -B <plugin root>/lib/config.py set-secret hunter_api_key` in a terminal."
+- `readonly_api.py hunter check` exit 2 with 401: "Save a working key: run `python3 -I -B <plugin root>/lib/config.py set-secret hunter_api_key` in a terminal." (Claude Code only. In Cowork: "Connect a connector for hunter, or run this routine from Claude Code.")
 - 429 after one retry, or zero credits left: report it, stop Hunter calls, keep what was found.
 
 ## Write / send capability

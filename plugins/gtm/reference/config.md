@@ -1,6 +1,16 @@
 # Configuration
 
-All runtime files live in one config folder outside the plugin folder, because a plugin update replaces that folder. The default folder is `~/.config/gtm`. Set the environment variable `GTM_CONFIG_DIR` to use another folder (tests, a second workspace); every path below then moves with it, including the imports folder and the default voice and ICP files. Never hardcode a runtime path: run `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/config.py paths` and use the location it prints (keys `config`, `credentials`, `state`, `run_log`, `imports`, `voice`, `icp`).
+All runtime files live in one config folder outside the plugin folder, because a plugin update replaces that folder. Every path below lives in the active folder, including the imports folder and the default voice and ICP files. Never hardcode a runtime path: run `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/config.py paths` and use the location it prints (keys `config`, `credentials`, `state`, `run_log`, `imports`, `voice`, `icp`).
+
+## Which folder is active
+
+`config.py` picks the first match:
+
+1. `GTM_CONFIG_DIR`, when the environment variable is set (tests, a second workspace, a scheduled run pointed at a project folder). `paths` prints `"source": "env"`.
+2. A `.gtm/` folder that holds `config.json`, in the current working directory or any parent. `paths` prints `"source": "project"`. `config.py init --project` creates `./.gtm/` in the current folder, writes `config.json` from the template, and writes `.gtm/.gitignore`, which keeps `credentials.json` out of git.
+3. `~/.config/gtm`. `paths` prints `"source": "home"`.
+
+`paths` also prints `dir` (the active folder), `reason` (why it was chosen) and `runtime`. Discovery starts from the shell's current folder. In Cowork that may not be the connected project folder: in every preflight, check `source` and `dir`, and when they are not the project folder you expect, run the command again with `cd <project folder> &&` in front, or with `GTM_CONFIG_DIR=<project folder>/.gtm` set in the same command. A `.gtm/` folder without `config.json` is ignored.
 
 | File (`paths` key) | Holds | Who writes it |
 |---|---|---|
@@ -24,10 +34,11 @@ Run as `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/config.py <command>`:
 | `check` | Validates. Prints `error:` and `warning:` lines, then `ok` or the error count. Exit 0 ok, 1 errors. See Validation below. |
 | `get <dotted.key>` | Prints one value (strings bare, others as JSON). Refuses secret names. |
 | `set <dotted.key> <value>` | Writes one value into config.json. The value is parsed as JSON when it can be (`10`, `true`, `["a"]`, `null`), else kept as a string. Refuses secret-like keys. |
-| `init` | Writes config.json from the template when none exists. |
-| `paths` | Prints the runtime file locations: config, credentials, state, run log, `imports` (the import work folder), `voice` and `icp` (the resolved files), and whether config exists. |
-| `set-secret <name>` | Reads a secret at a hidden prompt and saves it to credentials.json with mode 600. Needs a real terminal: the user runs it, not the agent. |
-| `has-secret <name>` | Exit 0 when the secret is saved, 1 when not. Prints only `set` or `not set`. |
+| `init` | Writes config.json from the template into the active folder when none exists. |
+| `init --project` | Creates `./.gtm/` in the current folder with config.json (from the template, when absent) and a `.gitignore` for `credentials.json`. Prints a note when another folder stays active (`GTM_CONFIG_DIR` is set). |
+| `paths` | Prints the active folder (`dir`), `source` (`env`, `project` or `home`), `reason`, `runtime`, and the file locations: config, credentials, state, run log, `imports` (the import work folder), `voice` and `icp` (the resolved files), and whether config exists. |
+| `set-secret <name>` | Reads a secret at a hidden prompt and saves it to credentials.json with mode 600. Needs a real terminal: the user runs it, not the agent. Refuses when `runtime` is `cowork`. |
+| `has-secret <name>` | Exit 0 when the secret is saved, 1 when not. Prints only `set` or `not set`. With `runtime` = `cowork` it always exits 1 (`not set`), so no skill takes a token path there. |
 | `state-get [adapter]` | Prints state.json, or one adapter's cursor. |
 | `state-set <adapter> '<json>'` | Replaces one adapter's cursor. |
 
@@ -38,6 +49,12 @@ Secret names: `notion_token`, `gojiberry_api_key`, `lemlist_api_key`, `instantly
 ## Keys
 
 Types: str, int, bool, list, map. "Read by" lists the skills that use the key; every skill reads `notion.*`.
+
+### runtime
+
+| Key | Type | Default | Read by | Meaning |
+|---|---|---|---|---|
+| `runtime` | `"claude-code"` or `"cowork"` | `"claude-code"` | all | Where the skills run. `cowork` means connectors only (Runtime: cowork, below). |
 
 ### owner
 
@@ -107,6 +124,7 @@ Each value names an adapter file `${CLAUDE_PLUGIN_ROOT}/adapters/<kind>/<tool>.m
 | `sweep.first_run_lookback_days` | int | `7` | sweep | Days to look back for an adapter with no cursor, outreach tools included. A first outreach mirror reads only this far back unless the user asks for full history in that run (a full-history mirror can create hundreds of pages, so the sweep asks first). |
 | `sweep.max_meeting_attendees` | int | `15` | sweep | A calendar event with more external attendees than this is skipped (a webinar, an all-hands, a conference block). |
 | `sweep.calendar_lookahead_days` | int | `7` | sweep | Days ahead the calendar check reads for booked meetings. |
+| `sweep.exclude_labels` | list | `[]` | sweep, setup | Gmail label names (display names, not ids) whose mail the sweep and the voice profile skip, for example a mailbox warm-up label. Setup asks for them. The Gmail queries add `-label:"<name>"` for each. |
 
 ### funnel
 
@@ -133,7 +151,49 @@ The funnel baseline (the last accepted counts) is stored in `state.json` under `
 | `paths.voice` | str | `""` (means `<config dir>/voice.md`) | setup, campaign-write |
 | `paths.icp` | str | `""` (means `<config dir>/icp.md`) | setup, campaign-build, campaign-write |
 
-An empty path follows `GTM_CONFIG_DIR`. Set a path only to keep the file somewhere else; `~` is expanded. `config.py paths` prints the resolved files.
+An empty path follows the active config folder. Set a path only to keep the file somewhere else; `~` is expanded. `config.py paths` prints the resolved files.
+
+## Runtime: cowork
+
+Claude Cowork runs shell commands in a virtual machine whose network reaches only Anthropic hosts by default, has no terminal for the user, and may not keep files in its home folder between sessions. With `runtime` = `cowork`:
+
+- Notion goes through the Notion connector only. `notion.access` must be `mcp`; `check` reports an error for `rest`.
+- `lib/notion_rest.py` and `lib/readonly_api.py` are never called. Both refuse to run (notion_rest exit 1, readonly_api exit 2) as a second guard.
+- An adapter that needs an API key and has no connector in the session is blocked with the fix "connect a connector for <tool>, or run this routine from Claude Code" (`${CLAUDE_PLUGIN_ROOT}/reference/blocked.md`).
+- `set-secret` is never offered, and refuses. No key is saved anywhere.
+- Keep the config in the connected project folder (`init --project`). `check` warns when the config is in the home folder.
+- The runtime belongs to the config, not the app: a Claude Code run on a config with `runtime` = `cowork` follows the same rules.
+
+## No Python
+
+Some environments (often Cowork) have no `python3`. Test it once per run with the preflight's first command, `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/config.py check`. When it fails with `command not found` (or `python3: not found`), every skill still runs, with these changes:
+
+1. Find the folder by hand, in the same order: `GTM_CONFIG_DIR` if set, else the nearest `.gtm/config.json` from the project folder upward, else `~/.config/gtm`. One shell command does it:
+   `if [ -n "$GTM_CONFIG_DIR" ]; then echo "$GTM_CONFIG_DIR"; else d="$PWD"; while :; do if [ -f "$d/.gtm/config.json" ]; then echo "$d/.gtm"; break; fi; if [ "$d" = "/" ]; then echo "$HOME/.config/gtm"; break; fi; d=$(dirname "$d"); done; fi`
+   Run it from the project folder (`cd <project folder> &&` in front).
+2. Read `config.json` and `state.json` with the Read tool. Fill a missing key from `${CLAUDE_PLUGIN_ROOT}/templates/config.example.json` and the defaults in this file.
+3. To change a value, Read the file, change only that key, and Write the whole file back as valid JSON with two-space indent. Never write a secret-like key. Never Read, Write or create `credentials.json`: with no Python there are no keys, so treat every secret as not set and `notion.access` as `mcp`.
+4. Setup without Python: Write `.gtm/config.json` from the template and Write `.gtm/.gitignore` with the line `credentials.json`.
+5. Before you use the config, check it by hand. Stop on any of these, as `check` would:
+   - `owner.emails` empty, or any address, `owner.own_domains` entry or `sending.sender_email` on `example.com`, `example.org` or `example.net`; `owner.name` is `Your Name`.
+   - `owner.timezone` is not an IANA name (see Time zone by hand, below the list); `owner.working_days` is empty or holds a value other than `Mon`..`Sun`; `owner.send_window` is not `HH:MM` to `HH:MM` with start before end.
+   - `notion.parent_page_id` or a `notion.data_sources.*` value has no 32-hex id, or is all zeros (a placeholder).
+   - `notion.status_map` lacks one of the eight statuses, or two statuses share one option.
+   - `notion.access` is not `mcp` (without Python REST cannot run); `runtime` is not `claude-code` or `cowork`.
+   - A `notion.select_payload` value is an object (nested), or is not `select` or `status`.
+   - `sending.mode` is not `live` or `dry-run`; a cap or day count in `sending.*` or `sweep.*` is not a whole number of 0 or more.
+   - A `notion.field_map.*.*` value is empty or not a string (the skills could not find a property such as Do Not Contact or Status).
+   - An `adapters.*` value names a tool not listed in the adapters table above; `adapters.meetings`, `adapters.outreach` or `adapters.enrichment` is not a list; `adapters.notify.kind` is not `push`, `slack` or `none`, or is `slack` with an empty `slack_channel`.
+   - `sweep.exclude_labels` is not a list of non-empty names.
+   - `funnel.start_month` is not `YYYY-MM` or null; `funnel.pilot_stages`, `customer_stages`, `warm_lead_sources`, `inbound_lead_sources` or `inbound` is not a list of non-empty names; `funnel.customer_stages` is empty; `funnel.drop_tolerance_pct` or `max_blank_pct` is not a number of 0 or more; `funnel.rise_tolerance_pct` is not null or a number of 0 or more.
+   - Any key in config.json looks like a secret (its name holds `token`, `secret`, `password` or `api_key`).
+   Time zone by hand: the name is `UTC`, or `Area/City` (one or two `/`, no spaces) with Area one of `Africa`, `America`, `Antarctica`, `Asia`, `Atlantic`, `Australia`, `Europe`, `Indian`, `Pacific`. If `test -f /usr/share/zoneinfo/<name>` works in this shell, it decides. Otherwise, when the form is right, confirm the name with the user once in setup and accept it, and record that in the run log; later runs accept a name of the right form.
+   For every other rule, if you cannot tell whether it holds, treat it as failed and stop. This hand check replaces `check` only; it does not replace any safety gate.
+6. State: `state.json` is `{"version": 1, "adapters": {...}}`. Replace only the one adapter key you move, at the same point the skill would run `state-set`.
+7. Run log: append the entry to `logs.md` in the active folder (Read, add the entry at the end, Write).
+8. `/gtm:import` takes only a CSV of 200 rows or fewer. Map the columns yourself, show the mapping and a preview of the first rows, dedupe by email and LinkedIn URL against the view-mode index, and write in batches of 20 with a yes before the first batch and a check after each one. HubSpot, Pipedrive and Attio: ask for a CSV export instead.
+9. `/gtm:funnel` reports `BLOCKED: needs Python` and stops. Never count the funnel by hand.
+10. Every safety gate applies unchanged without Python: Do Not Contact, reply stop, verify before marker, forward-only Status, the daily caps and the send window (`${CLAUDE_PLUGIN_ROOT}/reference/safety.md` and `${CLAUDE_PLUGIN_ROOT}/reference/crm-rules.md`). A missing script is never a reason to skip or weaken one. When a gate cannot be checked, do not send or write that item; list it under Needs you.
 
 ## Validation
 
@@ -141,11 +201,12 @@ An empty path follows `GTM_CONFIG_DIR`. Set a path only to keep the file somewhe
 
 - `owner.emails` empty, or an address on a template domain (`example.com`, `example.org`, `example.net`); the same for `owner.own_domains` and `sending.sender_email`; `owner.name` still `Your Name`.
 - `notion.parent_page_id` or a `notion.data_sources.*` value that is empty, a placeholder, or not a 32-hex Notion id.
-- `notion.access` = `rest` with no saved `notion_token`.
+- `notion.access` = `rest` with no saved `notion_token`, or with `runtime` = `cowork`.
+- `runtime` other than `claude-code` or `cowork`.
 - A nested `notion.select_payload` value (keys must be flat).
 - A secret-like key in config.json.
 
-It warns (exit 0) for, among others: an empty `notion.views.*` with `notion.access` = `mcp`, an empty `notion.funnel_page_id`, an empty `owner.own_domains`, and a voice or ICP file that does not exist yet.
+It warns (exit 0) for, among others: an empty `notion.views.*` with `notion.access` = `mcp`, an empty `notion.funnel_page_id`, an empty `owner.own_domains`, a voice or ICP file that does not exist yet, and with `runtime` = `cowork` a config in the home folder or an adapter whose only fallback is an API key.
 
 ## state.json
 

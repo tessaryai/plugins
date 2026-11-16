@@ -31,6 +31,7 @@ Ask in one message, with your best guesses filled in (for example the connected 
 - Time zone as an IANA name (for example `America/New_York`, `Europe/Berlin`). If the user gives an abbreviation, propose the IANA name and confirm.
 - Send window (default 09:00 to 17:00 local).
 - Slack channel, when notify is Slack.
+- Email: do you use a mailbox warm-up or sequencer tool that labels its mail in Gmail? If yes, the label name as shown in Gmail (you may list the labels with the read-only `list_labels` tool to propose it). Goes to `sweep.exclude_labels`.
 
 ## Config keys
 
@@ -38,13 +39,14 @@ Set each with `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/config.py set <key> '<jso
 
 | Key | Example value |
 |---|---|
+| `runtime` | `cowork` in Cowork; leave the default `claude-code` otherwise (step 0) |
 | `owner.name` | `'"Ada Lovelace"'` |
 | `owner.emails` | `'["ada@acme.example"]'` |
 | `owner.own_domains` | `'["acme.example"]'` |
 | `owner.timezone` | `Europe/London` |
 | `owner.working_days` | `'["Mon","Tue","Wed","Thu","Fri"]'` |
 | `owner.send_window` | `'{"start":"09:00","end":"17:00"}'` |
-| `notion.access` | `mcp` or `rest` (rest only after `has-secret notion_token` exits 0) |
+| `notion.access` | `mcp` or `rest` (rest only after `has-secret notion_token` exits 0, never in Cowork) |
 | `notion.parent_page_id` | page id |
 | `notion.data_sources` | `'{"contacts":"<id>","companies":"<id>","pipeline":"<id>","campaigns":"<id>","meetings":"<id>"}'` |
 | `notion.field_map` | the full map from step 4 (all five databases) |
@@ -59,6 +61,7 @@ Set each with `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/config.py set <key> '<jso
 | `sending.sender_email` | address |
 | `sending.linkedin_daily_invite_cap` | `10` |
 | `sending.email_daily_cap` | `40` |
+| `sweep.exclude_labels` | `'["Warmup"]'`, or `'[]'` when the user has no warm-up or sequencer label |
 | `paths.voice` / `paths.icp` | keep the default `""` (the voice and ICP files in the config folder; `config.py paths` prints them) |
 
 The rest (`sending.reply_lookback_days`, `sending.event_window_days`, `sweep.*`, `funnel.*`) keep their defaults unless the user asks. Their meaning is in `${CLAUDE_PLUGIN_ROOT}/reference/config.md`.
