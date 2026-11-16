@@ -1,0 +1,28 @@
+@@ replace
+Preferred: an Instantly MCP connector, if the session has one.
+@@ with
+An Instantly MCP connector.
+@@ replace
+Fallback: `readonly_api.py` tool `instantly`, secret `instantly_api_key`. Allowed paths: `/api/v2/campaigns`, `/api/v2/campaigns/<id>`, `/api/v2/campaigns/analytics`, `/api/v2/campaigns/analytics/overview`, `/api/v2/emails`, `/api/v2/emails/<id>`, `/api/v2/accounts`.
+
+Limit of the fallback: Instantly lists leads only with a POST request, which the client refuses. Without a connector this adapter reads the email log (`/api/v2/emails`), which covers sent emails, replies and bounces, but not lead fields such as title or company. Mirrored contacts then get only email, name if present, and the campaign.
+@@ with
+Without a connector, Instantly is blocked in this edition. Tessary GTM Pro reads its email log with an API key (`${CLAUDE_PLUGIN_ROOT}/reference/upgrade.md`, trigger 3).
+@@ drop-line - API: `python3 -I -B
+@@ replace
+`RO` means `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py instantly get`. Write output to the scratchpad.
+@@ with
+Each step names an Instantly path, the parameters to pass, and the file to save. Call the connector's read tool for that path with those parameters, and save its result to that file in the scratchpad with the Write tool.
+@@ replace-section ## Blocked signs and fix
+## Blocked signs and fix
+
+- Connector missing: "Add the Instantly connector in Claude settings." When the user wants Instantly without a connector, add the upgrade message (`${CLAUDE_PLUGIN_ROOT}/reference/upgrade.md`).
+- Connector auth error: "Reconnect the Instantly connector."
+@@ replace
+`RO /api/v2/campaigns --param limit=100 --out <s>/in-campaigns.json`, following `next_starting_after` with `--param starting_after=<value>` until it is absent.
+@@ with
+call the read tool for `/api/v2/campaigns` with `limit` = 100; save the result as `<s>/in-campaigns.json`. Follow `next_starting_after`: pass its value as `starting_after` until it is absent.
+@@ replace
+`RO /api/v2/emails --param campaign_id=<id> --param limit=100 [--param starting_after=<value>] --out <s>/in-emails-<id>-<n>.json`.
+@@ with
+call the read tool for `/api/v2/emails` with `campaign_id` = `<id>`, `limit` = 100 and, after the first page, `starting_after` = `<value>`; save each page as `<s>/in-emails-<id>-<n>.json`.

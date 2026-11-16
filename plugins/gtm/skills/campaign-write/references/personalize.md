@@ -10,7 +10,7 @@ From the contacts linked to the campaign (the Contacts read in SKILL.md step 2.6
 - Contacts whose page already has a `[GTM:<campaign_key>:` marker (the campaign already started for them) or a `[GTM:<campaign_key>:STOP]` marker.
 - Contacts whose page already has a `<campaign_key> Step <n> <channel>` heading for a step you would write, or a `Run fields:` line that cannot be reused (see Contact page block). Do not append a second one. List them under Needs you: "edit by hand or delete the old block first".
 
-Read each contact page body once (REST `blocks` with a token, else `notion-fetch` with the un-escaping in `page-writes.md`, Verify) and keep it for these checks and for the `Source fields:` and `Signal:` lines campaign-build wrote.
+Read each contact page body once (`notion-fetch` with the un-escaping in `page-writes.md`, Verify) and keep it for these checks and for the `Source fields:` and `Signal:` lines campaign-build wrote.
 
 ## Research
 

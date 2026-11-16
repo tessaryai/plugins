@@ -1,0 +1,8 @@
+@@ replace
+Every gtm skill reads the config, state and credentials files in the gtm config folder on this machine (`config.py paths`).
+@@ with
+Every gtm skill reads the config and state files in the gtm config folder on this machine.
+@@ replace
+When `config.py paths` shows `source` = `project`, add one sentence to each prompt:
+@@ with
+When the config is in a project `.gtm/` folder, add one sentence to each prompt:

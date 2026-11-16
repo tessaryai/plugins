@@ -8,16 +8,11 @@ Reads people, companies and deals (and notes, when the connector offers them) fr
 
 Preferred: an Attio MCP connector in the session. Find it with ToolSearch (`attio records objects people companies`), read each tool's schema, and use only its list, query, search and get tools. Never call a tool that creates, updates, asserts or deletes records, entries, notes or tasks.
 
-The read-only API client cannot list Attio records: Attio's record listing is a POST query (`/v2/objects/{object}/records/query`), and `${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py` sends GET only. `readonly_api.py attio` can check the key (`/v2/self`), list objects and attributes, and fetch a single record by id, which is not enough for an import.
-
-So without a connector, use the CSV export (`${CLAUDE_PLUGIN_ROOT}/adapters/import/csv.md`): in Attio, open the People object (or the list to import) → … → Export as CSV; do the same for Companies if the user wants company fields beyond name and domain.
-
-If the user has an Attio key saved (`attio_api_key`, via `python3 -I -B <absolute plugin root>/lib/config.py set-secret attio_api_key` in their own terminal; Claude Code only), use it only for the preflight and to read attribute definitions (`/v2/objects/people/attributes`), which helps map status options.
+Without a connector, use the CSV export (`${CLAUDE_PLUGIN_ROOT}/adapters/import/csv.md`): in Attio, open the People object (or the list to import) → … → Export as CSV; do the same for Companies if the user wants company fields beyond name and domain. This edition takes a CSV of about 200 rows or fewer; a larger Attio CRM without a connector needs Tessary GTM Pro (`${CLAUDE_PLUGIN_ROOT}/reference/upgrade.md`, trigger 2).
 
 ## Preflight check
 
 - Connector: one cheap read (list objects, or query one person). Auth error or missing tools = blocked; offer the CSV path.
-- Key only: `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py attio check`. Exit 0 = the key works, but the import still goes through CSV. Not with `runtime` = `cowork` or without Python (`${CLAUDE_PLUGIN_ROOT}/reference/blocked.md`, Cowork).
 
 ## Read procedure
 
@@ -48,7 +43,7 @@ Attribute slugs differ per workspace. Use the attribute list from step 1 and ask
 
 ## Output
 
-Not normalized events: `contacts.csv` (and `deals.json`, `activities.json` when read) in the run folder, then the `csv_import.py` plan.
+Not normalized events: `contacts.csv` (and `deals.json`, `activities.json` when read) in the run folder, then the plan (apply.md, Plan by hand).
 
 ## Cursor
 
@@ -64,7 +59,6 @@ Attio limits reads per second per workspace. On a rate-limit error from the conn
 |---|---|
 | No Attio connector | "Add the Attio connector in Claude settings, or export People as CSV from Attio." |
 | Connector auth error | "Reconnect the Attio connector in Claude settings." |
-| `attio check` exit 2 | "The Attio key is invalid or lacks read scopes. Create a new key with read access and run set-secret attio_api_key." (Claude Code only. In Cowork: "Connect a connector for attio, or export a CSV.") |
 
 ## Write / send capability
 

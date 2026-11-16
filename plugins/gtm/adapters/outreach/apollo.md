@@ -6,20 +6,17 @@ Reads the sequences ("emailer campaigns") that Apollo runs for the user (emails 
 
 ## Tool
 
-Preferred, and in practice required: an Apollo MCP connector. Use only tools that clearly only read (list sequences, list a sequence's contacts or activity, get a contact). Never call a tool that adds contacts to a sequence, creates, edits, activates or pauses a sequence, sends, marks a task done, enriches or reveals.
+An Apollo MCP connector. Use only tools that clearly only read (list sequences, list a sequence's contacts or activity, get a contact). Never call a tool that adds contacts to a sequence, creates, edits, activates or pauses a sequence, sends, marks a task done, enriches or reveals.
 
-Fallback: `readonly_api.py` tool `apollo`, secret `apollo_api_key`. Allowed paths: `/api/v1/auth/health`, `/api/v1/contacts/<id>`, `/api/v1/accounts/<id>`, `/api/v1/emailer_campaigns/<id>`.
-
-Limit of the fallback: Apollo lists and searches contacts, sequence members and messages only with POST requests, which the client refuses. With the API alone this adapter can read one sequence by id and one contact by id, but cannot list who was contacted. So without a connector, the mirror cannot run: treat the adapter as blocked with the fix below, after the preflight.
+Without a connector, the mirror cannot run: treat the adapter as blocked with the fix below. An API key does not help here, in either edition, because Apollo lists contacts and sequence members only with POST requests.
 
 ## Preflight check
 
 - Connector: list sequences (or the closest read tool). A result or an empty list is ok.
-- API only: `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py apollo check`. Exit 2 blocked. Exit 0 still means blocked for the mirror (no list access); report it with the connector fix. Not with `runtime` = `cowork` or without Python (`${CLAUDE_PLUGIN_ROOT}/reference/blocked.md`, Cowork).
 
 ## Read procedure
 
-With a connector only (see Tool for why the API alone cannot list):
+With a connector only (see Tool):
 
 1. List sequences. Keep id, name, active state and channels.
 2. For each sequence, list its contact activity or messages since the sequence's cursor, following every page or cursor. With no cursor, read back `sweep.first_run_lookback_days` days only, unless the user asked for full history in this run (`${CLAUDE_PLUGIN_ROOT}/skills/sweep/references/outreach-mirror.md`, How far back).

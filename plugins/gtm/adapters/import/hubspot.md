@@ -6,28 +6,17 @@ Reads contacts, companies, deals and engagement history (notes, emails, calls, m
 
 ## Tool
 
-Preferred: a HubSpot MCP connector in the session. Find it with ToolSearch (`hubspot contacts companies deals`), read each tool's schema, and use only its list, get, search and property-read tools. Never call a tool that creates, updates, merges, deletes or associates records.
+A HubSpot MCP connector in the session. Find it with ToolSearch (`hubspot contacts companies deals`), read each tool's schema, and use only its list, get, search and property-read tools. Never call a tool that creates, updates, merges, deletes or associates records.
 
-Otherwise: `${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py hubspot`, secret `hubspot_token`. Run `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py tools` for the allowed GET paths.
-
-How the user gets a token: in HubSpot, Settings → Integrations → Private Apps (newer accounts: Development → Legacy apps → Private app) → create a private app with read-only scopes only: `crm.objects.contacts.read`, `crm.objects.companies.read`, `crm.objects.deals.read`, `crm.schemas.contacts.read`, `crm.schemas.deals.read` (plus `crm.objects.owners.read` if they want owners). Copy the access token, then run in their own terminal (Claude Code only; in Cowork use the connector or a CSV export):
-
-```
-python3 -I -B <absolute plugin root>/lib/config.py set-secret hubspot_token
-```
-
-Never ask for the token in the chat.
-
-Fallback: CSV export (`${CLAUDE_PLUGIN_ROOT}/adapters/import/csv.md`).
+Without a connector: a CSV export of about 200 rows or fewer (`${CLAUDE_PLUGIN_ROOT}/adapters/import/csv.md`). A larger CRM without a connector needs Tessary GTM Pro, which reads HubSpot with a private app token (`${CLAUDE_PLUGIN_ROOT}/reference/upgrade.md`, triggers 2 and 3). Never ask for a token in the chat.
 
 ## Preflight check
 
 - Connector: one cheap read (list one contact). Auth error or missing tools = blocked.
-- API: `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py hubspot check`. Exit 0 = ok, 2 = blocked. A 403 on a later object means a missing scope; report which object. Not with `runtime` = `cowork` or without Python (`${CLAUDE_PLUGIN_ROOT}/reference/blocked.md`, Cowork).
 
 ## Read procedure
 
-Write every response to `<run>/raw/` (the run folder from `${CLAUDE_PLUGIN_ROOT}/skills/import/references/apply.md`) with `--out`. Paging: repeat with `--param after=<paging.next.after>` until the response has no `paging.next`. If any page fails, the read is incomplete; stop before planning.
+Write every response to `<run>/raw/` (the run folder from `${CLAUDE_PLUGIN_ROOT}/skills/import/references/apply.md`) with the Write tool, as the connector returned it. Paging: follow the connector's paging (HubSpot's `paging.next.after`) until there is no next page. The paths and parameters below name the HubSpot objects and properties to ask the connector for. If any page fails, the read is incomplete; stop before planning.
 
 1. Properties: `get /crm/v3/properties/contacts` (and companies, deals) to learn the internal names of the fields to read, including custom ones the user wants.
 2. Pipelines: `get /crm/v3/pipelines/deals` for stage ids → stage labels (needed for the stage table).
@@ -55,11 +44,10 @@ Write every response to `<run>/raw/` (the run folder from `${CLAUDE_PLUGIN_ROOT}
 
 Some fields above (`hs_linkedin_url`, `hs_email_optout`) may not exist in every portal. Use the property list from step 1; drop what is missing.
 
-The HubSpot search endpoint is POST, so the read-only client cannot use it; the GET list with paging reads everything.
 
 ## Output
 
-Not normalized events: `contacts.csv`, `deals.json`, `activities.json` in the run folder, then the `csv_import.py` plan.
+Not normalized events: `contacts.csv`, `deals.json`, `activities.json` in the run folder, then the plan (apply.md, Plan by hand).
 
 ## Cursor
 
@@ -67,16 +55,15 @@ None. Progress lives under `state.json` `adapters.import` and `done.jsonl` (appl
 
 ## Rate limits
 
-Private apps get about 100 to 190 requests per 10 seconds depending on the plan, plus a daily cap. On HTTP 429, readonly_api retries with backoff; if it still fails, wait 10 seconds and repeat that page once. Then stop, save progress, and tell the user to run `/gtm:import resume` later. Check the current limits in HubSpot's API usage docs.
+Private apps get about 100 to 190 requests per 10 seconds depending on the plan, plus a daily cap. On a rate-limit error from the connector, wait 10 seconds and repeat that page once. Then stop, save progress, and tell the user to run `/gtm:import resume` later. Check the current limits in HubSpot's API usage docs.
 
 ## Blocked signs and fix
 
 | Sign | Fix |
 |---|---|
-| Connector tools missing | "Add the HubSpot connector in Claude settings, or save a private app token with set-secret hubspot_token, or export a CSV." (Claude Code only. In Cowork: "Connect a connector for hubspot, or export a CSV.") |
-| `check` exit 2 with 401 | "The HubSpot token is invalid or revoked. Create a new private app token and run set-secret hubspot_token." (Claude Code only. In Cowork: "Connect a connector for hubspot, or export a CSV.") |
-| 403 on one object | "Add the read scope for <object> to the private app." |
-| `no key saved` | Give the set-secret command above (Claude Code only; in Cowork: "Connect a connector for hubspot, or export a CSV."). |
+| Connector tools missing | "Add the HubSpot connector in Claude settings, or export a CSV of 200 rows or fewer." For a larger CRM, add the upgrade message (`${CLAUDE_PLUGIN_ROOT}/reference/upgrade.md`). |
+| Connector auth error | "Reconnect the HubSpot connector in Claude settings." |
+| A permission error on one object | "Give the connector read access to <object>." |
 
 ## Write / send capability
 

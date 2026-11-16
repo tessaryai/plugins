@@ -2,7 +2,7 @@
 """Count the monthly gtm funnel tables from a JSON export of the Notion CRM.
 
 The model never counts. This script does all counting, from an export of
-Contacts and Pipeline (deals) rows, and writes the tables that /gtm:funnel
+Contacts and Pipeline (deals) rows, and writes the tables that /gtm-pro:funnel
 publishes. It never writes to Notion. Python 3 stdlib only. Run as python3 -I -B.
 
 Commands:
@@ -10,7 +10,7 @@ Commands:
   funnel.py export [--out DIR]
       REST only (needs the notion_token secret). Reads every Contacts and
       Pipeline row and writes DIR/contacts.json and DIR/deals.json in the
-      export format below. Without a token, /gtm:funnel builds the same two
+      export format below. Without a token, /gtm-pro:funnel builds the same two
       files from Notion MCP query results instead.
 
   funnel.py normalize --in RAW [--in RAW2 ...] --out ROWS.json [--db contacts|pipeline]
@@ -751,7 +751,7 @@ def cmd_export(args) -> int:
     out.mkdir(parents=True, exist_ok=True)
     for db, filename in (("contacts", "contacts.json"), ("pipeline", "deals.json")):
         if not ds.get(db):
-            print(f"error: notion.data_sources.{db} is empty; run /gtm:setup", file=sys.stderr)
+            print(f"error: notion.data_sources.{db} is empty; run /gtm-pro:setup", file=sys.stderr)
             return 1
         try:
             pages = notion_rest.query_data_source(ds[db])

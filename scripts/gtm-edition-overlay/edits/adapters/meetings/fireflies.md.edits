@@ -1,0 +1,23 @@
+@@ replace
+Preferred: a Fireflies MCP connector.
+@@ with
+A Fireflies MCP connector.
+@@ replace
+Fallback: the read-only GraphQL endpoint through `readonly_api.py` (tool `fireflies`, secret `fireflies_api_key`). The client refuses any query that contains `mutation` or `subscription`.
+
+```
+python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py fireflies graphql \
+  --query-file <scratchpad>/ff-query.graphql --variables-file <scratchpad>/ff-vars.json --out <scratchpad>/ff-<n>.json
+```
+
+A query shape that matched the Fireflies schema at the time of writing
+@@ with
+Without the connector, Fireflies is blocked in this edition. Tessary GTM Pro reads it with an API key (`${CLAUDE_PLUGIN_ROOT}/reference/upgrade.md`, trigger 3).
+
+When the connector takes a GraphQL query, never send one that contains `mutation` or `subscription`. A query shape that matched the Fireflies schema at the time of writing
+@@ drop-line - API: `python3 -I -B
+@@ replace-section ## Blocked signs and fix
+## Blocked signs and fix
+
+- Connector missing: "Add the Fireflies connector in Claude settings." When the user wants Fireflies without a connector, add the upgrade message (`${CLAUDE_PLUGIN_ROOT}/reference/upgrade.md`).
+- Auth error: "Reconnect the Fireflies connector."

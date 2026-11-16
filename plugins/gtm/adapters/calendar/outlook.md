@@ -12,7 +12,7 @@ A Microsoft 365 / Outlook MCP connector with calendar tools. Find it with ToolSe
 
 Forbidden: create, update, delete, accept, decline, tentative, forward and any booking or scheduling tool.
 
-There is no `readonly_api.py` entry for Outlook. Without a connector this adapter is blocked.
+Without a connector this adapter is blocked.
 
 ## Preflight check
 

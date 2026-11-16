@@ -1,6 +1,6 @@
 # Voice profile
 
-/gtm:setup copies this file to the voice file (the `voice` path printed by `config.py paths`) and fills it with you. /gtm:campaign-write reads it before it drafts any copy. Replace every line in angle brackets. Real sample messages you wrote yourself teach more than any rule below.
+/gtm:setup copies this file to the voice file (the `voice` path: `paths.voice`, else `voice.md` in the active config folder) and fills it with you. /gtm:campaign-write reads it before it drafts any copy. Replace every line in angle brackets. Real sample messages you wrote yourself teach more than any rule below.
 
 ## Who is writing
 

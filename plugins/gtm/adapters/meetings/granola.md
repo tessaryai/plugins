@@ -6,7 +6,7 @@ Reads meeting notes from Granola: title, time, attendees, the AI summary and a l
 
 ## Tool
 
-Only a Granola MCP connector. Granola has no public read API that `readonly_api.py` covers, so without a connector this adapter is blocked.
+Only a Granola MCP connector. Without a connector this adapter is blocked.
 
 Find the connector with ToolSearch (`granola meetings notes`). Tool names are not fixed here: read the schemas and pick a tool that lists meetings or notes in a date range and, if the list lacks it, a tool that reads one note's summary. Use only read tools. Never create, edit, share or delete a note.
 

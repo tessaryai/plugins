@@ -6,9 +6,9 @@ Finds and verifies work emails for people at known company domains. Used by `/gt
 
 ## Tool
 
-Preferred: a Hunter MCP connector in the session, when one exists. Find it with ToolSearch (query `hunter email finder verifier`), and read each schema at run time. Use only its read tools.
+A Hunter MCP connector in the session. Find it with ToolSearch (query `hunter email finder verifier`), and read each schema at run time. Use only its read tools.
 
-Otherwise: `lib/readonly_api.py hunter` with the secret `hunter_api_key`. Allowed GET paths: `/v2/account`, `/v2/email-count`, `/v2/domain-search`, `/v2/email-finder`, `/v2/email-verifier`. The client adds the key; never put it in a command line.
+Without a connector, Hunter is blocked in this edition: Tessary GTM Pro reads it with an API key (`${CLAUDE_PLUGIN_ROOT}/reference/upgrade.md`, trigger 3). The calls below are the Hunter operations; use the connector's tool for each.
 
 Costs, parameters and status values below were written from Hunter's public documentation and not checked with a live key. Confirm them against the live response and the account call on the first run, and trust the live response when it differs.
 
@@ -22,22 +22,13 @@ Costs, parameters and status values below were written from Hunter's public docu
 
 ## Preflight check
 
-`python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py hunter check`. Exit 0 = ok, exit 2 = blocked. Not with `runtime` = `cowork` or without Python (`${CLAUDE_PLUGIN_ROOT}/reference/blocked.md`, Cowork). Then read the balance:
-
-```
-python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py hunter get /v2/account --out <scratchpad>/hunter-account.json
-```
-
-Show the remaining search and verification counts before the first paid call.
+ToolSearch for the Hunter connector. Missing: blocked, with the upgrade message as the fix. Present: read the account balance with its account tool, and show the remaining search and verification counts before the first paid call. An auth error is blocked.
 
 ## Read procedure
 
 Call Hunter only for people campaign-build will add (after scoring and dedupe), and within the run's credit limit. Ask before passing it.
 
-1. Person with first name, last name and company domain: `email-finder`.
-   ```
-   python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py hunter get /v2/email-finder --param domain=<domain> --param first_name=<first> --param last_name=<last> --out <scratchpad>/hf-<n>.json
-   ```
+1. Person with first name, last name and company domain: `email-finder` (domain, first name, last name). Save each result in the scratchpad.
 2. Company with no person yet: `email-count` (free) first; when it shows addresses, `domain-search` with `--param seniority=senior,executive` and `--param limit=10`, then keep people whose position matches the ICP buyer titles.
 3. Verify each email that is not already `valid` with a high score from the finder: `email-verifier --param email=<address>`.
 4. Wait about one second between calls. On a 429, wait and retry once; then stop and report.
@@ -69,7 +60,8 @@ None.
 
 ## Blocked signs and fix
 
-- `readonly_api.py hunter check` exit 2 with 401: "Save a working key: run `python3 -I -B <plugin root>/lib/config.py set-secret hunter_api_key` in a terminal." (Claude Code only. In Cowork: "Connect a connector for hunter, or run this routine from Claude Code.")
+- No Hunter connector: the upgrade message (`${CLAUDE_PLUGIN_ROOT}/reference/upgrade.md`), or "Connect a Hunter connector in Claude settings."
+- Connector auth error: "Reconnect the Hunter connector in Claude settings."
 - 429 after one retry, or zero credits left: report it, stop Hunter calls, keep what was found.
 
 ## Write / send capability

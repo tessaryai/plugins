@@ -16,7 +16,7 @@ Preferred: a Microsoft 365 / Outlook MCP connector in the session. Find it with 
 
 Forbidden in every skill: draft, reply, forward, move, delete, flag, categorize and rule tools. The sweep uses only read tools.
 
-Fallback for sending only: Outlook on the web through Claude in Chrome (below). There is no `readonly_api.py` entry for Outlook, so with no connector the read side is blocked.
+Fallback for sending only: Outlook on the web through Claude in Chrome (below). With no connector the read side is blocked.
 
 ## Preflight check
 

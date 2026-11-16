@@ -29,7 +29,7 @@ Read every enabled adapter for activity since its cursor, turn it into CRM chang
 Read these once per run and follow them. This file does not repeat them.
 
 - `${CLAUDE_PLUGIN_ROOT}/reference/crm-rules.md`: status ladder, gates, DNC, matching, log lines, First Contacted, reply classes, relations.
-- `${CLAUDE_PLUGIN_ROOT}/reference/notion-access.md`: MCP or REST per operation, payload shapes, hard stops.
+- `${CLAUDE_PLUGIN_ROOT}/reference/notion-access.md`: MCP operations, payload shapes, hard stops, large CRMs.
 - `${CLAUDE_PLUGIN_ROOT}/reference/blocked.md` and `${CLAUDE_PLUGIN_ROOT}/reference/safety.md`.
 - `${CLAUDE_PLUGIN_ROOT}/reference/run-log.md`, section sweep.
 - The adapter file for each enabled adapter: `${CLAUDE_PLUGIN_ROOT}/adapters/<kind>/<tool>.md`.
@@ -38,7 +38,7 @@ Read these once per run and follow them. This file does not repeat them.
 ## Hard rules
 
 1. Read-only outside Notion. Never send an email, a LinkedIn message, an invite or a calendar response. Never create a draft, label, archive, accept or decline anything. Never click Connect, Message, Follow or Withdraw. If a reply needs an answer, put it under Needs you.
-2. Outreach tools are strictly read-only: only their MCP read tools or `lib/readonly_api.py`. Never create, change, pause or delete anything in them (`references/outreach-mirror.md`).
+2. Outreach tools are strictly read-only: only their MCP read tools. Never create, change, pause or delete anything in them (`references/outreach-mirror.md`).
 3. Match by a stable key only: canonical LinkedIn URL or email; domain only when exactly one contact has it and it is not free-mail. Never by name alone (the one exception is a meeting-recorder attendee with no email, `${CLAUDE_PLUGIN_ROOT}/reference/crm-rules.md`, Matching). A LinkedIn thread header gives a member-id link; it is resolved to the vanity URL by opening it once, else through the connections list by exact name with one match, or stays unmatched (`${CLAUDE_PLUGIN_ROOT}/adapters/linkedin/chrome.md`, Output).
 4. Status moves forward only. Never move a contact out of `Archived`, `Do Not Contact` or `Disqualified`, and never clear `do_not_contact`. The one backward-looking write allowed is `Do Not Contact` on a genuine negative reply.
 5. A LinkedIn accept is not a reply. It never sets Responded and never stops a campaign.
@@ -55,12 +55,12 @@ Read these once per run and follow them. This file does not repeat them.
 
 ### 1. Preflight
 
-Before the first step: if `python3` is not found (`command not found`), follow `${CLAUDE_PLUGIN_ROOT}/reference/config.md`, No Python. Run `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/config.py paths` and check `source` and `dir`: when they are not the project folder the user works in, rerun with `cd <project folder> &&` in front (`config.md`, Which folder is active). With `runtime` = `cowork`, use connectors only (`config.md`, Runtime: cowork, and `${CLAUDE_PLUGIN_ROOT}/reference/blocked.md`, Cowork).
+Before the first step: this edition has no scripts, so follow `${CLAUDE_PLUGIN_ROOT}/reference/config.md`, No Python, for the whole run. Find the active config folder with the folder command in No Python, step 1, run from the project folder the user works in (`cd <project folder> &&` in front), read `config.json` and `state.json` with the Read tool, and check the config by hand (No Python, step 5). Use connectors only, whatever `runtime` says (`config.md`, Runtime: cowork, and `${CLAUDE_PLUGIN_ROOT}/reference/blocked.md`, Cowork).
 
-1. `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/config.py check`. Exit 1: stop and report the errors under Needs you (point to `/gtm:setup`).
-2. `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/config.py show` once: keep `owner.*`, `notion.*`, `adapters.*`, `sweep.*`.
+1. Check the config by hand (`config.md`, No Python, step 5). On an error: stop and report it under Needs you (point to `/gtm:setup`).
+2. Read `config.json` once: keep `owner.*`, `notion.*`, `adapters.*`, `sweep.*`, filling missing keys from the template.
 3. Choose the Notion path (`notion-access.md`, Choose the path). Load the Notion tools with ToolSearch. Fetch the Contacts data source. Notion blocked: notify and stop; nothing can be written.
-4. `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/config.py state-get` for all cursors.
+4. Read `state.json` for all cursors (a missing file means no cursors yet).
 5. List the adapters to run, in this order: each tool in `adapters.outreach`, `adapters.email`, `adapters.calendar`, `adapters.linkedin` (connections, then messages), each tool in `adapters.meetings`. Apply `only` if given. Skip adapters that are null or `none`.
 6. Run each adapter's Preflight check. Mark it ok or blocked with what you saw (`blocked.md`). For Chrome, one preflight covers connections and messages.
 7. Today's date and times are in `owner.timezone`.
@@ -111,7 +111,7 @@ For each ok meeting adapter: Read procedure, then `references/meetings.md`, step
 
 ### 13. Run log, report, notify
 
-1. Append one entry to the run log, the `run_log` path printed by `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/config.py paths` (format below). Create the file with `# gtm run log` if it is missing.
+1. Append one entry to the run log, `logs.md` in the active config folder (format below). Create the file with `# gtm run log` if it is missing.
 2. Final report in the chat in the same order: BLOCKED, Needs you, Decisions, then counts.
 3. If anything was blocked, send one notification (`blocked.md`, One notification per run): `gtm sweep blocked: <adapters>. <first fix>.`
 
@@ -148,3 +148,12 @@ Use the sweep entry in `${CLAUDE_PLUGIN_ROOT}/reference/run-log.md`:
 ```
 
 One adapter line each, in run order. Outreach lines add: new events by kind, emails added, unknown actions. LinkedIn lines add: rows read, "gap possible" when the 60-row cap was hit, threads opened, sponsored skipped. Meeting lines add: meetings read, pages created, pages reused. Use contact names and page links, never a token or raw error text.
+
+## Limits of this edition
+
+Follow `${CLAUDE_PLUGIN_ROOT}/reference/upgrade.md`. Two of its triggers apply to the sweep:
+
+- Trigger 1: the contact index cannot be read in full in view mode, the query quota stops work that view mode cannot finish, or the CRM has about 300 contacts or more. Apply what you can match safely, keep the cursors of the checks that needed the full index, and show the upgrade message under Needs you with your estimate of the contact count.
+- Trigger 3: an outreach tool or meeting recorder in `adapters.*` has no connector in this session and would need an API key (gojiberry, lemlist, instantly, fathom, fireflies). Mark it blocked and use the upgrade message as the fix in its `BLOCKED` line, not again under Needs you.
+
+Write the upgrade message in full once per run, even when several triggers apply (`${CLAUDE_PLUGIN_ROOT}/reference/upgrade.md`, Where it goes).

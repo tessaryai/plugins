@@ -1,0 +1,16 @@
+@@ replace
+ `lib/notion_rest.py` has no replace command, so the REST path is never used here.
+@@ with
+
+@@ replace
+   - Save the new id: `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/config.py set notion.funnel_page_id <id>`.
+@@ with
+   - Save the new id as `notion.funnel_page_id` in config.json (Read the file, change only that key, Write it back; `${CLAUDE_PLUGIN_ROOT}/reference/config.md`, No Python, step 3).
+@@ replace
+1. Read `<work>/out/funnel_tables.md` in full.
+@@ with
+1. Read `<work>/funnel_tables.md` in full.
+@@ replace
+- The first line holds `As of <as_of date>` from `funnel_summary.json`.
+@@ with
+- The first line holds `As of <today's date>` as written in `funnel_tables.md`.

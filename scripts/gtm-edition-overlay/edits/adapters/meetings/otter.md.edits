@@ -1,0 +1,4 @@
+@@ replace
+Otter has no public read API that `readonly_api.py` covers, so without a connector this adapter is blocked.
+@@ with
+Without a connector this adapter is blocked.

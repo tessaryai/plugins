@@ -6,7 +6,7 @@ Reads the user's Gmail for replies, bounces, auto-replies and mail the user sent
 
 ## Tool
 
-The Gmail MCP connector. It is the only path; there is no `readonly_api.py` entry for Gmail.
+The Gmail MCP connector. It is the only path.
 
 - Load the tools with ToolSearch, for example the query `gmail search_threads get_thread send_message`. The names carry a server prefix that differs per session. Use the names ToolSearch returns.
 - Read each tool's schema at run time and pass exactly the parameters it defines. The parameter names below were correct at the time of writing; the live schema wins.

@@ -30,7 +30,7 @@ Create when there is no hit:
 | `source` | the `meeting_source` option (`Fathom`, `Granola`, `Fireflies`, `Otter`) through `notion.option_map.meetings.source` |
 | body | the full summary, one paragraph per line, with a blank line between lines |
 
-A rich-text property holds pieces of at most 2,000 characters; the body holds the full text. With MCP, pass the body as Notion-flavored Markdown in the create call. With REST, use `notion_rest.py create <meetings id> --in F` with `children_lines`.
+A rich-text property holds pieces of at most 2,000 characters; the body holds the full text. Pass the body as Notion-flavored Markdown in the create call.
 
 Create the Meetings pages in the apply step (`batch.md`) before the contact log lines, so the log lines can link them.
 

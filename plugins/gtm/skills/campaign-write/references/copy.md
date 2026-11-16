@@ -4,7 +4,7 @@ campaign-run sends the copy exactly as written. Write it as the final message, n
 
 ## Voice
 
-1. Follow the voice file (the `voice` path printed by `config.py paths`) in this order of weight: the sample messages (copy their rhythm, not their words), then Never use, then Shape, then Tone.
+1. Follow the voice file (the `voice` path: `paths.voice`, else `voice.md` in the active config folder) in this order of weight: the sample messages (copy their rhythm, not their words), then Never use, then Shape, then Tone.
 2. If the session has the user's own writing-voice skill (SKILL.md step 2.2), draft with it as well. Where it disagrees with the voice file, the voice file wins. Check every draft against the voice file's Never use list.
 3. Without a voice file, write plain and short: peer to peer, one specific observation, one question, one low-effort ask, and no sign-off. Say in the report that no voice file was used.
 4. Write as the user (`owner.name`), in the first person. Never claim a customer, a result, a number or a feature the user did not state in the voice file, the ICP or this conversation.

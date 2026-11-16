@@ -1,0 +1,8 @@
+@@ replace
+   - With a token, read the copy and the `Run fields:` line with `notion_rest.py blocks` and use `plain_text`. Without one, use the normalized fetch text
+@@ with
+   - Use the normalized fetch text
+@@ replace
+ REST: `notion_rest.py append` then `notion_rest.py update`. Shapes in
+@@ with
+ Shapes in

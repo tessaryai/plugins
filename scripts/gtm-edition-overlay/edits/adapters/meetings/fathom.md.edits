@@ -1,0 +1,46 @@
+@@ replace
+Meetings are matched to contacts by invitee email (API) or through the calendar event at the same time (connector).
+@@ with
+Meetings are matched to contacts through the calendar event at the same time.
+@@ replace
+Two paths. They return different data, so the read procedure differs.
+
+- Fathom MCP connector.
+@@ with
+The Fathom MCP connector.
+@@ replace
+- API key: `readonly_api.py` tool `fathom`, secret `fathom_api_key`. It returns invitee emails, the external flag, the share URL, the full summary and a cursor. Prefer it when the key is saved, because it matches by email.
+
+```
+python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py fathom get /external/v1/meetings \
+  --param created_after=<ISO> --param include_summary=true [--param cursor=<c>] --out <scratchpad>/fathom-<n>.json
+```
+@@ with
+Without the connector, Fathom is blocked in this edition. Tessary GTM Pro can also read Fathom with an API key, which matches by invitee email (`${CLAUDE_PLUGIN_ROOT}/reference/upgrade.md`, trigger 3).
+@@ drop-line - API key saved (Claude Code only;
+@@ delete-section ### With the API key
+@@ replace
+### Both paths
+@@ with
+### Pending summaries
+@@ replace
+`contact_key.email`: the attendee address (API invitee, or calendar attendee).
+@@ with
+`contact_key.email`: the calendar attendee address.
+@@ replace
+`recording_url` (`share_url`, else `url`)
+@@ with
+`recording_url` (`url`)
+@@ replace
+`attendees` (every external attendee email or, with the connector, name)
+@@ with
+`attendees` (every external attendee email, else name)
+@@ replace
+ With the connector, which returns only a date, `after` becomes the window's `created_before`. Recording ids in `pending` are fetched again next run (connector: `get_meeting_summary`; API: list with a window that covers them).
+@@ with
+ The connector returns only a date, so `after` becomes the window's `created_before`. Recording ids in `pending` are fetched again next run with `get_meeting_summary`.
+@@ replace-section ## Blocked signs and fix
+## Blocked signs and fix
+
+- Connector missing: "Add the Fathom connector in Claude settings." When the user wants Fathom without a connector, add the upgrade message (`${CLAUDE_PLUGIN_ROOT}/reference/upgrade.md`).
+- Auth error: "Reconnect the Fathom connector."

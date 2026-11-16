@@ -1,0 +1,32 @@
+@@ replace-all
+Before the first step: if `python3` is not found (`command not found`), follow `${CLAUDE_PLUGIN_ROOT}/reference/config.md`, No Python. Run `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/config.py paths` and check `source` and `dir`: when they are not the project folder the user works in, rerun with `cd <project folder> &&` in front (`config.md`, Which folder is active). With `runtime` = `cowork`, use connectors only
+@@ with
+Before the first step: this edition has no scripts, so follow `${CLAUDE_PLUGIN_ROOT}/reference/config.md`, No Python, for the whole run. Find the active config folder with the folder command in No Python, step 1, run from the project folder the user works in (`cd <project folder> &&` in front), read `config.json` and `state.json` with the Read tool, and check the config by hand (No Python, step 5). Use connectors only, whatever `runtime` says
+@@ replace-all
+the `run_log` path printed by `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/config.py paths`
+@@ with
+`logs.md` in the active config folder
+@@ replace-all
+the `run_log` path from `config.py paths`
+@@ with
+`logs.md` in the active config folder
+@@ replace-all
+`voice` and `icp` paths printed by `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/config.py paths`
+@@ with
+`voice` and `icp` paths (`paths.voice` and `paths.icp`, else `voice.md` and `icp.md` in the active config folder)
+@@ replace-all
+`voice` path printed by `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/config.py paths`
+@@ with
+`voice` path (`paths.voice`, else `voice.md` in the active config folder)
+@@ replace-all
+`icp` path printed by `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/config.py paths`
+@@ with
+`icp` path (`paths.icp`, else `icp.md` in the active config folder)
+@@ replace-all
+`voice` path printed by `config.py paths`
+@@ with
+`voice` path: `paths.voice`, else `voice.md` in the active config folder
+@@ replace-all
+`icp` path printed by `config.py paths`
+@@ with
+`icp` path: `paths.icp`, else `icp.md` in the active config folder

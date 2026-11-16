@@ -1,0 +1,25 @@
+@@ drop-line - With a Notion token (`notion.access` = `rest`
+@@ replace
+- Without a token: read Contacts and Companies once each in view mode
+@@ with
+- Read Contacts and Companies once each in view mode
+@@ replace
+on the allowance error, stop using it for this run.
+@@ with
+on the allowance error, stop using it for this run. A CRM of about 300 contacts or more, or a read that cannot reach every row: write nothing that depends on the dedupe, and show the upgrade message (`${CLAUDE_PLUGIN_ROOT}/reference/upgrade.md`, trigger 1).
+@@ replace
+Payload shapes for MCP and REST are in
+@@ with
+Payload shapes are in
+@@ replace
+ With a token and more than about 200 rows, use REST `create`, one page at a time.
+@@ with
+
+@@ replace
+On the MCP path, put the lines in the create call's content. On REST, pass them as `children_lines` in the `create --in` file.
+@@ with
+Put the lines in the create call's content.
+@@ replace
+After each batch (each write on REST), read every page in it again (REST `get-page --simple`, else `notion-fetch`).
+@@ with
+After each batch, read every page in it again (`notion-fetch`).

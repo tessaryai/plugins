@@ -1,0 +1,18 @@
+@@ replace
+only their MCP read tools or `lib/readonly_api.py`.
+@@ with
+only their MCP read tools.
+@@ replace
+1. `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/config.py check`. Exit 1: stop and report the errors under Needs you (point to `/gtm:setup`).
+2. `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/config.py show` once: keep `owner.*`, `notion.*`, `adapters.*`, `sweep.*`.
+@@ with
+1. Check the config by hand (`config.md`, No Python, step 5). On an error: stop and report it under Needs you (point to `/gtm:setup`).
+2. Read `config.json` once: keep `owner.*`, `notion.*`, `adapters.*`, `sweep.*`, filling missing keys from the template.
+@@ replace
+4. `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/config.py state-get` for all cursors.
+@@ with
+4. Read `state.json` for all cursors (a missing file means no cursors yet).
+@@ replace
+`${CLAUDE_PLUGIN_ROOT}/reference/notion-access.md`: MCP or REST per operation, payload shapes, hard stops.
+@@ with
+`${CLAUDE_PLUGIN_ROOT}/reference/notion-access.md`: MCP operations, payload shapes, hard stops, large CRMs.

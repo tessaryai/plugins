@@ -1,0 +1,20 @@
+@@ replace
+Set it with `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/config.py set notion.views.<db> '<url>'`.
+@@ with
+Write it to `notion.views.<db>` in config.json (`${CLAUDE_PLUGIN_ROOT}/reference/config.md`, No Python, step 3).
+@@ replace
+(or `notion_rest.py schema <id>` when a token is saved)
+@@ with
+
+@@ replace
+two logical statuses may not share one (`config.py check` rejects that).
+@@ with
+two logical statuses may not share one (the config check rejects that).
+@@ replace
+because `config.py check` fails without all eight distinct values.
+@@ with
+because the config check fails without all eight distinct values.
+@@ replace
+keep the default name in `field_map` so `check` passes,
+@@ with
+keep the default name in `field_map` so the config check passes,

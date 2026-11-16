@@ -1,0 +1,8 @@
+@@ replace
+via <MCP connector | readonly_api | CSV>
+@@ with
+via <MCP connector | CSV>
+@@ replace
+databases <names>; access <mcp | rest>
+@@ with
+databases <names>; access mcp

@@ -1,0 +1,43 @@
+@@ replace
+Preferred: `readonly_api.py` tool `gojiberry`, secret `gojiberry_api_key`. The Gojiberry API key cannot be scoped: the same key can send messages and change or delete campaigns. The client is the limit on our side: GET only, fixed paths.
+
+A Gojiberry MCP connector, if the session has one, may be used only for tools that clearly only read (list or get). If you cannot tell from a tool's schema and description that it only reads, do not call it; use the API client.
+@@ with
+This edition reads Gojiberry only through a Gojiberry MCP connector, and only with tools that clearly only read (list or get). If you cannot tell from a tool's schema and description that it only reads, do not call it. Without such a connector, Gojiberry is blocked: Tessary GTM Pro reads it with the API key through a GET-only client (`${CLAUDE_PLUGIN_ROOT}/reference/upgrade.md`, trigger 3).
+@@ replace
+Allowed paths (from `readonly_api.py tools`):
+@@ with
+The read procedure uses these Gojiberry paths:
+@@ replace-section ## Preflight check
+## Preflight check
+
+ToolSearch for a Gojiberry connector with read tools, then read the user (`/v1/user/me`, or the closest read tool). A result is ok. No connector, no read tool, or an auth error: blocked, with the upgrade message as the fix.
+@@ replace
+Write every output file to the session scratchpad. `RO` below means `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py gojiberry get`.
+@@ with
+Write every output file to the session scratchpad with the Write tool, as the tool returned it. Each step names a Gojiberry path, the parameters to pass, and the file to save. Call the connector's read tool for that path with those parameters, and save its result to that file.
+@@ replace
+`state-set` replaces the whole value, so write the full merged map,
+@@ with
+Writing the cursor replaces the whole value, so write the full merged map,
+@@ replace-section ## Blocked signs and fix
+## Blocked signs and fix
+
+- No Gojiberry connector with read tools: the upgrade message (`${CLAUDE_PLUGIN_ROOT}/reference/upgrade.md`).
+- Connector auth error: "Reconnect the Gojiberry connector in Claude settings, and check the Gojiberry account."
+@@ replace
+`RO /v1/campaign --out <s>/gj-campaigns.json`.
+@@ with
+call the connector's read tool for `/v1/campaign`; save the result as `<s>/gj-campaigns.json`.
+@@ replace
+`RO /v1/contact --param page=<n> --param limit=100 --out <s>/gj-contacts-<n>.json`, from page 1
+@@ with
+call the read tool for `/v1/contact` with `page` = `<n>` and `limit` = 100; save each page as `<s>/gj-contacts-<n>.json`. Read from page 1
+@@ replace
+   - `RO /v1/campaign/<id>/logs --param page=<n> --param limit=100 --out <s>/gj-logs-<id>-<n>.json`.
+@@ with
+   - Call the read tool for `/v1/campaign/<id>/logs` with `page` = `<n>` and `limit` = 100; save each page as `<s>/gj-logs-<id>-<n>.json`.
+@@ replace
+`RO /v1/unibox/contact/<contact id> --out <s>/gj-thread-<id>.json` and take
+@@ with
+call the read tool for `/v1/unibox/contact/<contact id>`, save the result as `<s>/gj-thread-<id>.json`, and take

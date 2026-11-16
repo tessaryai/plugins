@@ -1,0 +1,49 @@
+@@ replace
+What `lib/funnel.py` counts. All names below are logical; the script resolves them through `notion.status_map`, `notion.option_map` and `funnel.*` in the gtm config. The script is the source of truth; this file explains it.
+@@ with
+What the funnel counts. All names below are logical; resolve them through `notion.status_map`, `notion.option_map` and `funnel.*` in the gtm config. This file is the source of truth for both hand counts (`${CLAUDE_PLUGIN_ROOT}/skills/funnel/SKILL.md`). Tessary GTM Pro counts the same way with a script, so the tables, the checks and the baseline agree across editions.
+@@ replace-section ## Baseline
+## Baseline
+
+- The baseline is the last accepted run's counts. It lives in `state.json` in the active config folder under `adapters.funnel`. Only the funnel skill writes it.
+- Save it only after every check passed and the publish was verified, and never on a dry run.
+- `accept-baseline` records the drop and rise checks as accepted, saves this run as the new baseline, and leaves the other checks in force. Use it only when the user asks.
+- The first run has no baseline: the delta says `no baseline yet (first run)`, and no drop or rise check runs.
+- The delta lists every count that changed against the baseline, also in the current month, one line each: `<table> <YYYY-MM> <stage>: <old> -> <new>`. With no change it says `no changes since last run`.
+- Shape, the same as Tessary GTM Pro writes, so either edition can read it. Write a zero for a stage that has none:
+
+  ```json
+  {
+    "as_of": "2026-03-18",
+    "months": ["2026-02", "2026-03"],
+    "tables": {
+      "cold": {"2026-02": {"contacted": 9, "responded": 3, "discovery": 1, "pilot": 0, "customer": 0},
+               "2026-03": {"contacted": 4, "responded": 1, "discovery": 0, "pilot": 0, "customer": 0}},
+      "warm": {"2026-02": {"contacted": 2, "discovery": 1, "pilot": 0, "customer": 0},
+               "2026-03": {"contacted": 0, "discovery": 0, "pilot": 0, "customer": 0}}
+    },
+    "inbound": null
+  }
+  ```
+@@ replace-section ## Output files
+## Page format
+
+`funnel_tables.md` is the page text, in this exact format:
+
+1. First line: `As of <YYYY-MM-DD>. <Mon YYYY> is a partial month.` (today in `owner.timezone`, and the current month as a three-letter month and the year, for example `Mar 2026`).
+2. A blank line, `## Cold outbound`, a blank line, then the cold table with the header `| Month | Contacted | Contacted to Responded | Responded | Responded to Discovery | Discovery | Discovery to Pilot | Pilot / Trial | Pilot to Customer | Customer |`.
+3. A blank line, `## Warm outbound`, a blank line, then the warm table with the header `| Month | Intro | Intro to Discovery | Discovery | Discovery to Pilot | Pilot / Trial | Pilot to Customer | Customer |`.
+4. Each header is followed by a separator row: `|`, then `---|` once per column. Then one row per month from the start month to the current month, latest first, every month present even when all its counts are 0. The current month is labelled `<Mon YYYY> (to date)`. Then a `Total` row with the sum of each count column.
+5. Counts are whole numbers with a comma for thousands. A percentage is the next stage divided by this stage, times 100, with one decimal and a `%` sign (for example `33.3%`), or `–` when this stage is 0. In the Total row, compute each percentage from the totals, never as an average of the months.
+@@ replace-section ## Inbound hook
+## Inbound hook
+
+No inbound adapter ships, and this edition counts no inbound table. If `funnel.inbound` names a tool, leave the inbound table out, publish the outbound tables, and report it under Needs you.
+@@ replace
+is listed in `funnel_blanks.txt` and left out of the tables.
+@@ with
+is listed under Needs you and left out of the tables.
+@@ replace
+| Missing property | A mapped contacts property (`status`, `lead_source`, `first_contacted`) is not in any exported row. When the deals export has at least one row, also when deals `stage` is not in any deal row, or neither side of the deal relation is in any row. An empty deals export skips the deal part of this check. This usually means a wrong `field_map` or an incomplete MCP export. |
+@@ with
+| Missing property | A mapped contacts property (`status`, `lead_source`, `first_contacted`, `deal`) is not in the Contacts data source schema, or a mapped pipeline property (`stage`, `contacts`) is not in the Pipeline data source schema. `notion-fetch` each data source once to read its schema. Do not check the rows for this: the connector leaves out empty properties, so a property that no row has (for example First Contacted right after an import) is blank, not missing. This usually means a wrong `field_map`. |

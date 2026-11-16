@@ -1,0 +1,28 @@
+@@ replace-section ## Tool
+## Tool
+
+A HubSpot MCP connector in the session. Find it with ToolSearch (`hubspot contacts companies deals`), read each tool's schema, and use only its list, get, search and property-read tools. Never call a tool that creates, updates, merges, deletes or associates records.
+
+Without a connector: a CSV export of about 200 rows or fewer (`${CLAUDE_PLUGIN_ROOT}/adapters/import/csv.md`). A larger CRM without a connector needs Tessary GTM Pro, which reads HubSpot with a private app token (`${CLAUDE_PLUGIN_ROOT}/reference/upgrade.md`, triggers 2 and 3). Never ask for a token in the chat.
+@@ drop-line - API: `python3 -I -B
+@@ replace
+with `--out`. Paging: repeat with `--param after=<paging.next.after>` until the response has no `paging.next`.
+@@ with
+with the Write tool, as the connector returned it. Paging: follow the connector's paging (HubSpot's `paging.next.after`) until there is no next page. The paths and parameters below name the HubSpot objects and properties to ask the connector for.
+@@ drop-line The HubSpot search endpoint is POST
+@@ replace
+then the `csv_import.py` plan.
+@@ with
+then the plan (apply.md, Plan by hand).
+@@ replace
+On HTTP 429, readonly_api retries with backoff; if it still fails, wait 10 seconds and repeat that page once.
+@@ with
+On a rate-limit error from the connector, wait 10 seconds and repeat that page once.
+@@ replace-section ## Blocked signs and fix
+## Blocked signs and fix
+
+| Sign | Fix |
+|---|---|
+| Connector tools missing | "Add the HubSpot connector in Claude settings, or export a CSV of 200 rows or fewer." For a larger CRM, add the upgrade message (`${CLAUDE_PLUGIN_ROOT}/reference/upgrade.md`). |
+| Connector auth error | "Reconnect the HubSpot connector in Claude settings." |
+| A permission error on one object | "Give the connector read access to <object>." |

@@ -33,19 +33,7 @@ Setup step 1. The goal is a short, true table of what this session can use. Dete
 
 ## Without a connector
 
-Claude Code only. In Cowork (or when `python3` is missing) skip this section: a tool without a connector is `not found`, with the fix "connect a connector for <tool>, or run this routine from Claude Code" (`${CLAUDE_PLUGIN_ROOT}/reference/blocked.md`, Cowork).
-
-A tool with no connector can still work through the read-only API client when it has an entry there:
-
-```
-python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py tools
-python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/config.py has-secret <secret name>
-python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py <tool> check
-```
-
-`check` exit 0 = ok, 2 = blocked (no key or the key was refused). If the key is not saved, give the user the `set-secret` command for that secret name (absolute plugin path filled in) and ask them to run it in their own terminal.
-
-Tools with neither a connector nor an API entry (for example Granola, Otter, Exa without a connector) are `not found`; the fix is "add the <tool> connector in Claude settings".
+This edition has no API client and uses no keys. A tool without a connector is `not found`. When Tessary GTM Pro could read it with an API key (Gojiberry, lemlist, Instantly, Fathom, Fireflies, Hunter, and HubSpot or Pipedrive imports), say so in the table and give the upgrade message once as the fix (`${CLAUDE_PLUGIN_ROOT}/reference/upgrade.md`, trigger 3). For any other tool (for example Granola, Otter, Exa), the fix is "add the <tool> connector in Claude settings".
 
 ## Show the result
 

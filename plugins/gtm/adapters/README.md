@@ -21,21 +21,11 @@ Config chooses the adapters (`adapters.*` in the gtm config, see `${CLAUDE_PLUGI
 
 When the session has an MCP connector for the tool, use it. Load its tools with ToolSearch and read each tool's schema at run time; never guess tool or parameter names. Use only its read tools (and, for email and LinkedIn in campaign-run, its send tool).
 
-Otherwise, in Claude Code, use the read-only API client `${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py` with the user's key from the credentials file in the active config folder (the `credentials` path printed by `config.py paths`; never read it yourself). Tools with an entry there: gojiberry, lemlist, instantly, apollo, hubspot, pipedrive, attio, fathom, hunter, fireflies (GraphQL read queries only). Run `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py tools` for each tool's base URL, key name and allowed GET paths.
-
-```
-python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py <tool> check
-python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py <tool> get <path> [--param k=v ...] --out <scratchpad>/<file>.json
-python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py fireflies graphql --query-file <file> [--variables-file <file>] --out <file>
-```
-
-Exit 0 done, 1 refused (verb, path or bad input), 2 the tool cannot be read: the adapter is blocked. Paging is the caller's job: repeat `get` with the tool's page or cursor parameter until the tool says there is no more.
-
-A tool with neither a connector nor an API entry (for example granola without a connector) is blocked with the fix "add the <tool> connector in Claude settings".
+This edition has no API client and uses no keys. A tool without a connector in the session is blocked. When Tessary GTM Pro could read the tool with an API key (gojiberry, lemlist, instantly, fathom, fireflies, hunter, and the hubspot and pipedrive imports), the fix is the upgrade message (`${CLAUDE_PLUGIN_ROOT}/reference/upgrade.md`, trigger 3). For any other tool (for example granola), the fix is "add the <tool> connector in Claude settings". Paging is the caller's job: repeat the read with the tool's page or cursor parameter until the tool says there is no more.
 
 ### Cowork: connectors only
 
-With `runtime` = `cowork` in the config, or when `python3` is missing, the API client is never used: the Cowork virtual machine cannot reach vendor APIs. An adapter whose Tool section names an API key works only through its connector. Without one it is blocked with the fix "connect a connector for <tool>, or run this routine from Claude Code". Never offer `set-secret` there. Rules: `${CLAUDE_PLUGIN_ROOT}/reference/blocked.md`, Cowork.
+This edition uses connectors only in Cowork and in Claude Code alike, and never calls a vendor API another way: the Cowork virtual machine cannot reach vendor APIs. Never offer to save a key. Rules: `${CLAUDE_PLUGIN_ROOT}/reference/blocked.md`, Cowork.
 
 ## Sections every adapter file has
 
@@ -47,7 +37,7 @@ One or two sentences: what this adapter reads (and sends, for email and linkedin
 
 ## Tool
 The MCP connector (how to find it with ToolSearch, which tools are allowed, which are forbidden),
-and/or the readonly_api tool name and the secret name. Say which is preferred.
+and what happens without it.
 
 ## Preflight check
 One cheap read that proves the tool works. What counts as ok, what counts as blocked.
@@ -137,7 +127,12 @@ An adapter whose tool is missing, fails auth, or shows a login wall or CAPTCHA i
 
 1. Pick the kind. If the tool fits none, it is not an adapter; discuss it first.
 2. Write `adapters/<kind>/<tool>.md` with every section above.
-3. If the tool has no MCP connector and needs the API client, add a fixed entry to `ALLOWLIST` in `lib/readonly_api.py`: base URL, secret name, auth style, and GET-only path patterns (full-match regexes) that read data and never change it. Do not add paths that send, change, delete, spend credits on enrichment the user did not ask for, or download attachments. Add the secret name to `SECRET_NAMES` in `lib/config.py`.
-4. Add the tool name to `KNOWN_ADAPTERS` in `lib/config.py` and to the tables in this file and `reference/config.md`.
-5. Run `python3 -I -B lib/readonly_api.py <tool> check` with a real key, and a dry run of the skill that uses it.
-6. Add a CHANGELOG entry.
+3. Add the tool name to the tables in this file and `reference/config.md`, and to the hand check in `reference/config.md`, No Python, step 5.
+4. Test it with a dry run of the skill that uses it.
+5. Add a CHANGELOG entry.
+
+This edition is generated from Tessary GTM Pro. Add a new adapter to Tessary GTM Pro first, where a tool without a connector also gets an entry in its read-only API client.
+
+## Limits of this edition
+
+An adapter that would need an API key because the session has no connector for it is blocked, and its fix is the upgrade message in `${CLAUDE_PLUGIN_ROOT}/reference/upgrade.md` (trigger 3). Write it once per run, as the fix in the first such `BLOCKED` line, even when several adapters are blocked this way; the other lines say "see the upgrade message above" (`${CLAUDE_PLUGIN_ROOT}/reference/upgrade.md`, Where it goes).

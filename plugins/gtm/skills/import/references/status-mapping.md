@@ -5,7 +5,7 @@ Detail for `/gtm:import` step 4. The user confirms every mapping. These are prop
 ## How to build the table
 
 1. Count the distinct values of the mapped status column (`status_source` in the plan, or the raw column before the plan).
-2. For each value, propose a logical status. `csv_import.py` already guesses one (`status_suggested`) from the tables below; this file is the source of truth for the script. A value the tables mark `ask`, or do not list, gets a warning and a suggested `New`: ask the user. A plain `Lead` maps to `New` (in most CRMs "lead" is an early stage, not a deal).
+2. For each value, propose a logical status. Use the tables below; they are the source of truth. A value the tables mark `ask`, or do not list, gets a warning and a suggested `New`: ask the user. A plain `Lead` maps to `New` (in most CRMs "lead" is an early stage, not a deal).
 3. Show: source value, rows, proposed logical status. Ask for corrections. Save `{"<source value>": "<logical status>"}` to `<run>/status_table.json`.
 4. A blank value maps to `New`.
 
@@ -28,7 +28,7 @@ The logical statuses are `New`, `Contacted`, `Responded`, `Discovery`, `Lead`, `
 | Unqualified (lead status), Bad timing | Disqualified (confirm) |
 | other | ask |
 
-The script also reads HubSpot's internal values: `subscriber`, `lead`, `marketingqualifiedlead`, `salesqualifiedlead`, `opportunity`, `customer`, `evangelist`, `other` (lifecycle stage) and `NEW`, `OPEN`, `IN_PROGRESS`, `OPEN_DEAL`, `UNQUALIFIED`, `ATTEMPTED_TO_CONTACT`, `CONNECTED`, `BAD_TIMING` (lead status).
+Also map HubSpot's internal values the same way: `subscriber`, `lead`, `marketingqualifiedlead`, `salesqualifiedlead`, `opportunity`, `customer`, `evangelist`, `other` (lifecycle stage) and `NEW`, `OPEN`, `IN_PROGRESS`, `OPEN_DEAL`, `UNQUALIFIED`, `ATTEMPTED_TO_CONTACT`, `CONNECTED`, `BAD_TIMING` (lead status).
 
 When both lifecycle stage and lead status exist, map the one that tells more about outreach (usually lead status) and keep the other in Notes as an extra column.
 

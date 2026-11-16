@@ -1,0 +1,19 @@
+@@ drop-line - Do not use `notion_rest.py append` for these writes.
+@@ replace
+With a Notion token, read the page with `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/notion_rest.py blocks <page_id> --out <scratchpad>/<page>.json` and check:
+
+- Each step heading is a heading block (`heading_1`, `heading_2` or `heading_3`) whose `plain_text` matches what you wrote.
+- Each label line is its own paragraph with the exact text. A paragraph that holds several label lines joined by soft line breaks means the blank lines were lost. campaign-run tolerates it (`${CLAUDE_PLUGIN_ROOT}/reference/campaign-page.md`, Reading the page), so do not append a fix; note it in the report.
+- Each copy block is a `code` block whose `plain_text` equals the approved copy exactly. Compare after normalizing line endings and trailing spaces only. Ignore the code block's language.
+
+Prefer REST whenever a token exists. Without a token, `notion-fetch` the page and check the same things in its text view.
+@@ with
+`notion-fetch` the page and check, in its text view:
+
+- Each step heading is a heading that matches what you wrote.
+- Each label line is its own paragraph with the exact text. A paragraph that holds several label lines joined by soft line breaks means the blank lines were lost. campaign-run tolerates it (`${CLAUDE_PLUGIN_ROOT}/reference/campaign-page.md`, Reading the page), so do not append a fix; note it in the report.
+- Each copy block is a code block whose text equals the approved copy exactly. Compare after normalizing line endings and trailing spaces only. Ignore the code block's language.
+@@ replace
+Report it under Needs you and suggest adding a Notion token in `/gtm:setup`, because campaign-run will skip copy it cannot read exactly.
+@@ with
+Report it under Needs you, because campaign-run will skip copy it cannot read exactly.

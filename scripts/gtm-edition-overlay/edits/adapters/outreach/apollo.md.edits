@@ -1,0 +1,15 @@
+@@ replace
+Preferred, and in practice required: an Apollo MCP connector.
+@@ with
+An Apollo MCP connector.
+@@ replace
+Fallback: `readonly_api.py` tool `apollo`, secret `apollo_api_key`. Allowed paths: `/api/v1/auth/health`, `/api/v1/contacts/<id>`, `/api/v1/accounts/<id>`, `/api/v1/emailer_campaigns/<id>`.
+
+Limit of the fallback: Apollo lists and searches contacts, sequence members and messages only with POST requests, which the client refuses. With the API alone this adapter can read one sequence by id and one contact by id, but cannot list who was contacted. So without a connector, the mirror cannot run: treat the adapter as blocked with the fix below, after the preflight.
+@@ with
+Without a connector, the mirror cannot run: treat the adapter as blocked with the fix below. An API key does not help here, in either edition, because Apollo lists contacts and sequence members only with POST requests.
+@@ drop-line - API only: `python3 -I -B
+@@ replace
+With a connector only (see Tool for why the API alone cannot list):
+@@ with
+With a connector only (see Tool):

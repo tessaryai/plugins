@@ -1,0 +1,4 @@
+@@ replace
+There is no `readonly_api.py` entry for Outlook, so with no connector the read side is blocked.
+@@ with
+With no connector the read side is blocked.

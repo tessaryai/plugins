@@ -6,23 +6,20 @@ Reads the cold email that Instantly sends (sent emails, replies, bounces) and tu
 
 ## Tool
 
-Preferred: an Instantly MCP connector, if the session has one. Use only tools that clearly only read (list campaigns, list emails, list or get leads). Never call a tool that creates, updates, activates, pauses or deletes a campaign, lead, list or account, sends or replies, or changes a lead's interest status.
+An Instantly MCP connector. Use only tools that clearly only read (list campaigns, list emails, list or get leads). Never call a tool that creates, updates, activates, pauses or deletes a campaign, lead, list or account, sends or replies, or changes a lead's interest status.
 
-Fallback: `readonly_api.py` tool `instantly`, secret `instantly_api_key`. Allowed paths: `/api/v2/campaigns`, `/api/v2/campaigns/<id>`, `/api/v2/campaigns/analytics`, `/api/v2/campaigns/analytics/overview`, `/api/v2/emails`, `/api/v2/emails/<id>`, `/api/v2/accounts`.
-
-Limit of the fallback: Instantly lists leads only with a POST request, which the client refuses. Without a connector this adapter reads the email log (`/api/v2/emails`), which covers sent emails, replies and bounces, but not lead fields such as title or company. Mirrored contacts then get only email, name if present, and the campaign.
+Without a connector, Instantly is blocked in this edition. Tessary GTM Pro reads its email log with an API key (`${CLAUDE_PLUGIN_ROOT}/reference/upgrade.md`, trigger 3).
 
 ## Preflight check
 
 - Connector: list campaigns. A result or an empty list is ok.
-- API: `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py instantly check` (reads `/api/v2/campaigns`). Exit 0 ok, exit 2 blocked. Not with `runtime` = `cowork` or without Python (`${CLAUDE_PLUGIN_ROOT}/reference/blocked.md`, Cowork).
 
 ## Read procedure
 
-`RO` means `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py instantly get`. Write output to the scratchpad. Parameter and field names below are from the Instantly v2 docs at the time of writing and were not checked with a live key; if a response differs, use the live names and record the change under Decisions.
+Each step names an Instantly path, the parameters to pass, and the file to save. Call the connector's read tool for that path with those parameters, and save its result to that file in the scratchpad with the Write tool. Parameter and field names below are from the Instantly v2 docs at the time of writing and were not checked with a live key; if a response differs, use the live names and record the change under Decisions.
 
-1. Campaigns: `RO /api/v2/campaigns --param limit=100 --out <s>/in-campaigns.json`, following `next_starting_after` with `--param starting_after=<value>` until it is absent.
-2. Emails per campaign: `RO /api/v2/emails --param campaign_id=<id> --param limit=100 [--param starting_after=<value>] --out <s>/in-emails-<id>-<n>.json`. Results are newest first. Stop at the first email at or before the campaign's cursor; with no cursor, read back `sweep.first_run_lookback_days` days only, unless the user asked for full history in this run (`${CLAUDE_PLUGIN_ROOT}/skills/sweep/references/outreach-mirror.md`, How far back). Follow `next_starting_after` until it is absent.
+1. Campaigns: call the read tool for `/api/v2/campaigns` with `limit` = 100; save the result as `<s>/in-campaigns.json`. Follow `next_starting_after`: pass its value as `starting_after` until it is absent.
+2. Emails per campaign: call the read tool for `/api/v2/emails` with `campaign_id` = `<id>`, `limit` = 100 and, after the first page, `starting_after` = `<value>`; save each page as `<s>/in-emails-<id>-<n>.json`. Results are newest first. Stop at the first email at or before the campaign's cursor; with no cursor, read back `sweep.first_run_lookback_days` days only, unless the user asked for full history in this run (`${CLAUDE_PLUGIN_ROOT}/skills/sweep/references/outreach-mirror.md`, How far back). Follow `next_starting_after` until it is absent.
 3. For each email take: `id`, the timestamp (convert to `owner.timezone`), the lead email, sender and recipient addresses, subject, the direction (sent by the campaign or received from the lead), and for received mail the body text.
 
 | Email | Event `kind` | `text` |
@@ -55,8 +52,8 @@ Write the full merged map. A failed campaign keeps its old value.
 
 ## Blocked signs and fix
 
-- Exit 2 or a connector auth error: "Save a working Instantly API key (v2, read scopes): run `python3 -I -B <plugin root>/lib/config.py set-secret instantly_api_key` in a terminal, or reconnect the Instantly connector." (Claude Code only. In Cowork: "Connect a connector for instantly, or run this routine from Claude Code.")
-- Exit 1 (refused path): report under Needs you; never edit the allowlist.
+- Connector missing: "Add the Instantly connector in Claude settings." When the user wants Instantly without a connector, add the upgrade message (`${CLAUDE_PLUGIN_ROOT}/reference/upgrade.md`).
+- Connector auth error: "Reconnect the Instantly connector."
 
 ## Write / send capability
 

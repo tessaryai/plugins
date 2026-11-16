@@ -1,0 +1,12 @@
+@@ replace
+Fallback: `lib/readonly_api.py apollo` with the secret `apollo_api_key`. Its allowlist holds only `/api/v1/auth/health` and single-record reads of the user's own saved contacts and accounts. Apollo's people search, company search and enrichment endpoints are POST, so the client cannot reach them. Without the connector, Apollo cannot source or enrich: treat it as blocked for this run with the fix below.
+@@ with
+Without the connector, Apollo cannot source or enrich: treat it as blocked for this run with the fix below. An API key does not help here, in either edition, because Apollo's people search, company search and enrichment endpoints need POST.
+@@ replace
+- No connector: `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py apollo check` tells whether the key works, but sourcing still needs the connector. Report: blocked, "no Apollo connector". Not with `runtime` = `cowork` or without Python (`${CLAUDE_PLUGIN_ROOT}/reference/blocked.md`, Cowork).
+@@ with
+- No connector: report blocked, "no Apollo connector".
+@@ replace
+ The API key alone cannot search or enrich, because those endpoints need POST.
+@@ with
+

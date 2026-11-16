@@ -1,0 +1,4 @@
+@@ replace
+add it with `config.py set sweep.exclude_labels '<json list>'`.
+@@ with
+add it to `sweep.exclude_labels` in config.json (`${CLAUDE_PLUGIN_ROOT}/reference/config.md`, No Python, step 3).

@@ -1,0 +1,4 @@
+@@ replace
+ With MCP, pass the body as Notion-flavored Markdown in the create call. With REST, use `notion_rest.py create <meetings id> --in F` with `children_lines`.
+@@ with
+ Pass the body as Notion-flavored Markdown in the create call.

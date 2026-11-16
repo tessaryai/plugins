@@ -10,12 +10,12 @@ Preferred: an Apollo MCP connector in the session. Find it with ToolSearch, for 
 
 Allowed connector tools: people search, organization (company) search, person or organization enrichment and email reveal, account or credit usage. Forbidden: anything that creates or changes data in Apollo (create contact, add to list or sequence, create task, update stage), and anything that sends.
 
-Fallback: `lib/readonly_api.py apollo` with the secret `apollo_api_key`. Its allowlist holds only `/api/v1/auth/health` and single-record reads of the user's own saved contacts and accounts. Apollo's people search, company search and enrichment endpoints are POST, so the client cannot reach them. Without the connector, Apollo cannot source or enrich: treat it as blocked for this run with the fix below.
+Without the connector, Apollo cannot source or enrich: treat it as blocked for this run with the fix below. An API key does not help here, in either edition, because Apollo's people search, company search and enrichment endpoints need POST.
 
 ## Preflight check
 
 - Connector: load the tools. Call the account, usage or credit tool if one exists; else run the cheapest search with one result. A result = ok. Missing tools or an auth error = blocked.
-- No connector: `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py apollo check` tells whether the key works, but sourcing still needs the connector. Report: blocked, "no Apollo connector". Not with `runtime` = `cowork` or without Python (`${CLAUDE_PLUGIN_ROOT}/reference/blocked.md`, Cowork).
+- No connector: report blocked, "no Apollo connector".
 
 ## Read procedure
 
@@ -50,7 +50,7 @@ None.
 
 ## Blocked signs and fix
 
-- No Apollo connector: "Add the Apollo connector in Claude settings. The API key alone cannot search or enrich, because those endpoints need POST."
+- No Apollo connector: "Add the Apollo connector in Claude settings."
 - Auth error: "Reconnect the Apollo connector in Claude settings."
 - Out of credits: report it, stop paid calls, and keep what was found.
 

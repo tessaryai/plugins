@@ -18,7 +18,7 @@ Run sweep before campaign-run on the same day, so replies stop sequences before 
    - The cron expression is in the machine's local time. If the machine's time zone differs from `owner.timezone`, convert the times and say so.
    - Call `list_scheduled_tasks` first. Look for existing routines that do the same job: a task id `gtm-sweep`, `gtm-campaign-run` or `gtm-funnel`, and ALSO any task whose id, title or description mentions a CRM sweep, a campaign run or sender, or a funnel report (for example a routine the user built before this plugin). Show every match to the user and ask, per routine, whether to update it, replace it (disable the old one and create the gtm task), or keep both. Never create a second sweep or a second campaign sender next to an existing one without an explicit yes: two senders can send the same step twice.
 2. No scheduled-tasks tools: explain the two options and let the user choose:
-   - `/schedule` creates a cloud routine. Say both limits plainly. (1) Every gtm skill reads the config, state and credentials files in the gtm config folder on this machine (`config.py paths`). A cloud run does not have them, so it fails at preflight unless the user sets up the same config there. (2) Cloud runs have no Chrome, so the LinkedIn adapter is blocked there every day. Recommend a local option for every routine, funnel included.
+   - `/schedule` creates a cloud routine. Say both limits plainly. (1) Every gtm skill reads the config and state files in the gtm config folder on this machine. A cloud run does not have them, so it fails at preflight unless the user sets up the same config there. (2) Cloud runs have no Chrome, so the LinkedIn adapter is blocked there every day. Recommend a local option for every routine, funnel included.
    - `/loop` repeats a command in an open Claude Code session on this machine, for example `/loop 24h /gtm:sweep`. It stops when the session ends.
    Give the exact commands; do not run them yourself unless the user asks.
 
@@ -37,7 +37,7 @@ Before you schedule campaign-run with `sending.mode` = `live`, ask: "Schedule ca
 
 ## Task prompts
 
-Each run starts with no memory of this session, so each prompt must stand alone. Use these, with the values filled in. When `config.py paths` shows `source` = `project`, add one sentence to each prompt: "Work in <project folder>; run every shell command with `cd <project folder> &&` in front." Otherwise the run may not find `.gtm/`.
+Each run starts with no memory of this session, so each prompt must stand alone. Use these, with the values filled in. When the config is in a project `.gtm/` folder, add one sentence to each prompt: "Work in <project folder>; run every shell command with `cd <project folder> &&` in front." Otherwise the run may not find `.gtm/`.
 
 sweep:
 

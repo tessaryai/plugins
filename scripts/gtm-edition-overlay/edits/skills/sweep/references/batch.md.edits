@@ -1,0 +1,39 @@
+@@ replace
+and created time when the path gives it (REST only; MCP view mode does not return it).
+@@ with
+and created time when the path gives it (MCP view mode does not return it).
+@@ drop-line - REST path (token present, `notion.access` = `rest`)
+@@ replace
+- MCP path: `notion-query-data-sources` in view mode
+@@ with
+- Read: `notion-query-data-sources` in view mode
+@@ replace
+and suggest under Needs you that the user add a Notion token in `/gtm:setup`. A CRM with an Active campaign or more than about 200 contacts should use the token in any case. In Cowork, where a token can never be used, suggest instead that the user run the bulk read from Claude Code with a Notion token, pointed at the project folder (`GTM_CONFIG_DIR=<project folder>/.gtm`).
+@@ with
+and show the upgrade message under Needs you (`${CLAUDE_PLUGIN_ROOT}/reference/upgrade.md`, trigger 1). Show it also when the CRM has about 300 contacts or more, with your estimate of the count.
+@@ replace
+`notion.views.meetings`, or REST `query`), when the run needs them:
+@@ with
+`notion.views.meetings`), when the run needs them:
+@@ replace
+(`notion-fetch` on the data source, or `notion_rest.py schema <contacts id>`)
+@@ with
+(`notion-fetch` on the data source)
+@@ replace
+(MCP `notion-fetch`, or REST `get-page --simple` and `blocks`)
+@@ with
+(`notion-fetch`)
+@@ drop-line - REST: `notion_rest.py update <page_id>
+@@ drop-line - REST: `notion_rest.py append <page_id>
+@@ replace
+Write cursors only for finished adapters, after step 5: `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/config.py state-set <adapter> '<json>'`. The cursor shape is in each adapter file (Cursor). `state-set` replaces the whole value for that key, so merge maps (outreach `log_cursors` or `campaign_cursors`) with the old value first (`state-get <adapter>`).
+@@ with
+Write cursors only for finished adapters, after step 5: Read `state.json`, replace the value under `adapters.<adapter>`, and Write the file back (`${CLAUDE_PLUGIN_ROOT}/reference/config.md`, No Python, step 6). The cursor shape is in each adapter file (Cursor). The write replaces the whole value for that key, so merge maps (outreach `log_cursors` or `campaign_cursors`) with the old value first.
+@@ replace
+Keep each shell command under about 100 seconds. Process large REST batches in chunks of about 50 pages per command. Keep scripts short and in the scratchpad.
+@@ with
+Keep each shell command under about 100 seconds.
+@@ replace
+use it only from REST or a counted SQL lookup;
+@@ with
+use it only from a counted SQL lookup;
