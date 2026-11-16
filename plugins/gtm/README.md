@@ -372,6 +372,27 @@ only from `/gtm:campaign-run`, for campaigns at Status `Active`. It stores setti
 run log and API keys locally in the active config folder, with keys in `credentials.json`
 (mode 600). Full policy: https://tessary.ai/privacy-policy
 
+### Credentials
+
+gtm works with connectors alone. Keys are optional, for the REST path on large CRMs and for tools with no connector. You save them yourself in a terminal (`config.py set-secret`), never in chat, and they stay in `credentials.json` (mode 600) in your config folder. Each key goes only to its own vendor's API:
+
+| Key | Sent only to |
+|---|---|
+| `notion_token` | api.notion.com |
+| `hubspot_token` | api.hubapi.com |
+| `pipedrive_api_token` | api.pipedrive.com |
+| `attio_api_key` | api.attio.com |
+| `fathom_api_key` | api.fathom.ai |
+| `fireflies_api_key` | api.fireflies.ai |
+| `gojiberry_api_key` | ext.gojiberry.ai |
+| `lemlist_api_key` | api.lemlist.com |
+| `instantly_api_key` | api.instantly.ai |
+| `apollo_api_key` | api.apollo.io |
+| `hunter_api_key` | api.hunter.io |
+
+`lib/readonly_api.py` enforces this with a fixed host and path allowlist per tool, and sends GET requests only (Fireflies: GraphQL read queries only). In Cowork mode gtm reads no keys at all.
+
+
 ## License
 
 MIT — see `LICENSE`.

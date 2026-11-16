@@ -54,7 +54,7 @@ are all accepted, also mixed in one file:
   - notion_rest.py --simple rows: {"_id": ..., "Status": "Contacted", "Deal": ["<id>"], ...}
   - raw Notion REST pages: {"id": ..., "properties": {...}}
   - Notion MCP query rows: {"url": ..., "Status": ..., "date:First Contacted:start": ...,
-    "Deal": "[\\"https://www.notion.so/...\\"]"}
+    "Deal": "[\\"<page url>\\"]"}
 Relation values may be page ids, page URLs, a list of either, or a JSON
 string of such a list. Only these fields are read: contacts name, status,
 lead_source, first_contacted, deal; pipeline stage, contacts.
@@ -785,10 +785,10 @@ def _self_test_data():
         {"_id": cid(4), "Person": "D", "Stage of contact": "Reached", "Source": "Outbound",
          "First touch": "2030-02-12", "Deals": ["d" + "1" * 31]},
         # MCP row shape: url id, split date key, relation as a JSON string of URLs
-        {"url": f"https://www.notion.so/E-{cid(5)}", "Person": "E", "Stage of contact": "Handed over",
+        {"url": f"page-E-{cid(5)}", "Person": "E", "Stage of contact": "Handed over",
          "Source": "Referral", "date:First touch:start": "2030-03-01",
-         "Deals": json.dumps([f"https://www.notion.so/Deal-{'d' + '2' * 31}"])},
-        {"url": f"https://www.notion.so/F-{cid(6)}", "Person": "F", "Stage of contact": "Reached",
+         "Deals": json.dumps([f"page-Deal-{'d' + '2' * 31}"])},
+        {"url": f"page-F-{cid(6)}", "Person": "F", "Stage of contact": "Reached",
          "Source": "Referral", "date:First touch:start": "2030-03-02", "Deals": "[]"},
         # raw REST page, cold, March (current month)
         {"id": cid(7), "properties": {
@@ -966,11 +966,11 @@ def cmd_self_test(_args) -> int:
 
         # 8. normalize: a JSON array, a {"results": [...]} object and tool text with an array inside.
         raw1, raw2, raw3, norm = tmp / "raw1.json", tmp / "raw2.json", tmp / "raw3.txt", tmp / "norm.json"
-        mcp_a = {"url": f"https://www.notion.so/{cid(20)}", "Person": "N", "Stage of contact": "Reached"}
-        mcp_b = {"url": f"https://www.notion.so/{cid(21)}", "Person": "O", "Stage of contact": "Replied",
+        mcp_a = {"url": f"page-{cid(20)}", "Person": "N", "Stage of contact": "Reached"}
+        mcp_b = {"url": f"page-{cid(21)}", "Person": "O", "Stage of contact": "Replied",
                  "Source": "Outbound", "date:First touch:start": "2030-03-06",
                  "Deals": "[]"}
-        mcp_c = {"url": f"https://www.notion.so/{cid(22)}", "Person": "P", "First touch": "2030-03-07"}
+        mcp_c = {"url": f"page-{cid(22)}", "Person": "P", "First touch": "2030-03-07"}
         raw1.write_text(json.dumps([mcp_a]), encoding="utf-8")
         raw2.write_text(json.dumps({"results": [mcp_b], "has_more": False}), encoding="utf-8")
         raw3.write_text("Query result (1 row):\n" + json.dumps([mcp_c]) + "\nhas_more: false\n", encoding="utf-8")
@@ -990,13 +990,13 @@ def cmd_self_test(_args) -> int:
             expect("plain date kept, no MCP key added", "date:First touch:start" in rows[2], False)
             expect("added null status", rows[2].get("Stage of contact", "missing"), None)
         dnorm = tmp / "dnorm.json"
-        raw1.write_text(json.dumps([{"url": f"https://www.notion.so/{'d' + '4' * 31}", "Deal": "Deal 4"}]),
+        raw1.write_text(json.dumps([{"url": f"page-{'d' + '4' * 31}", "Deal": "Deal 4"}]),
                         encoding="utf-8")
         with contextlib.redirect_stdout(io.StringIO()):
             code = main(["normalize", "--db", "pipeline", "--in", str(raw1), "--out", str(dnorm)])
         drow = json.loads(dnorm.read_text())[0]
         inferred = tmp / "inferred.json"
-        raw2.write_text(json.dumps({"results": [{"url": f"https://www.notion.so/{'d' + '5' * 31}",
+        raw2.write_text(json.dumps({"results": [{"url": f"page-{'d' + '5' * 31}",
                                                  "Phase": "Trial"}]}), encoding="utf-8")
         with contextlib.redirect_stdout(io.StringIO()):
             code = main(["normalize", "--in", str(raw2), "--out", str(inferred)])
