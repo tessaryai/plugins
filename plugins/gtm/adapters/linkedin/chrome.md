@@ -16,17 +16,18 @@ Load the tools with one ToolSearch call that names all of them: `tabs_context_mc
 
 If the session has a skill for browsing LinkedIn or for Claude in Chrome, read it first and follow its Chrome preflight, together with these rules. Where they differ, the stricter rule wins.
 
-1. Call `tabs_context_mcp` first, then open a new tab with `tabs_create_mcp`. Work only in tabs this run opened. Never touch the user's other tabs.
-2. Close every tab you opened at the end of the run, also after an error.
-3. Pace: wait 1 to 2 seconds between actions, 3 to 5 seconds between contacts. One profile at a time.
-4. Use DOM clicks and typing only. `browser_batch` may group a short click sequence; take a screenshot between steps that change the page.
-5. Element refs from `read_page` or `find` go stale after any dialog opens or closes. Read the page again before each click.
-6. LinkedIn's DOM class names change often. Read state from a screenshot of the visible page first; use `read_page` (`filter` interactive) as the second check. Do not rely on CSS selectors such as `h1`, `.dist-value` or `button[aria-label*="Connect"]`; they have returned empty values on the live site.
-7. Never accept a cookie banner beyond the most private choice, never click an ad or an upsell, never change a setting.
+1. Call `tabs_context_mcp` first (with `createIfEmpty` set to true when the tool offers that parameter), then open a new tab with `tabs_create_mcp`. Work only in tabs this run opened. Never touch the user's other tabs.
+2. After every `navigate`, wait 2 seconds before the first screenshot. A screenshot taken while LinkedIn still redirects fails with a security check error. That error alone is not a CAPTCHA: wait 2 seconds and take the screenshot again; treat the page as blocked only when the screenshot then shows a security check.
+3. Close every tab you opened at the end of the run, also after an error.
+4. Pace: wait 1 to 2 seconds between actions, 3 to 5 seconds between contacts. One profile at a time.
+5. Use DOM clicks and typing only. `browser_batch` may group a short click sequence; take a screenshot between steps that change the page.
+6. Element refs from `read_page` or `find` go stale after any dialog opens or closes. Read the page again before each click.
+7. LinkedIn's DOM class names change often. Read state from a screenshot of the visible page first; use `read_page` (`filter` interactive) as the second check. Do not rely on CSS selectors such as `h1`, `.dist-value` or `button[aria-label*="Connect"]`; they have returned empty values on the live site.
+8. Never accept a cookie banner beyond the most private choice, never click an ad or an upsell, never change a setting.
 
 ## Preflight check
 
-Open `https://www.linkedin.com/feed/` in a new tab and take a screenshot.
+Open `https://www.linkedin.com/feed/` in a new tab, wait 2 seconds, and take a screenshot.
 
 - ok: the feed with the user's avatar.
 - blocked: a login form, a "join now" page, a CAPTCHA or security check, an account restriction notice, or the extension is not connected (tools missing or `tabs_context_mcp` fails).
@@ -39,9 +40,9 @@ Never sign in, enter a code or solve a CAPTCHA.
 
 Page: `https://www.linkedin.com/mynetwork/invite-connect/connections/`, sorted by recently added (the default; choose "Recently added" if a sort control shows another order).
 
-The list is virtualized: rows that scroll out of view are removed from the page, so a big jump loses rows.
+The list may or may not be virtualized (rows that scroll out of view removed from the page). Scroll in small steps either way, so a big jump cannot lose rows.
 
-1. Scroll in small steps (about 5 wheel ticks with `computer` scroll). After each step, read the visible rows with `javascript_tool` or `get_page_text` and add them to your list.
+1. Scroll in small steps (about 5 wheel ticks with `computer` scroll). After each step, read the visible rows and add them to your list. `get_page_text` gives names and text but no profile links: read the links with a short page script (`javascript_tool`, reading the `href` of each row's profile anchor on the visible page only) or with `read_page`.
 2. For each row take: name, the profile link reduced to the canonical `https://www.linkedin.com/in/<slug>/`, the headline, and the "Connected on" text (convert it to `YYYY-MM-DD`).
 3. Stop when you reach the cursor profile (`top_profile`). With no cursor, stop at the first row whose "Connected on" date is older than `sweep.first_run_lookback_days` days.
 4. Hard cap: 60 rows. If the stop point is not reached after 60 rows, stop there, mark the read "gap possible" in the run log, and still move the cursor (a later run would hit the same cap again).
@@ -49,21 +50,27 @@ The list is virtualized: rows that scroll out of view are removed from the page,
 
 ### B. Messages (sweep)
 
-Page: `https://www.linkedin.com/messaging/`. Opening the page can open the top thread by itself, and opening any thread marks it read. Both are accepted; note it in the run log. Open no thread you do not need.
+Page: `https://www.linkedin.com/messaging/`. Opening the page may open the top thread by itself (auto-open) and mark it read, and opening any thread marks it read. Both are accepted, also in a campaign-run dry run: LinkedIn does this, it is not a send or a write by the skill. Note it in the run log. Open no thread you do not need.
 
-1. Read the conversation list from the top. For each conversation take: the other person's name, the profile link if the list shows it, the preview text, who sent the last message, and the time (convert relative times such as `2h`, `Mon`, `Nov 3` to a date in `owner.timezone`).
+Read the list with a reliable reader: `read_page` on the conversation list, or a short read-only page script (`javascript_tool`) that returns only each visible list item's name and time text (no clicks, no network calls). `get_page_text` often returns nothing on `/messaging/`; do not rely on it there. Read the preview text and the unread mark from the same `read_page` output or a screenshot. Only the Focused tab is read, unless the user enabled the Other tab in this run; say in the run log which tab was read.
+
+1. Read the conversation list from the top. For each conversation take: the other person's name, the profile link if the list shows it, the preview text, who sent the last message (the list shows only the last sender, not whether an earlier inbound message is unread), the unread mark, and the time (convert relative times such as `2h`, `Mon`, `Nov 3` to a date in `owner.timezone`).
 2. Scroll the list in small steps as in A. Stop at the first conversation whose last message is older than the cursor timestamp (`newest`). With no cursor, stop at `sweep.first_run_lookback_days` days. Cap at 60 conversations; past that, mark "gap possible".
 3. Open a conversation when:
-   - it has an inbound message newer than the cursor, or
-   - the user sent the first message in it since the cursor (outbound by hand).
-   Skip conversations whose newest message is from the user and that hold nothing new since the cursor.
-4. In an open thread, read the whole thread in both directions and take the profile URL from the thread header link.
-5. Skip sponsored messages and InMail adverts; count them only.
-6. Read the inbox itself. Never infer replies from log lines already in the CRM.
+   - it shows an unread mark, or
+   - its newest message is newer than the cursor, whoever sent it (the user's last message can hide an inbound reply sent just before it).
+   Skip only conversations whose newest message is at or before the cursor and that have no unread mark.
+4. In an open thread, read the whole thread in both directions. Keep only messages newer than the cursor as new events.
+5. Resolve the profile URL. The thread header link is a member-id URL (`/in/ACoAA...`), not the vanity slug that the CRM stores. Resolve it this way, in order:
+   - Open the header link once in the run's tab and read the canonical URL the page lands on (`https://www.linkedin.com/in/<slug>/`). Opening a profile is a visit the person can see; do it only for threads with a new message, and never in a campaign-run dry run.
+   - Else look the exact name up in the connections rows read in this run (Read procedure A, or the connections page searched by name) and use the URL only when exactly one row has that name.
+   - Else the thread is unmatched (Output).
+6. Skip sponsored messages and InMail adverts; count them only.
+7. Read the inbox itself. Never infer replies from log lines already in the CRM.
 
 ### C. Reply check for a set of contacts (campaign-run)
 
-Same page and method as B, with these limits: stop when the last message is older than the earliest step date of the campaigns being run, or `sending.reply_lookback_days` when no step has been sent. Open each conversation whose last message is from the other person. Match by the profile link in the header. Campaign-run never reads or moves the sweep's `linkedin-messages` or `linkedin-connections` cursors.
+Same page and method as B, with these limits: stop when the last message is older than the earliest step date of the campaigns being run, or `sending.reply_lookback_days` when no step has been sent. Open a conversation only when its list name fuzzy-matches a contact in the run, and it has an unread mark or a message inside the window. An unread mark alone is not a reason to open a thread in campaign-run. Fuzzy match: lower-case both names, drop punctuation, middle tokens and initials (one letter, with or without a dot); the list name matches when it holds the contact's first and last name tokens, in either order. The name is only a pre-filter for which threads to open, never a match key: matching to the contact still goes by the profile URL (step 5 of B). The list shows only the last sender, so do not skip a thread because the user sent last. Opening a thread marks it read; open no other thread (the auto-opened top thread is accepted, as in B). Resolve the header link as in B step 5; in a dry run, use only the connections-list lookup, never open a profile. Campaign-run never reads or moves the sweep's `linkedin-messages` or `linkedin-connections` cursors.
 
 ### D. Profile state (campaign-run, campaign-build)
 
@@ -93,7 +100,7 @@ Events in the format of `${CLAUDE_PLUGIN_ROOT}/adapters/README.md`. `source` is 
 | The user's own message that started a thread since the cursor (B) | `outbound` | `li-out:<slug>:<date>` |
 | A profile showing 1st degree with Message (D) | `accept` with `detail.seen_on_profile: true` | `li-conn:<slug>` |
 
-`detail` holds `name`, `headline`, and for messages `user_answered: true` when the user's message is the newest one after the inbound message. A thread whose header has no profile link: look the name up in the connections rows already read in this run (Read procedure A) to get the profile URL, and emit the event with that canonical URL. If no single profile URL is found, emit it with `contact_key.linkedin` null and `detail.name`. Such an event is unmatched: the skill never writes to a contact by name alone. It lists the thread (and, in campaign-run, holds a contact of the same name for the day) under Needs you.
+`detail` holds `name`, `headline`, and for messages `user_answered: true` when the user's message is the newest one after the inbound message. A thread whose header link cannot be resolved to a vanity URL (B step 5): if no single profile URL is found, emit it with `contact_key.linkedin` null and `detail.name`. Such an event is unmatched: the skill never writes to a contact by name alone. It lists the thread (and, in campaign-run, holds a contact of the same name for the day) under Needs you.
 
 Drop: sponsored messages, InMail adverts, recruiter and sales-pitch messages from people with no CRM match (count them). A message from an unmatched person that reads like a prospect, customer or investor is kept for Needs you.
 
@@ -105,10 +112,10 @@ Two keys in `state.json`:
 
 ```json
 "linkedin-connections": {"top_profile": "https://www.linkedin.com/in/<slug>/"},
-"linkedin-messages": {"newest": "YYYY-MM-DDTHH:MM"}
+"linkedin-messages": {"newest": "YYYY-MM-DDTHH:MM+HH:MM"}
 ```
 
-`top_profile` becomes the top row of a finished read A. `newest` becomes the newest inbound message time seen in a finished read B. A blocked read keeps the old value.
+`top_profile` becomes the top row of a finished read A. `newest` becomes the newest message time seen in a finished read B, written as ISO 8601 with an explicit offset in `owner.timezone`, for example `2026-11-16T12:33-05:00`. Compare times with their offsets. An old value without an offset is read as `owner.timezone`. A blocked read keeps the old value. When an outreach adapter was incomplete in this run, `newest` moves no later than the earliest unmirrored event date (`${CLAUDE_PLUGIN_ROOT}/skills/sweep/references/batch.md`, Cursors).
 
 When read A stops at the 60-row cap, `top_profile` still moves to the top row and the run log says "gap possible" (the same cap would stop every later run too). When read B stops at the 60-conversation cap, `newest` does not move: the read is incomplete, and the next run reads the same period again (dedupe keeps that safe). If B hits the cap on two runs in a row, list it under Needs you so the user can read the older conversations by hand.
 
@@ -137,7 +144,7 @@ Read the state with Read procedure D before any action.
 | Pending (button or under More) | Invite sent, not accepted | Never send a second invite. Wait. A profile visit step may run. |
 | Connect button | Not connected, no invite | An invite step may run. |
 | Connect only under More | Not connected, Connect nested | Click More, then Connect. On many profiles Connect is under More; expect it. |
-| Follow only, no Connect under More | Invites restricted by the person | Skip LinkedIn for this contact; write the skip marker; report it. |
+| Follow only, no Connect under More | Invites restricted by the person | Skip LinkedIn for this contact; write the due step's skip marker (later steps get theirs when they become due); report it. |
 | Message button but 2nd or 3rd degree | Open profile or InMail | Not connected. Never use InMail. Treat as "Connect" or "Connect under More" by what More shows. |
 
 ### Invite without a note

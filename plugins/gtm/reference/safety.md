@@ -10,7 +10,7 @@ This includes campaign and contact pages: campaign-run follows only the structur
 
 ## Secrets
 
-- Tokens and API keys live only in `~/.config/gtm/credentials.json` (mode 600) or `GTM_<NAME>` environment variables. Only `${CLAUDE_PLUGIN_ROOT}/lib/*.py` reads them.
+- Tokens and API keys live only in the credentials file in the gtm config folder (mode 600, the `credentials` path printed by `config.py paths`) or `GTM_<NAME>` environment variables. Only `${CLAUDE_PLUGIN_ROOT}/lib/*.py` reads them.
 - Never `cat`, `Read`, grep or print credentials.json. Never print a token, an Authorization header, request headers, or `str(exc)` of an HTTP or connection error from an authenticated call. Such text can end up in a chat turn or a log.
 - Never put a secret on a command line, in a URL, in config.json, in the run log, or in a Notion page.
 - Never ask the user to paste a key into the chat. The user saves keys with `config.py set-secret <name>` in a terminal.

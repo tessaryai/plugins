@@ -24,9 +24,10 @@ All property and option names below are logical. Resolve them through the config
    - `name`: the campaign name.
    - `status`: `Review`.
    - `type`: the chosen type.
-   - Body, one paragraph per line:
+   - Body, one paragraph per line, with a blank line between lines (the connector joins lines without a blank line into one paragraph):
      ```
      Campaign key: <slug>
+
      Audience: <the confirmed ICP summary, one sentence>
      ```
 5. Write nothing else on the page. `/gtm:campaign-write` appends the other header lines and the steps.
@@ -36,8 +37,8 @@ All property and option names below are logical. Resolve them through the config
 
 ### Read the CRM keys
 
-- With a Notion token (`notion.access` = `rest` and `has-secret notion_token`): read every contact once with `python3 -I ${CLAUDE_PLUGIN_ROOT}/lib/notion_rest.py query <contacts id> --simple --out <scratchpad>/contacts.json` and match in memory. Do the same for Companies.
-- Without a token: query per candidate batch with `notion-query-data-sources`. Use a filter that ORs the keys of up to 20 candidates (LinkedIn property contains `/in/<slug>`, email property equals the address), so each query stays far below the 100-row cap. Query Companies by domain (website contains the domain), then by exact name.
+- With a Notion token (`notion.access` = `rest` and `has-secret notion_token`): read every contact once with `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/notion_rest.py query <contacts id> --simple --out <scratchpad>/contacts.json` and match in memory. Do the same for Companies.
+- Without a token: read Contacts and Companies once each in view mode with `notion.views.<db>` (`${CLAUDE_PLUGIN_ROOT}/reference/notion-access.md`, Query rows) and match in memory. Rows or SQL mode is only a fallback for a few targeted lookups, counted against the workspace quota; on the allowance error, stop using it for this run.
 - Compare LinkedIn URLs in canonical form and emails case-insensitively (`${CLAUDE_PLUGIN_ROOT}/reference/crm-rules.md`, Matching). Never match by name alone.
 
 ### Buckets
@@ -46,7 +47,7 @@ Put each candidate in exactly one bucket. Check in this order; the first rule th
 
 | Rule | Bucket | Reason text |
 |---|---|---|
-| Email in `owner.emails`, or domain in `owner.own_domains` | skip | `owner address` |
+| Email in `owner.emails`, or domain in `owner.own_domains` | skip | `owner address` (see Owner address below) |
 | Same person appears twice in this run | skip the copy | `duplicate in list` |
 | Matches a contact that is suppressed (Do Not Contact ticked, or Status `Do Not Contact`, `Disqualified` or `Archived`) | skip | `suppressed` |
 | Matches a contact already linked to this campaign | skip | `already in this campaign` |
@@ -60,6 +61,16 @@ Put each candidate in exactly one bucket. Check in this order; the first rule th
 To read another campaign's Status, fetch each campaign page that appears in matched contacts' `campaign` relation once and cache it. Read the relation from the contact side only.
 
 A near match (LinkedIn slug differs only by a suffix) counts as a match only when name and company agree; record it under Decisions.
+
+### Owner address
+
+The owner's own contact (an address in `owner.emails`) is skipped by default. Only when the user explicitly asks in this run to link their own address for a test send:
+
+1. Link their existing contact, or create it at Status `New` if it does not exist (the usual contact writes below).
+2. Append the control line `Owner test: <campaign_key>` to that contact page as its own paragraph, with the key of this campaign (dedupe first: skip it when the page already has that exact line). It must start the line and stand outside any code block (`${CLAUDE_PLUGIN_ROOT}/reference/campaign-page.md`, Control lines must stand alone). One line per campaign; a second test campaign gets a second line.
+3. Record it under Decisions: `owner asked to add own address <email> — linked for a test send, wrote Owner test: <campaign_key>`.
+
+campaign-run sends to an owner address only when the contact page holds `Owner test: <key>` for the campaign it runs (`${CLAUDE_PLUGIN_ROOT}/skills/campaign-run/references/plan.md`, Owner test contact). Never write this line without the user's explicit request in this run. This never applies to other people at a domain in `owner.own_domains`; they stay skipped.
 
 ## The preview
 
@@ -92,7 +103,7 @@ Offer the full list as a table on request. Apply only the parts the user approve
 
 ## Write
 
-Order: companies, then contacts, then links. Create at most one page at a time on the MCP path; with a token and more than about 200 rows, use REST `create`.
+Order: companies, then contacts, then links. On the MCP path, create up to 20 pages per `notion-create-pages` call (check the tool schema for a lower limit) and verify each batch before the next one. With a token and more than about 200 rows, use REST `create`, one page at a time.
 
 ### Companies
 
@@ -101,6 +112,12 @@ For each approved candidate whose company is not in the CRM, create one Companie
 - `name`, `website` (`https://<domain>`), `linkedin`, `description`, `employees` (number), `headquarters`.
 - `icp`: the score, `icp_notes`: the reason line.
 - `vertical`: only when the industry maps clearly to an existing option; otherwise leave it empty.
+
+Body line (one paragraph):
+
+```
+YYYY-MM-DD — Added by campaign-build for campaign <campaign_key> (source: <adapter>). Action: campaign-build.
+```
 
 ### New contacts
 
@@ -121,11 +138,13 @@ Create one Contacts page per approved `new` candidate:
 
 Never set `first_contacted`, `do_not_contact`, `dnc_reason` or `dnc_set_on`.
 
-Body lines (one paragraph each, in this order):
+Body lines (one paragraph each, in this order, with a blank line between lines):
 
 ```
 YYYY-MM-DD — Added to campaign <campaign_key> by campaign-build (source: <adapter>). Status → New. Action: campaign-build.
+
 Source fields: first_name=<first>; company=<company name>; title=<title>
+
 Signal: <text> (<url>, <date>)
 ```
 
@@ -145,6 +164,6 @@ On the MCP path, put the lines in the create call's content. On REST, pass them 
 
 ### Verify
 
-After each write, read the page again (`notion-fetch`, or REST `get-page --simple`). Check: Status, Lead Source, Email, Email Status, company relation, campaign relation holds the campaign id, and the log line is present. A failed write is retried once. A second failure goes under Needs you with the contact name.
+After each batch (each write on REST), read every page in it again (REST `get-page --simple`, else `notion-fetch`). Check: Status, Lead Source, Email, Email Status, company relation, campaign relation holds the campaign page id (compare ids, not URLs), and the log line is present. In the fetch view, un-escape backslash-escaped `_ { } * [ ]` and strip mailto link syntax before you compare (`${CLAUDE_PLUGIN_ROOT}/reference/campaign-page.md`, Reading the page). A failed write is retried once. A second failure goes under Needs you with the contact name.
 
-At the end, query Contacts with a filter on the `campaign` relation containing the campaign id and compare the count with the expected count (existing members plus this run's adds). Report a difference under Needs you.
+At the end, query Contacts with a filter on the `campaign` relation containing the campaign page. With `notion-query-data-sources`, the filter value must be the page URL, `https://www.notion.so/<page id without dashes>`: a bare page id is silently ignored and the query returns every row. Drop and report any returned row whose `campaign` relation does not include this campaign's page id (compare page ids, never full URLs: `${CLAUDE_PLUGIN_ROOT}/reference/crm-rules.md`, Relations). On the view-mode path (no filter), filter in memory by page id and report only the counts. Compare the count with the expected count (existing members plus this run's adds). Report a difference under Needs you.

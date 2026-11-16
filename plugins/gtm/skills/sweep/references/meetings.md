@@ -7,15 +7,15 @@ The calendar adapter does not create Meetings pages. It only logs bookings and s
 ## 1. Group and match
 
 1. Group events by `external_id` (one meeting).
-2. Match each attendee to a contact (`${CLAUDE_PLUGIN_ROOT}/reference/crm-rules.md`, Matching). The user's own addresses are never contacts.
+2. Match each attendee to a contact (`${CLAUDE_PLUGIN_ROOT}/reference/crm-rules.md`, Matching). The user's own addresses are never contacts. When the adapter gives attendee names but no emails (the Fathom connector), it resolves them first through the calendar event at the same time, then by a unique contact name, as its file says (`${CLAUDE_PLUGIN_ROOT}/adapters/meetings/fathom.md`, Output). Such a match is a Decision.
 3. A meeting with no matched attendee creates no page. List it under Unmatched (title, date, attendee addresses). If it looks like a sales call with a prospect, list it under Needs you, because the user may want to add the person.
 
 ## 2. Find or create the Meetings page
 
 Dedupe before you create:
 
-1. Query Meetings where `recording_url` equals `detail.recording_url`.
-2. If there is no URL, or no hit, query Meetings where `name` equals the title and `date` equals the meeting date.
+1. Look in the Meetings index (`batch.md`, CRM index) for a page whose `recording_url` equals `detail.recording_url`.
+2. If there is no URL, or no hit, look for a page whose `name` equals the title and `date` equals the meeting date. Do not query Meetings once per meeting in rows mode (`${CLAUDE_PLUGIN_ROOT}/reference/notion-access.md`, Query rows).
 3. A hit: use that page. Add missing contacts and fill an empty `summary`; change nothing else.
 
 Create when there is no hit:
@@ -28,7 +28,7 @@ Create when there is no hit:
 | `recording_url` | `detail.recording_url` |
 | `summary` | the summary as plain text, cut to 1,900 characters at a sentence end, with ` ...` when cut |
 | `source` | the `meeting_source` option (`Fathom`, `Granola`, `Fireflies`, `Otter`) through `notion.option_map.meetings.source` |
-| body | the full summary, one paragraph per line |
+| body | the full summary, one paragraph per line, with a blank line between lines |
 
 A rich-text property holds pieces of at most 2,000 characters; the body holds the full text. With MCP, pass the body as Notion-flavored Markdown in the create call. With REST, use `notion_rest.py create <meetings id> --in F` with `children_lines`.
 

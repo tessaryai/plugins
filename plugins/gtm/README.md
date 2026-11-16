@@ -21,8 +21,9 @@ Everything works with only the Notion connector. Other tools plug in through ada
   Some tools also work with an API key instead of a connector (see Adapters).
 - Claude in Chrome, signed in to LinkedIn, for anything that reads or sends on LinkedIn.
 - Python 3 (standard library only) for the helper scripts in `lib/`.
-- Optional: a Notion integration token for large CRMs (more than about 200 contacts). It makes
-  bulk reads, big imports and exact copy reads reliable.
+- Recommended: a Notion integration token for a CRM with more than about 200 contacts or any
+  active campaign. The Notion connector's row queries share a small workspace quota; REST has
+  none, and it makes bulk reads, big imports and exact copy reads reliable.
 
 ## Install
 
@@ -199,12 +200,12 @@ a plugin update replaces that folder.
 The config CLI (run from a terminal, with the plugin's install path as `<plugin root>`):
 
 ```
-python3 -I <plugin root>/lib/config.py show          # config with secrets masked
-python3 -I <plugin root>/lib/config.py check         # validate
-python3 -I <plugin root>/lib/config.py get sending.mode
-python3 -I <plugin root>/lib/config.py set sending.email_daily_cap 30
-python3 -I <plugin root>/lib/config.py set-secret notion_token
-python3 -I <plugin root>/lib/config.py paths         # where the files are
+python3 -I -B <plugin root>/lib/config.py show          # config with secrets masked
+python3 -I -B <plugin root>/lib/config.py check         # validate
+python3 -I -B <plugin root>/lib/config.py get sending.mode
+python3 -I -B <plugin root>/lib/config.py set sending.email_daily_cap 30
+python3 -I -B <plugin root>/lib/config.py set-secret notion_token
+python3 -I -B <plugin root>/lib/config.py paths         # where the files are
 ```
 
 Save keys only with `set-secret`, in your own terminal. It reads the key at a hidden prompt.
@@ -293,25 +294,25 @@ To avoid the risk, send only email campaigns, or set `adapters.linkedin` to `nul
 4. Add the tool name to `KNOWN_ADAPTERS` in `lib/config.py` (not needed for an import adapter:
    `/gtm:import` picks the source from its argument or asks you) and to the tables in `adapters/README.md` and
    `reference/config.md`.
-5. Test with `python3 -I lib/readonly_api.py <tool> check` and a dry run of the skill that uses it.
+5. Test with `python3 -I -B lib/readonly_api.py <tool> check` and a dry run of the skill that uses it.
 6. Add a CHANGELOG entry.
 
 ## Troubleshooting
 
 Every run reports BLOCKED first, then Needs you, then Decisions, then counts. A blocked adapter
 never stops the others, keeps its cursor so the next run retries the same period, and sends
-one notification per run. The run log is in `~/.config/gtm/logs.md`.
+one notification per run. The run log is at the `run_log` path that `config.py paths` prints.
 
 | You see | Fix |
 |---|---|
 | Notion blocked | Add or reconnect the Notion connector in Claude settings. Nothing can be written until it works. |
 | `<connector> blocked: auth error` | Reconnect that connector in Claude settings, then run the skill again. |
-| `<tool> blocked: key missing or refused` | Save a working key in your terminal: `python3 -I <plugin root>/lib/config.py set-secret <name>`. |
+| `<tool> blocked: key missing or refused` | Save a working key in your terminal: `python3 -I -B <plugin root>/lib/config.py set-secret <name>`. |
 | LinkedIn blocked: login page, CAPTCHA, extension not connected | Open Chrome, sign in to LinkedIn, and check that the Claude extension is connected. |
 | LinkedIn blocked: invitation limit or warning | Stop LinkedIn sends for some days. Lower `sending.linkedin_daily_invite_cap`. |
 | From address differs from the sender email | Send from the address in `sending.sender_email`, or change that key (or the campaign's `Sender email:` line). |
 | REST auth error, fell back to MCP | Share the CRM pages with your Notion integration, or save the token again with `set-secret notion_token`. |
-| Check incomplete, usage cap | Add a Notion token in `/gtm:setup` for bulk reads. |
+| `Query Data Source allowance` used up | The Notion connector's rows and SQL queries share a small workspace quota. Skills read in view mode (`notion.views`) and switch to it on this error. For a large CRM or active campaigns, save a Notion token in `/gtm:setup`; REST has no such quota. |
 | `config.py check` errors | Run `/gtm:setup` again; it shows the keys to fix. |
 | Campaign skipped: no campaign key | Add a `Campaign key: <slug>` line to the campaign page. |
 | Step skipped: merge gap | Add the missing value to the contact's `Run fields:` line, or run `/gtm:campaign-write personalize-only`. |

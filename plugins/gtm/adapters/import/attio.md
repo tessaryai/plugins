@@ -12,18 +12,18 @@ The read-only API client cannot list Attio records: Attio's record listing is a 
 
 So without a connector, use the CSV export (`${CLAUDE_PLUGIN_ROOT}/adapters/import/csv.md`): in Attio, open the People object (or the list to import) → … → Export as CSV; do the same for Companies if the user wants company fields beyond name and domain.
 
-If the user has an Attio key saved (`attio_api_key`, via `python3 -I <absolute plugin root>/lib/config.py set-secret attio_api_key` in their own terminal), use it only for the preflight and to read attribute definitions (`/v2/objects/people/attributes`), which helps map status options.
+If the user has an Attio key saved (`attio_api_key`, via `python3 -I -B <absolute plugin root>/lib/config.py set-secret attio_api_key` in their own terminal), use it only for the preflight and to read attribute definitions (`/v2/objects/people/attributes`), which helps map status options.
 
 ## Preflight check
 
 - Connector: one cheap read (list objects, or query one person). Auth error or missing tools = blocked; offer the CSV path.
-- Key only: `python3 -I ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py attio check`. Exit 0 = the key works, but the import still goes through CSV.
+- Key only: `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py attio check`. Exit 0 = the key works, but the import still goes through CSV.
 
 ## Read procedure
 
 These steps use the connector. Without one, follow the Read procedure of the csv adapter on the exported file.
 
-Write each response to `~/.config/gtm/imports/<run_id>/raw/`.
+Write each response to `<run>/raw/` (the run folder from `${CLAUDE_PLUGIN_ROOT}/skills/import/references/apply.md`).
 
 1. Objects and attributes: list the objects (`people`, `companies`, `deals` if enabled) and their attributes, so you know the slugs of email, LinkedIn, job title, status and any custom fields.
 2. Companies, then people, then deals: query each object page by page with the paging the tool defines (limit and offset, or a cursor) until a page comes back short or empty. If any page fails, the read is incomplete; stop before planning.

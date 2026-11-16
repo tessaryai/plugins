@@ -9,10 +9,14 @@ Reads a CSV file exported from any CRM or spreadsheet (Google Sheets, Excel, Sal
 No connector or key. The file is read by `${CLAUDE_PLUGIN_ROOT}/lib/csv_import.py`:
 
 ```
-python3 -I ${CLAUDE_PLUGIN_ROOT}/lib/csv_import.py fields
-python3 -I ${CLAUDE_PLUGIN_ROOT}/lib/csv_import.py suggest <file.csv> [--out mapping.json]
-python3 -I ${CLAUDE_PLUGIN_ROOT}/lib/csv_import.py plan <file.csv> --mapping mapping.json [--existing keys.json] [--allow-keyless] [--out plan.json]
+python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/csv_import.py fields
+python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/csv_import.py suggest <file.csv> [--out mapping.json]
+python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/csv_import.py plan <file.csv> --mapping mapping.json [--existing keys.json] [--allow-keyless]
+    [--owner-emails a@x.com,b@x.com] [--own-domains x.com] [--include-owner] [--out plan.json]
+python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/csv_import.py self-test
 ```
+
+Without `--owner-emails` and `--own-domains`, `plan` reads `owner.emails` and `owner.own_domains` from the config. `self-test` checks the planner against a built-in sample file and exits 0 when every check passes.
 
 The script never writes to Notion and never reaches the network. It detects the delimiter (comma, semicolon, tab, pipe) and strips a UTF-8 byte order mark.
 
@@ -28,7 +32,7 @@ How to get the file, per source (tell the user the steps; never sign in for them
 | Pipedrive | Contacts → People → … → Export filter results → CSV. |
 | Attio | Open the People object or a list → … → Export as CSV. |
 
-Ask the user to save the file inside the working directory or give its full path. Copy it into the run folder `~/.config/gtm/imports/<run_id>/contacts.csv` before you work on it.
+Ask the user to save the file inside the working directory or give its full path. Copy it to `<run>/contacts.csv` before you work on it (`<run>` is the run folder from `${CLAUDE_PLUGIN_ROOT}/skills/import/references/apply.md`).
 
 ## Preflight check
 
@@ -41,18 +45,18 @@ Blocked: never. A bad file is an input error; ask for another export.
 ## Read procedure
 
 1. `suggest` the mapping. Show columns, three sample rows and the guess.
-2. Fix the mapping with the user. Map each useful unmapped column to `extra` (it becomes a `Column: value` line in Notes). Map columns you do not want to `null`. Map the record id column, if any, to `extra` and also add a `Source ID` column as described in `${CLAUDE_PLUGIN_ROOT}/skills/import/references/apply.md`, Flatten.
-3. Columns with a company: map the company name to `company` and its website or domain to `company_website`. The plan derives a company domain from a work email when the website is missing; free-mail domains are ignored.
-4. A file with deals or activities (for example a separate deals export): ask for it as a second file, and turn it into `deals.json` or `activities.json` in the formats of apply.md with a short `python3 -I` script.
+2. Fix the mapping with the user. Map each useful unmapped column to `extra` (it becomes a `Column: value` line in Notes). Map columns you do not want to `null`. Map the record id column, if any, to `extra` and also add a `Source ID` column as described in `${CLAUDE_PLUGIN_ROOT}/skills/import/references/apply.md`, Flatten. The `Source ID` column maps to `source_id`. Map last-activity columns (`Last Contacted`, `Last Activity Date`) to `null`; they are not the first contact date.
+3. Columns with a company: map the company name to `company` and its website or domain to `company_website`. The plan derives a company domain from a work email when the website is missing; free-mail domains and your own domains are never used.
+4. A file with deals or activities (for example a separate deals export): ask for it as a second file, and turn it into `deals.json` or `activities.json` in the formats of apply.md with a short `python3 -I -B` script.
 5. Continue with `/gtm:import` step 4.
 
 ## Output
 
-Not normalized events. The output is the plan JSON from `csv_import.py plan`: `creates`, `updates`, `skips`, `conflicts`, `companies {create, existing}`, `warnings`, `summary`. Rows with no name, email or LinkedIn are skipped; rows with no email and no LinkedIn are skipped unless `--allow-keyless`; duplicates inside the file are skipped; a row whose keys point at different contacts is a conflict.
+Not normalized events. The output is the plan JSON from `csv_import.py plan`: `creates`, `updates`, `skips`, `conflicts`, `companies {create, existing}`, `warnings`, `summary`. Rows with no name, email or LinkedIn are skipped; rows with an owner address are skipped as `owner address` unless `--include-owner`; rows with no email and no LinkedIn are skipped unless `--allow-keyless`. A duplicate row inside the file (same email, LinkedIn URL or Source ID) fills the empty fields of the first row, adds its Notes lines, and is listed in skips with `merged_into` and `merged_fields`; a field where the two rows differ keeps the first value and gets a warning. A row whose keys point at different rows or different existing contacts is a conflict. An update carries `match_on`: `source_id`, `linkedin` or `email`. Each contact carries `source_fields` (first name, company, title) when those columns are mapped.
 
 ## Cursor
 
-None. An import run keeps its progress under `state.json` `adapters.import` and in `~/.config/gtm/imports/<run_id>/done.jsonl` (`${CLAUDE_PLUGIN_ROOT}/skills/import/references/apply.md`, Progress and resume).
+None. An import run keeps its progress under `state-get import` and in `<run>/done.jsonl` (`${CLAUDE_PLUGIN_ROOT}/skills/import/references/apply.md`, Progress and resume).
 
 ## Blocked signs and fix
 

@@ -1,6 +1,6 @@
 # Voice profile
 
-/gtm:setup copies this file to ~/.config/gtm/voice.md and fills it with you. /gtm:campaign-write reads it before it drafts any copy. Replace every line in angle brackets. Real sample messages you wrote yourself teach more than any rule below.
+/gtm:setup copies this file to the voice file (the `voice` path printed by `config.py paths`) and fills it with you. /gtm:campaign-write reads it before it drafts any copy. Replace every line in angle brackets. Real sample messages you wrote yourself teach more than any rule below.
 
 ## Who is writing
 
@@ -31,10 +31,9 @@
 
 ## Sign-off
 
-```
-<Best,
-Your Name>
-```
+Write one line. campaign-write ends every email with exactly this text, on its own lines after the body. Use `/` for a line break (`Best, / Your Name` becomes two lines). Write `none` for no sign-off. An empty or unfilled line also means no sign-off.
+
+Sign-off: <Best, / Your Name, or none>
 
 ## Sample messages
 

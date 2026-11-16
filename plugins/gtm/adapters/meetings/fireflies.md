@@ -11,7 +11,7 @@ Preferred: a Fireflies MCP connector. Find it with ToolSearch (`fireflies transc
 Fallback: the read-only GraphQL endpoint through `readonly_api.py` (tool `fireflies`, secret `fireflies_api_key`). The client refuses any query that contains `mutation` or `subscription`.
 
 ```
-python3 -I ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py fireflies graphql \
+python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py fireflies graphql \
   --query-file <scratchpad>/ff-query.graphql --variables-file <scratchpad>/ff-vars.json --out <scratchpad>/ff-<n>.json
 ```
 
@@ -35,7 +35,7 @@ Variables: `{"fromDate": "<cursor ISO>", "toDate": "<now ISO>", "limit": 50, "sk
 ## Preflight check
 
 - Connector: list one transcript. A result or an empty list is ok.
-- API: `python3 -I ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py fireflies check`. Exit 0 ok, exit 2 blocked.
+- API: `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py fireflies check`. Exit 0 ok, exit 2 blocked.
 
 ## Read procedure
 
@@ -61,7 +61,7 @@ Moves only when every page was read.
 
 ## Blocked signs and fix
 
-- Connector missing and no key: "Add the Fireflies connector in Claude settings, or save a key: run `python3 -I <plugin root>/lib/config.py set-secret fireflies_api_key` in a terminal."
+- Connector missing and no key: "Add the Fireflies connector in Claude settings, or save a key: run `python3 -I -B <plugin root>/lib/config.py set-secret fireflies_api_key` in a terminal."
 - Auth error or exit 2: "Reconnect the Fireflies connector, or save a new Fireflies API key with set-secret."
 
 ## Write / send capability

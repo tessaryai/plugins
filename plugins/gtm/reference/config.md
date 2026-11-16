@@ -1,31 +1,31 @@
 # Configuration
 
-All runtime files live in `~/.config/gtm/` (or `$GTM_CONFIG_DIR`), outside the plugin folder, because a plugin update replaces that folder.
+All runtime files live in one config folder outside the plugin folder, because a plugin update replaces that folder. The default folder is `~/.config/gtm`. Set the environment variable `GTM_CONFIG_DIR` to use another folder (tests, a second workspace); every path below then moves with it, including the imports folder and the default voice and ICP files. Never hardcode a runtime path: run `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/config.py paths` and use the location it prints (keys `config`, `credentials`, `state`, `run_log`, `imports`, `voice`, `icp`).
 
-| File | Holds | Who writes it |
+| File (`paths` key) | Holds | Who writes it |
 |---|---|---|
-| `~/.config/gtm/config.json` | Settings below. No secrets. | `/gtm:setup`, `config.py set`, the user |
-| `~/.config/gtm/credentials.json` | Notion token and API keys. Mode 600. | `config.py set-secret` only |
-| `~/.config/gtm/state.json` | Per-adapter cursors, the import progress (`import`) and the funnel baseline (`funnel`). | sweep and import through `config.py state-set`; `lib/funnel.py` for its baseline. campaign-run keeps no state here. |
-| `~/.config/gtm/imports/<run_id>/` | Work files of one import (contacts.csv, raw/, mapping.json, status_table.json, keys.json, plan.json, done.jsonl). They hold contact data, never a key. They live here, not in the session scratchpad, so `/gtm:import resume` works in a later session. | `/gtm:import` |
-| `~/.config/gtm/logs.md` | Run log, one entry per run. | every skill (`${CLAUDE_PLUGIN_ROOT}/reference/run-log.md`) |
-| `~/.config/gtm/voice.md` | The user's writing voice. | setup, campaign-write |
-| `~/.config/gtm/icp.md` | The ideal customer profile. | setup, campaign-build |
+| `config.json` (`config`) | Settings below. No secrets. | `/gtm:setup`, `config.py set`, the user |
+| `credentials.json` (`credentials`) | Notion token and API keys. Mode 600. | `config.py set-secret` only |
+| `state.json` (`state`) | Per-adapter cursors, the import progress (`import`) and the funnel baseline (`funnel`). | sweep and import through `config.py state-set`; `lib/funnel.py` for its baseline. campaign-run keeps no state here. |
+| `imports/<run_id>/` (`imports`) | Work files of one import (contacts.csv, raw/, mapping.json, status_table.json, keys.json, plan.json, done.jsonl). They hold contact data, never a key. They live here, not in the session scratchpad, so `/gtm:import resume` works in a later session. | `/gtm:import` |
+| `logs.md` (`run_log`) | Run log, one entry per run. | every skill (`${CLAUDE_PLUGIN_ROOT}/reference/run-log.md`) |
+| `voice.md` (`voice`) | The user's writing voice. | setup, campaign-write |
+| `icp.md` (`icp`) | The ideal customer profile. | setup, campaign-build |
 
 Templates: `${CLAUDE_PLUGIN_ROOT}/templates/config.example.json`, `voice.example.md`, `icp.example.md`, `schema.json`.
 
 ## The config CLI
 
-Run as `python3 -I ${CLAUDE_PLUGIN_ROOT}/lib/config.py <command>`:
+Run as `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/config.py <command>`:
 
 | Command | Does |
 |---|---|
 | `show` | Prints the config with defaults filled in, secret-like values masked, the list of saved secret names (`_secrets_saved`) and the file locations. |
-| `check` | Validates. Prints `error:` and `warning:` lines, then `ok` or the error count. Exit 0 ok, 1 errors. |
+| `check` | Validates. Prints `error:` and `warning:` lines, then `ok` or the error count. Exit 0 ok, 1 errors. See Validation below. |
 | `get <dotted.key>` | Prints one value (strings bare, others as JSON). Refuses secret names. |
 | `set <dotted.key> <value>` | Writes one value into config.json. The value is parsed as JSON when it can be (`10`, `true`, `["a"]`, `null`), else kept as a string. Refuses secret-like keys. |
 | `init` | Writes config.json from the template when none exists. |
-| `paths` | Prints the runtime file locations. |
+| `paths` | Prints the runtime file locations: config, credentials, state, run log, `imports` (the import work folder), `voice` and `icp` (the resolved files), and whether config exists. |
 | `set-secret <name>` | Reads a secret at a hidden prompt and saves it to credentials.json with mode 600. Needs a real terminal: the user runs it, not the agent. |
 | `has-secret <name>` | Exit 0 when the secret is saved, 1 when not. Prints only `set` or `not set`. |
 | `state-get [adapter]` | Prints state.json, or one adapter's cursor. |
@@ -33,7 +33,7 @@ Run as `python3 -I ${CLAUDE_PLUGIN_ROOT}/lib/config.py <command>`:
 
 Secret names: `notion_token`, `gojiberry_api_key`, `lemlist_api_key`, `instantly_api_key`, `apollo_api_key`, `hubspot_token`, `pipedrive_api_token`, `attio_api_key`, `fathom_api_key`, `hunter_api_key`, `fireflies_api_key`. An environment variable `GTM_<NAME>` (for example `GTM_NOTION_TOKEN`) overrides the file. Skills never read credentials.json themselves and never `cat` it.
 
-`set-secret` refuses when there is no terminal. Tell the user to run it in their own terminal (`python3 -I <plugin root>/lib/config.py set-secret notion_token`, with the plugin root path filled in). The agent's shell has no terminal, so the agent cannot run it. Never ask the user to paste a key into the chat.
+`set-secret` refuses when there is no terminal. Tell the user to run it in their own terminal (`python3 -I -B <plugin root>/lib/config.py set-secret notion_token`, with the plugin root path filled in). The agent's shell has no terminal, so the agent cannot run it. Never ask the user to paste a key into the chat.
 
 ## Keys
 
@@ -55,8 +55,9 @@ Types: str, int, bool, list, map. "Read by" lists the skills that use the key; e
 | Key | Type | Default | Read by | Meaning |
 |---|---|---|---|---|
 | `notion.access` | `"mcp"` or `"rest"` | `"mcp"` | all | `rest` means a token is saved and bulk work uses `lib/notion_rest.py`. See `${CLAUDE_PLUGIN_ROOT}/reference/notion-access.md`. |
-| `notion.parent_page_id` | str | `""` | setup | The page that holds the five databases and the Funnel page. |
-| `notion.data_sources.contacts` / `companies` / `pipeline` / `campaigns` / `meetings` | str | `""` | all | Data source ids (not page ids, not database ids). |
+| `notion.parent_page_id` | str | `""` | setup | The page that holds the five databases and the Funnel page. Must hold a 32-hex Notion id (dashes optional, a URL is accepted). |
+| `notion.data_sources.contacts` / `companies` / `pipeline` / `campaigns` / `meetings` | str | `""` | all | Data source ids (not page ids, not database ids). Each must be a 32-hex Notion id, dashes optional. |
+| `notion.views.contacts` / `companies` / `pipeline` / `campaigns` / `meetings` | str | `""` | all (MCP path) | URL of one unfiltered saved view per database. Both forms are accepted: `view://<view id>` (the form `notion-fetch` on a database returns, which the query tool accepts as `view_url`) or `https://www.notion.so/<database id>?v=<view id>`. Setup records the `view://` form. MCP reads every row through it in view mode, which has no plan quota. Setup records it by fetching the database (`${CLAUDE_PLUGIN_ROOT}/skills/setup/references/databases.md`). Empty: skills find a view for the run and ask you to rerun setup; `check` warns when `notion.access` is `mcp`. See `${CLAUDE_PLUGIN_ROOT}/reference/notion-access.md`, Query rows. |
 | `notion.field_map.<database>.<logical_field>` | map | from `templates/schema.json` | all | Actual property name for each logical field. |
 | `notion.status_map.<logical_status>` | map | identity | all | Actual Status option for `New`, `Contacted`, `Responded`, `Discovery`, `Lead`, `Archived`, `Do Not Contact`, `Disqualified`. |
 | `notion.option_map.<database>.<logical_field>.<logical_option>` | map | identity, from schema | all | Actual option names for other select fields: `contacts.email_status`, `contacts.lead_source`, `contacts.designation`, `companies.icp`, `companies.vertical`, `pipeline.stage`, `pipeline.likelihood`, `campaigns.status`, `campaigns.type`, `meetings.source`. |
@@ -103,7 +104,8 @@ Each value names an adapter file `${CLAUDE_PLUGIN_ROOT}/adapters/<kind>/<tool>.m
 
 | Key | Type | Default | Read by | Meaning |
 |---|---|---|---|---|
-| `sweep.first_run_lookback_days` | int | `7` | sweep | Days to look back for an adapter with no cursor. |
+| `sweep.first_run_lookback_days` | int | `7` | sweep | Days to look back for an adapter with no cursor, outreach tools included. A first outreach mirror reads only this far back unless the user asks for full history in that run (a full-history mirror can create hundreds of pages, so the sweep asks first). |
+| `sweep.max_meeting_attendees` | int | `15` | sweep | A calendar event with more external attendees than this is skipped (a webinar, an all-hands, a conference block). |
 | `sweep.calendar_lookahead_days` | int | `7` | sweep | Days ahead the calendar check reads for booked meetings. |
 
 ### funnel
@@ -128,8 +130,22 @@ The funnel baseline (the last accepted counts) is stored in `state.json` under `
 
 | Key | Type | Default | Read by |
 |---|---|---|---|
-| `paths.voice` | str | `"~/.config/gtm/voice.md"` | campaign-write |
-| `paths.icp` | str | `"~/.config/gtm/icp.md"` | campaign-build, campaign-write |
+| `paths.voice` | str | `""` (means `<config dir>/voice.md`) | setup, campaign-write |
+| `paths.icp` | str | `""` (means `<config dir>/icp.md`) | setup, campaign-build, campaign-write |
+
+An empty path follows `GTM_CONFIG_DIR`. Set a path only to keep the file somewhere else; `~` is expanded. `config.py paths` prints the resolved files.
+
+## Validation
+
+`check` reports errors (exit 1) for, among others:
+
+- `owner.emails` empty, or an address on a template domain (`example.com`, `example.org`, `example.net`); the same for `owner.own_domains` and `sending.sender_email`; `owner.name` still `Your Name`.
+- `notion.parent_page_id` or a `notion.data_sources.*` value that is empty, a placeholder, or not a 32-hex Notion id.
+- `notion.access` = `rest` with no saved `notion_token`.
+- A nested `notion.select_payload` value (keys must be flat).
+- A secret-like key in config.json.
+
+It warns (exit 0) for, among others: an empty `notion.views.*` with `notion.access` = `mcp`, an empty `notion.funnel_page_id`, an empty `owner.own_domains`, and a voice or ICP file that does not exist yet.
 
 ## state.json
 
@@ -140,7 +156,7 @@ The funnel baseline (the last accepted counts) is stored in `state.json` under `
     "gmail": {"after": "2026-03-01", "updated": "2026-03-02T08:00:00Z"},
     "google-calendar": {"after": "2026-03-01"},
     "linkedin-connections": {"top_profile": "https://www.linkedin.com/in/someone/"},
-    "linkedin-messages": {"newest": "2026-03-01T17:20:00Z"},
+    "linkedin-messages": {"newest": "2026-03-01T17:20-05:00"},
     "gojiberry": {"log_cursors": {"<campaign id>": 1234}},
     "fathom": {"after": "2026-03-01T00:00:00Z"}
   }
@@ -149,10 +165,12 @@ The funnel baseline (the last accepted counts) is stored in `state.json` under `
 
 - Two keys are not adapter cursors: `import` (written by `/gtm:import`: `{run_id, source, folder, phase, written, updated}`) and `funnel` (the funnel baseline, written only by `lib/funnel.py`). No adapter may use these names.
 - Keys under `adapters` are free-form per adapter; each adapter file defines its own cursor shape in its Cursor section.
+- A cursor that holds a time (not a date) is ISO 8601 with an explicit offset, for example `2026-11-16T12:33-05:00` or `2026-11-16T07:03Z`. Never store a local time without an offset.
+- When an outreach adapter is incomplete, the email and LinkedIn message cursors do not move past the earliest unmirrored event date (`${CLAUDE_PLUGIN_ROOT}/skills/sweep/references/batch.md`, Cursors).
 - A missing or null cursor means no earlier run: look back `sweep.first_run_lookback_days` days. Dedupe makes a repeat safe.
 - Move a cursor only when that adapter read everything back to its old cursor in this run. A blocked or incomplete adapter keeps its old cursor, so the next run retries the same period.
 - Write cursors with `config.py state-set <adapter> '<json>'` at the end of the run, after the CRM writes are verified.
 
 ## logs.md
 
-`~/.config/gtm/logs.md`, newest entry last. One entry per run. Format per skill: `${CLAUDE_PLUGIN_ROOT}/reference/run-log.md`.
+The `run_log` path printed by `config.py paths`, newest entry last. One entry per run. Format per skill: `${CLAUDE_PLUGIN_ROOT}/reference/run-log.md`.

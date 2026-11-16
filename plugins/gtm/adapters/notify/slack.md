@@ -43,7 +43,7 @@ gtm <skill> — blocked
 BLOCKED:
 • <adapter or problem> — <fix>
 • <adapter or problem> — <fix>
-Needs you: <n> items (see ~/.config/gtm/logs.md)
+Needs you: <n> items (see the gtm run log)
 <Notion link>
 ```
 

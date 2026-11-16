@@ -8,12 +8,12 @@ Reads persons, organizations, deals, notes and activities from Pipedrive for `/g
 
 Preferred: a Pipedrive MCP connector in the session. Find it with ToolSearch (`pipedrive persons deals organizations`), read each tool's schema, and use only its list and get tools. Never call a tool that adds, updates, merges or deletes anything.
 
-Otherwise: `${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py pipedrive`, secret `pipedrive_api_token`. Run `python3 -I ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py tools` for the allowed GET paths. The token is sent in a header, never in the URL.
+Otherwise: `${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py pipedrive`, secret `pipedrive_api_token`. Run `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py tools` for the allowed GET paths. The token is sent in a header, never in the URL.
 
 How the user gets the token: in Pipedrive, avatar menu → Personal preferences → API → copy the personal API token. The token has the same rights as the user; the read-only client is the limit on our side. Then, in their own terminal:
 
 ```
-python3 -I <absolute plugin root>/lib/config.py set-secret pipedrive_api_token
+python3 -I -B <absolute plugin root>/lib/config.py set-secret pipedrive_api_token
 ```
 
 Never ask for the token in the chat.
@@ -23,11 +23,11 @@ Fallback: CSV export (`${CLAUDE_PLUGIN_ROOT}/adapters/import/csv.md`).
 ## Preflight check
 
 - Connector: list one person. Auth error or missing tools = blocked.
-- API: `python3 -I ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py pipedrive check`. Exit 0 = ok, 2 = blocked.
+- API: `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py pipedrive check`. Exit 0 = ok, 2 = blocked.
 
 ## Read procedure
 
-Write every response to `~/.config/gtm/imports/<run_id>/raw/` with `--out`. Prefer the v2 endpoints; use v1 for objects v2 does not list here (notes, field definitions).
+Write every response to `<run>/raw/` (the run folder from `${CLAUDE_PLUGIN_ROOT}/skills/import/references/apply.md`) with `--out`. Prefer the v2 endpoints; use v1 for objects v2 does not list here (notes, field definitions).
 
 Paging:
 - v2 (`/api/v2/...`): `--param limit=500`, then repeat with `--param cursor=<additional_data.next_cursor>` until `next_cursor` is null or absent.

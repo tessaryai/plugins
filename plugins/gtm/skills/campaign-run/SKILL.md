@@ -26,7 +26,7 @@ This skill needs Claude in Chrome for LinkedIn steps and the LinkedIn reply chec
 
 ## Arguments
 
-- `dry-run`: send nothing and write nothing to Notion or to any channel. Read the same data as a live run. Print the plan table and, for each contact and due step, the exact text that would go out. Never open a LinkedIn profile in a dry run (the person sees the visit); print "profile state read at send time" for steps that need it. Reading the LinkedIn inbox is allowed.
+- `dry-run`: send nothing and write nothing to Notion or to any channel. Read the same data as a live run. Print the plan table and, for each contact and due step, the exact text that would go out. Never open a LinkedIn profile in a dry run (the person sees the visit); print "profile state read at send time" for steps that need it. Reading the LinkedIn inbox is allowed; opening `/messaging/` may auto-open the top thread and mark it read, which is accepted (it is not a send or a write by this skill).
 - `live`: send with all gates.
 - `campaign=<campaign_key>`: run only that campaign. Without it, run every eligible campaign.
 
@@ -37,7 +37,7 @@ Mode: read `sending.mode` from config. If the config or the argument says `dry-r
 1. Run only campaigns whose `status` is the Active option. Skip campaigns whose `type` is Warm Intro, pages with the line `Runs: external`, pages without a `Campaign key:` line, and pages with no step you can understand. List each skipped campaign with the reason. Never change a campaign's `status`.
 2. Send only text found word for word on the campaign page or the contact page, with merge fields filled only from the contact's `Run fields:` line. Never write, edit, shorten or "improve" copy. Never send a blank, half-filled or placeholder-holding message. If anything is missing, skip that contact and step and list it under Needs you.
 3. Replies first. Check every channel for replies before you compute anything (`references/replies.md`). A reply on any channel stops the contact on every channel and in every campaign. Never answer a reply. The user answers every reply.
-4. Gates before every send, from a fresh read of the contact (`references/plan.md`, Gates): suppression (DNC rule in crm-rules.md), Responded or later never sends, the email status gate for email steps, approval, working day, send window, caps.
+4. Gates before every send, from a fresh read of the contact (`references/plan.md`, Gates): suppression (DNC rule in crm-rules.md), Responded or later never sends, the email status gate for email steps, approval, working day, send window, caps. A contact whose email is in `owner.emails` sends only when its page holds the control line `Owner test: <campaign_key>` for the campaign being run (`references/plan.md`, Owner test contact).
 5. Absence of a reply or an accept is not proof. If the check that would show it is blocked in this run, do not send any step that depends on it (Blocked, below).
 6. Send only through the channel the step names, through its adapter (`references/send.md`). One message at a time.
 7. Send, verify by reading the message back from the channel, then write the marker and then Status. Never write a marker from a draft, a plan or an unconfirmed send.
@@ -48,22 +48,22 @@ Mode: read `sending.mode` from config. If the config or the argument says `dry-r
 ## Steps
 
 1. Preflight.
-   - Get the config: `python3 -I ${CLAUDE_PLUGIN_ROOT}/lib/config.py check`, then `python3 -I ${CLAUDE_PLUGIN_ROOT}/lib/config.py show`. Keep the field map, status map, option map, `owner.*`, `adapters.*` and `sending.*` for the run. If `check` fails, stop and report the errors.
+   - Get the config: `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/config.py check`, then `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/config.py show`. Keep the field map, status map, option map, `owner.*`, `adapters.*` and `sending.*` for the run. If `check` fails, stop and report the errors.
    - Get the local date, weekday and time in `owner.timezone`, for example `TZ='<owner.timezone>' date '+%Y-%m-%d %a %H:%M'`. All dates in this run use that zone.
    - Choose the Notion path (`notion-access.md`, Choose the path). Load the Notion tools with ToolSearch and read their schemas.
    - Run the preflight of the email adapter (`${CLAUDE_PLUGIN_ROOT}/adapters/email/<adapters.email>.md`) and the LinkedIn adapter (`${CLAUDE_PLUGIN_ROOT}/adapters/linkedin/chrome.md`), as `blocked.md` says. An adapter set to `none` is not blocked; its channel is off, and steps on it are skipped with the reason "channel off".
    - If Notion is blocked, notify and stop.
-2. Load campaigns. Query the Campaigns data source for `status` = the Active option. Drop the ones Hard rule 1 skips, and the ones before their `start_date` or after their `end_date`. If `campaign=` was given, keep only that key.
-3. Build a plan for each campaign from its page (`references/plan.md`, Read a campaign page). Put the plan table in the run log. Dry run prints it.
-4. Load contacts: query Contacts where the `campaign` relation contains the campaign page id. Never read the campaign's own `contacts` relation. Read each contact page once (properties and body). Build each contact's state from markers and log lines (`references/plan.md`, Contact state). A contact in more than one running campaign is read once and shared.
+2. Load campaigns. Read the Campaigns data source in view mode with `notion.views.campaigns` (REST `query` when a token exists) and keep the rows whose `status` is the Active option, filtered in memory (`notion-access.md`, Query rows). Do not use rows or SQL mode for this. From the view rows (properties only), drop the campaigns whose `type` is Warm Intro, and the ones before their `start_date` or after their `end_date`. The view rows hold no page body, so the body checks of Hard rule 1 wait for step 3.
+3. Read each remaining Active campaign page body and build its plan (`references/plan.md`, Read a campaign page). Now apply the body checks of Hard rule 1: skip a page with the line `Runs: external`, a page without a `Campaign key:` line, and a page with no step you can understand, each with its reason. If `campaign=` was given, keep only the page whose `Campaign key:` matches it (the key is in the body, so this filter runs here). Put the plan table in the run log. Dry run prints it.
+4. Load contacts: read Contacts and keep the rows whose `campaign` relation contains the campaign page (`crm-rules.md`, Relations). Compare page ids (32 hex, dashes removed, extracted from any URL form such as `app.notion.com/p/<id>` or `notion.so/<id>`, or a bare id), never full URLs. MCP: view mode with `notion.views.contacts`, filtered in memory by page id; report only the counts. A rows-mode filter, if used, takes the page URL `https://www.notion.so/<page id without dashes>`, never a bare id. REST: `notion_rest.py query` with the relation filter. After a filtered read (rows mode or REST with a filter), drop and report (under Needs you, with the count) any row whose `campaign` relation does not contain this campaign's page id. Never read the campaign's own `contacts` relation. On the rows or SQL allowance error, switch to view mode and finish; never retry rows mode in this run. With an Active campaign and no token, suggest a Notion token under Needs you once. Read each contact page once (properties and body). Build each contact's state from markers and log lines (`references/plan.md`, Contact state). A contact in more than one running campaign is read once and shared.
 5. Replies (`references/replies.md`). Search the email adapter and the LinkedIn inbox for replies from every loaded contact. Classify, log, set Status, and write STOP markers. Remove every stopped contact from today's work in all campaigns.
 6. Compute what is due (`references/plan.md`, Due rules, Gates). Then order the work and apply the caps (`references/plan.md`, Order and caps). If today is not in `owner.working_days`, or the time is outside `owner.send_window`, send nothing: list the due steps as "not a working day" or "outside window" and go to step 8.
 7. Send (`references/send.md`). For each due step, in order: fresh gate read, check that it was not sent already, send, verify on the channel, append the marker, then set Status and First Contacted. A failed send is logged, not marked, and retried in the next run. Never resend in the same run. Dry run: print the step and its exact text instead.
 8. Reconcile. Re-read every page you changed. Confirm each marker, log line and Status. List mismatches.
-9. Run log. Append one entry to `~/.config/gtm/logs.md` (format below). A dry run also appends its entry.
+9. Run log. Append one entry to the run log, the `run_log` path printed by `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/config.py paths` (format below). A dry run also appends its entry.
 10. Final report in the chat, ordered BLOCKED, Needs you, Decisions, then counts. If anything was blocked, send one notification (`blocked.md`).
 
-campaign-run keeps no cursor in `~/.config/gtm/state.json`. The markers on contact pages are its state.
+campaign-run keeps no cursor in the state file. The markers on contact pages are its state.
 
 ## Blocked
 
@@ -85,6 +85,7 @@ Header and order from `${CLAUDE_PLUGIN_ROOT}/reference/run-log.md`:
 - BLOCKED: <check — what you saw — fix>   (only when blocked)
 - Needs you: <replies with channel and verbatim text; held and hand-contacted contacts; lapsed event steps; copy, merge field or approval gaps (with the draft text); missing campaign keys; unparsed steps; unconfirmed sends> | none
 - Decisions: <evidence — choice — (was: ...)> | none
+- Notion: view-mode reads <n>, rows/SQL lookups <n>   (MCP path only)
 - Campaigns run: <name (key) — contacts — sends by step>
 - Plan: <per campaign: step | trigger | channel | condition | copy source | approval>
 - Campaigns skipped: <name — reason (not Active, Warm Intro, Runs: external, no key, cannot parse, outside dates)>

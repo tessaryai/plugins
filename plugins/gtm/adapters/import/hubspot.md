@@ -8,12 +8,12 @@ Reads contacts, companies, deals and engagement history (notes, emails, calls, m
 
 Preferred: a HubSpot MCP connector in the session. Find it with ToolSearch (`hubspot contacts companies deals`), read each tool's schema, and use only its list, get, search and property-read tools. Never call a tool that creates, updates, merges, deletes or associates records.
 
-Otherwise: `${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py hubspot`, secret `hubspot_token`. Run `python3 -I ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py tools` for the allowed GET paths.
+Otherwise: `${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py hubspot`, secret `hubspot_token`. Run `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py tools` for the allowed GET paths.
 
 How the user gets a token: in HubSpot, Settings → Integrations → Private Apps (newer accounts: Development → Legacy apps → Private app) → create a private app with read-only scopes only: `crm.objects.contacts.read`, `crm.objects.companies.read`, `crm.objects.deals.read`, `crm.schemas.contacts.read`, `crm.schemas.deals.read` (plus `crm.objects.owners.read` if they want owners). Copy the access token, then run in their own terminal:
 
 ```
-python3 -I <absolute plugin root>/lib/config.py set-secret hubspot_token
+python3 -I -B <absolute plugin root>/lib/config.py set-secret hubspot_token
 ```
 
 Never ask for the token in the chat.
@@ -23,11 +23,11 @@ Fallback: CSV export (`${CLAUDE_PLUGIN_ROOT}/adapters/import/csv.md`).
 ## Preflight check
 
 - Connector: one cheap read (list one contact). Auth error or missing tools = blocked.
-- API: `python3 -I ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py hubspot check`. Exit 0 = ok, 2 = blocked. A 403 on a later object means a missing scope; report which object.
+- API: `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py hubspot check`. Exit 0 = ok, 2 = blocked. A 403 on a later object means a missing scope; report which object.
 
 ## Read procedure
 
-Write every response to `~/.config/gtm/imports/<run_id>/raw/` with `--out`. Paging: repeat with `--param after=<paging.next.after>` until the response has no `paging.next`. If any page fails, the read is incomplete; stop before planning.
+Write every response to `<run>/raw/` (the run folder from `${CLAUDE_PLUGIN_ROOT}/skills/import/references/apply.md`) with `--out`. Paging: repeat with `--param after=<paging.next.after>` until the response has no `paging.next`. If any page fails, the read is incomplete; stop before planning.
 
 1. Properties: `get /crm/v3/properties/contacts` (and companies, deals) to learn the internal names of the fields to read, including custom ones the user wants.
 2. Pipelines: `get /crm/v3/pipelines/deals` for stage ids → stage labels (needed for the stage table).

@@ -1,6 +1,6 @@
 ---
 name: campaign-build
-description: Builds the audience for an outreach campaign from the user's ideal customer profile. Reads ~/.config/gtm/icp.md, creates or picks a Campaign page in the Notion CRM (Status Review, with a campaign key), sources companies and people with the enabled enrichment adapters (Exa, Apollo, Hunter or any enrichment MCP connector), scores each one against the ICP and exclusions, finds and verifies emails, dedupes against the CRM, shows the list and asks before it writes, then creates Companies and Contacts and links each contact to the campaign. Use when the user says "build a list for", "find prospects matching my ICP", "build an audience for campaign X", or invokes /gtm:campaign-build. Never sends anything.
+description: Builds the audience for an outreach campaign from the user's ideal customer profile. Reads the user's ICP file, creates or picks a Campaign page in the Notion CRM (Status Review, with a campaign key), sources companies and people with the enabled enrichment adapters (Exa, Apollo, Hunter or any enrichment MCP connector), scores each one against the ICP and exclusions, finds and verifies emails, dedupes against the CRM, shows the list and asks before it writes, then creates Companies and Contacts and links each contact to the campaign. Use when the user says "build a list for", "find prospects matching my ICP", "build an audience for campaign X", or invokes /gtm:campaign-build. Never sends anything.
 argument-hint: "[campaign=<name|url>] [size=<n>] [max-credits=<n>] [linkedin] [dry-run]"
 ---
 
@@ -35,10 +35,10 @@ Detail for this skill:
 1. Never send, draft or queue a message. Never write copy, a `Run fields:` line or an `Approved:` line.
 2. Never set a campaign to `Active`. A campaign this skill creates starts at `Review`. If the chosen campaign is already `Active`, ask before adding anyone: new contacts in an Active campaign get step 1 on the next `/gtm:campaign-run`.
 3. Show the list and get a clear yes before the first Notion write. A partial yes ("only the strong fits") limits the write to that part.
-4. Ask before spending provider credits beyond `max-credits`, or before the first paid call when no number was given. Free calls (account, counts, health checks) need no question.
+4. Ask before spending provider credits beyond `max-credits`, or before the first paid call when no number was given. Free calls (account, counts, health checks, ToolSearch) need no question. Every real Exa call (search, fetch or agent run) is paid and counts toward the budget.
 5. Enrichment adapters are read-only. Never create a list, sequence, contact, export or task inside a provider. See `${CLAUDE_PLUGIN_ROOT}/reference/safety.md`.
 6. Match by stable key only (LinkedIn URL or email, `${CLAUDE_PLUGIN_ROOT}/reference/crm-rules.md`, Matching). Never create a second page for a person who is already in the CRM.
-7. Never add a suppressed contact, an address in `owner.emails`, or a person at a domain in `owner.own_domains`. Never clear or change Do Not Contact, and never set `Archived`, `Disqualified` or `Do Not Contact`.
+7. Never add a suppressed contact or a person at a domain in `owner.own_domains`. Skip an address in `owner.emails` by default. Link the owner's own contact only when the user explicitly asks in this run to link their own address for a test send: then append the control line `Owner test: <campaign_key>` to that contact page and record it under Decisions (`references/crm-writes.md`, Owner address). Without that line, campaign-run never sends to an owner address. Never clear or change Do Not Contact, and never set `Archived`, `Disqualified` or `Do Not Contact`.
 8. Never lower a Status. New contacts get `New`. Existing contacts keep their Status.
 9. Write the campaign relation from the contact side only. Read the contact's current list, add the campaign, write the full list.
 10. Never use `replace_content` or `update_content` on a contact, company or campaign page. Append only.
@@ -49,16 +49,16 @@ Detail for this skill:
 
 ### 1. Preflight
 
-1. Load config: `python3 -I ${CLAUDE_PLUGIN_ROOT}/lib/config.py show`. Note `adapters.enrichment`, `adapters.linkedin`, `owner.*`, `paths.icp`, the field, status and option maps. Run `python3 -I ${CLAUDE_PLUGIN_ROOT}/lib/config.py check`; stop on errors and show them.
+1. Load config: `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/config.py show`. Note `adapters.enrichment`, `adapters.linkedin`, `owner.*`, `paths.icp`, the field, status and option maps. Run `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/config.py check`; stop on errors and show them.
 2. Choose the Notion path and load the Notion tools (`${CLAUDE_PLUGIN_ROOT}/reference/notion-access.md`). Fetch the Contacts, Companies and Campaigns schemas once. Check that every option this run writes exists: contact Status `New`, Lead Source `Cold Outreach`, the four Email Status options, Company ICP options, campaign Status `Review`. A missing option means that write is skipped and listed under Needs you.
-3. Run the Preflight check of each enrichment adapter in `adapters.enrichment` (`${CLAUDE_PLUGIN_ROOT}/adapters/enrichment/<tool>.md`). Mark each `ok` or `blocked`. If `adapters.enrichment` is empty, offer `mcp` when the session has an enrichment connector, else `exa` when its connector is present, and say how to add one in `/gtm:setup`.
+3. Run the Preflight check of each enrichment adapter in `adapters.enrichment` (`${CLAUDE_PLUGIN_ROOT}/adapters/enrichment/<tool>.md`). Mark each `ok` or `blocked`. The Exa preflight is a ToolSearch only and spends nothing; an Exa auth or quota error can first show at the first real call, and Exa is then blocked. If `adapters.enrichment` is empty, offer `mcp` when the session has an enrichment connector, else `exa` when its connector is present, and say how to add one in `/gtm:setup`.
 4. If every enrichment adapter is blocked, stop after the BLOCKED report. There is nothing to source from: LinkedIn only confirms candidates, it is not a source in v1.
 5. With the `linkedin` argument: run the Preflight check in `${CLAUDE_PLUGIN_ROOT}/adapters/linkedin/chrome.md`. A blocked LinkedIn adapter does not stop the run.
 
 ### 2. ICP
 
-1. Read the ICP file at `paths.icp` (default `~/.config/gtm/icp.md`).
-2. If it is missing or still has lines in angle brackets, offer to fill it now: copy `${CLAUDE_PLUGIN_ROOT}/templates/icp.example.md` to `~/.config/gtm/icp.md` and ask the user for each section (firmographics, buyer titles, pains, signals, exclusions, negative ICP, fit scoring). Save their words. Do not guess a section the user skips; leave it empty and say that scoring will be weaker.
+1. Read the ICP file at the `icp` path printed by `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/config.py paths` (it follows `paths.icp`).
+2. If it is missing or still has lines in angle brackets, offer to fill it now: copy `${CLAUDE_PLUGIN_ROOT}/templates/icp.example.md` to that `icp` path and ask the user for each section (firmographics, buyer titles, pains, signals, exclusions, negative ICP, fit scoring). Save their words. Do not guess a section the user skips; leave it empty and say that scoring will be weaker.
 3. Restate the ICP in five lines or fewer and confirm it is the audience for this campaign. Ask for any campaign-specific narrowing (one vertical, one region, one title).
 
 ### 3. Campaign page
@@ -69,7 +69,7 @@ Create or pick the campaign as described in `references/crm-writes.md`, Campaign
 
 1. Ask for `size` and `max-credits` if not given. For each paid adapter, read the remaining balance with its free account call when it has one, and show it.
 2. Estimate the credits the plan needs (for example: one search call per page of results, one email find per person, one verify per email) and show the estimate next to the limit. Get a yes before the first paid call.
-3. Keep a running count per adapter. Before any call that would pass the limit, stop and ask. Record credits spent in the run log.
+3. Keep a running count per adapter. Count every real Exa call (each search, each fetch, each agent run at its reported cost), every paid email find and every verify. Before any call that would pass the limit, stop and ask. Record credits spent in the run log.
 
 ### 5. Source
 
@@ -97,11 +97,11 @@ Wait for the answer. Apply exactly what the user approved. In `dry-run`, stop he
 
 ### 10. Write
 
-Follow `references/crm-writes.md`, Write: create missing companies, create new contacts, link existing contacts, append one log line per contact. Read each page again after its write and check every property and the relation.
+Follow `references/crm-writes.md`, Write: create missing companies, create new contacts, link existing contacts, append one log line per contact. On the MCP path, create up to 20 pages per `notion-create-pages` call and verify each batch before the next one: read every page in it again and check every property and the relation.
 
 ### 11. Run log and report
 
-Append one entry to `~/.config/gtm/logs.md` (format below). Then give the final report in the same order. End with the next step: "Run `/gtm:campaign-write campaign=<name>` to write the sequence and personalize messages. The campaign stays at Review until you set it to Active."
+Append one entry to the run log, the `run_log` path printed by `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/config.py paths` (format below). Then give the final report in the same order. End with the next step: "Run `/gtm:campaign-write campaign=<name>` to write the sequence and personalize messages. The campaign stays at Review until you set it to Active."
 
 ## Blocked
 

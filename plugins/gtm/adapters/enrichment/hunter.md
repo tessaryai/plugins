@@ -22,10 +22,10 @@ Costs, parameters and status values below were written from Hunter's public docu
 
 ## Preflight check
 
-`python3 -I ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py hunter check`. Exit 0 = ok, exit 2 = blocked. Then read the balance:
+`python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py hunter check`. Exit 0 = ok, exit 2 = blocked. Then read the balance:
 
 ```
-python3 -I ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py hunter get /v2/account --out <scratchpad>/hunter-account.json
+python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py hunter get /v2/account --out <scratchpad>/hunter-account.json
 ```
 
 Show the remaining search and verification counts before the first paid call.
@@ -36,7 +36,7 @@ Call Hunter only for people campaign-build will add (after scoring and dedupe), 
 
 1. Person with first name, last name and company domain: `email-finder`.
    ```
-   python3 -I ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py hunter get /v2/email-finder --param domain=<domain> --param first_name=<first> --param last_name=<last> --out <scratchpad>/hf-<n>.json
+   python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py hunter get /v2/email-finder --param domain=<domain> --param first_name=<first> --param last_name=<last> --out <scratchpad>/hf-<n>.json
    ```
 2. Company with no person yet: `email-count` (free) first; when it shows addresses, `domain-search` with `--param seniority=senior,executive` and `--param limit=10`, then keep people whose position matches the ICP buyer titles.
 3. Verify each email that is not already `valid` with a high score from the finder: `email-verifier --param email=<address>`.
@@ -69,7 +69,7 @@ None.
 
 ## Blocked signs and fix
 
-- `readonly_api.py hunter check` exit 2 with 401: "Save a working key: run `python3 -I <plugin root>/lib/config.py set-secret hunter_api_key` in a terminal."
+- `readonly_api.py hunter check` exit 2 with 401: "Save a working key: run `python3 -I -B <plugin root>/lib/config.py set-secret hunter_api_key` in a terminal."
 - 429 after one retry, or zero credits left: report it, stop Hunter calls, keep what was found.
 
 ## Write / send capability

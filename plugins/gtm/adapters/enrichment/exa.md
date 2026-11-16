@@ -20,8 +20,11 @@ Allowed: the tools above, read-only. Never pass the user's data to an agent run 
 
 ## Preflight check
 
-1. Load the tools with ToolSearch. No search tool found = blocked.
-2. One cheap search with a neutral query that holds no CRM data, for example `category:company software company` with one result. A result list = ok. An auth or quota error = blocked.
+ToolSearch only. Make no search or fetch call: every real Exa call is billable.
+
+1. Load the tools with ToolSearch (for example `exa web search fetch`). No search tool found = blocked.
+2. Read the search and fetch tool schemas. Both present = ok.
+3. An auth or quota error can therefore first show at the first real call. Then mark Exa blocked for the rest of the run and report it as below.
 
 ## Read procedure
 
@@ -47,7 +50,7 @@ Each company or person becomes a candidate record (`${CLAUDE_PLUGIN_ROOT}/skills
 - `company.name`, `company.domain` (from the company URL), `company.description` (one sentence from the result text), `employees` and `headquarters` only when the text states them.
 - `person.full_name`, `person.title`, `person.linkedin` from a people result. `person.email` is always null.
 - `signals`: `{text, url, date}` for each fact from a news or site result.
-- `credits_spent`: the number of calls (search and fetch), or the agent run's reported cost.
+- `credits_spent`: the number of calls (search and fetch), or the agent run's reported cost. Every real call counts toward the run's credit budget in `/gtm:campaign-build` and `/gtm:campaign-write`, including calls that return no useful result.
 
 Drop results that are directories, list articles, job boards or the user's own domains, unless they lead to a company page you then read.
 

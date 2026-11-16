@@ -18,7 +18,7 @@ Each row also needs its page id or page URL. The deal relation can come from eit
 ## REST path
 
 ```bash
-python3 -I ${CLAUDE_PLUGIN_ROOT}/lib/funnel.py export --out <work>
+python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/funnel.py export --out <work>
 ```
 
 It reads every row of both data sources (following every cursor) and writes `<work>/contacts.json` and `<work>/deals.json`. Exit 2 is a Notion error. If the message says status 401 or 403, fall back to the MCP path for this run and add the token note from `notion-access.md` under Needs you. Any other exit 2 or exit 1: Notion is blocked for this run.
@@ -27,15 +27,21 @@ It reads every row of both data sources (following every cursor) and writes `<wo
 
 Use `notion-query-data-sources` (the name ToolSearch returns). Read its schema first and use only the modes and parameters it defines.
 
-1. Get the data source ids from `notion.data_sources.contacts` and `notion.data_sources.pipeline`.
-2. Read every row you need. The tool's modes differ in how far they can read (see `notion-access.md`, Payload rules: `rows` mode stops at 100 rows with no cursor, `sql` mode pages with `LIMIT` and `OFFSET`, `view` mode pages with a cursor). Pick a mode that can read every row and follow every page or cursor until `has_more` is false or a page comes back short.
-3. If no mode can page, narrow the reads so no single result reaches the cap, and query several times:
-   - Contacts: one query per counted Status option (the actual names for `Contacted`, `Responded`, `Discovery`, `Lead` from `notion.status_map`). The script counts only these statuses, so other rows are not needed. If one result still reaches the cap, split it again by a First Contacted date range (for example one query per quarter, plus one for an empty date).
-   - Deals: one query per stage in `funnel.pilot_stages` and `funnel.customer_stages` (actual names from `notion.option_map.pipeline.stage`). Only these stages count.
-   - A result that has exactly the cap size may be cut off. Split it again. If you cannot get every row, the export is incomplete: go to Blocked in `SKILL.md` and suggest a Notion token under Needs you.
-4. Save each query result as its own file, as the tool returned it: `<work>/contacts-1.json`, `contacts-2.json`, ..., `deals-1.json`, .... A file may hold a JSON array of rows or an object with a `results`, `rows`, `pages` or `data` array. Do not merge, sort, edit or reformat rows by hand.
-5. Make sure every row carries each needed property key. When the tool leaves out a property that is empty, add that key with `null`. Change nothing else. A missing key makes the script report the property as absent from the export.
-6. Pass every file to the script: repeat `--contacts <file>` and `--deals <file>`. The script drops duplicate rows by page id, so overlapping queries are safe.
+1. Get the view URLs from `notion.views.contacts` and `notion.views.pipeline`. Both forms work as `view_url`: `view://<view id>` (the form `notion-fetch` on a database returns, which the query tool accepts as `view_url`) or `https://www.notion.so/<database id>?v=<view id>`; pass the stored value as it is. If one is empty, `notion-fetch` the database (not the data source) once, take a `view://` view from the result, use it for this run, and suggest under Needs you that the user run `/gtm:setup` to record it.
+2. Read every row in view mode: `mode` `view`, `view_url`, `page_size` 100, and pass `next_cursor` as `start_cursor` until `has_more` is false. View mode has no plan quota (`${CLAUDE_PLUGIN_ROOT}/reference/notion-access.md`, Query rows). Do not export with rows or SQL mode: they share a small workspace allowance that one call can use up, and splitting the export into many filtered queries uses it up faster.
+3. If a view read fails or cannot reach every row (for example the view has its own filter and the row count looks short), the export is incomplete: go to Blocked in `SKILL.md` and suggest a Notion token under Needs you. If a rows or SQL call returns the allowance error, never retry it in this run.
+4. Save each query result as its own file with the Write tool, exactly as the tool returned it: `<work>/raw-contacts-1.json`, `raw-contacts-2.json`, ..., `raw-deals-1.json`, .... Paste the tool output as it is (a JSON array, an object with a `results` array, or the tool's text with the JSON inside). Do not retype, merge, sort, edit or reformat rows by hand.
+5. Normalize each database once, passing every raw page file:
+
+   ```bash
+   python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/funnel.py normalize --in <work>/raw-contacts-1.json [--in <work>/raw-contacts-2.json ...] --out <work>/contacts.json
+   python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/funnel.py normalize --in <work>/raw-deals-1.json [--in ...] --out <work>/deals.json
+   ```
+
+   The script tells contacts from pipeline rows by the mapped property names it finds. If it says it cannot tell (exit 1), add `--db contacts` or `--db pipeline`.
+
+   It reads the rows out of each file and adds every property the script needs (resolved through `notion.field_map`) that a row leaves out, with `null`, because the MCP tool omits empty properties. A date property (`first_contacted`) is added in the MCP form `date:<property>:start`, unless the row has it under the plain property name; every other property is added under its plain property name. The script accepts both forms. Nothing else changes. Exit 1 means a file holds no JSON rows: save that page again from the tool output.
+6. Pass the two normalized files to the script: `--contacts <work>/contacts.json --deals <work>/deals.json`. The script drops duplicate rows by page id, so overlapping pages are safe.
 
 Accepted row shapes, for reference (the script handles all of them):
 

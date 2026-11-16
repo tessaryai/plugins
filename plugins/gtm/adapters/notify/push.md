@@ -39,7 +39,7 @@ gtm <skill> blocked: <adapters or problem>. <first fix>. Needs you: <n>.
 
 Example: `gtm sweep blocked: gmail, chrome. Reconnect the Gmail connector in Claude settings. Needs you: 3.`
 
-A push message has no link. The user opens `~/.config/gtm/logs.md` or the Notion page for detail.
+A push message has no link. The user opens the run log (the `run_log` path printed by `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/config.py paths`) or the Notion page for detail.
 
 ## Cursor
 

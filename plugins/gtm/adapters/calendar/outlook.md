@@ -23,7 +23,7 @@ List the events of the next day. A result or an empty list is ok. A missing conn
 1. Window: from the cursor date (or `sweep.first_run_lookback_days` back) to today plus `sweep.calendar_lookahead_days`, in `owner.timezone`.
 2. Use the tool's calendar view (recurring events expanded into instances) when it has one.
 3. Follow every page link or cursor. Stopping early makes the read incomplete.
-4. Skip the same events as Google: no external attendee, declined by the user, all-day with no attendees, out-of-office and private blocks.
+4. Skip the same events as Google: no external attendee, declined by the user, all-day with no attendees, out-of-office and private blocks, more than `sweep.max_meeting_attendees` external attendees, and recurring internal-style series (a series master or occurrence) with no matched contact. Count skipped events only. Unmatched bookings go to Needs you only with 1 to 3 external attendees, as in Google.
 
 ## Output
 

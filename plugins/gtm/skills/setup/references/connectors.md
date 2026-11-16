@@ -16,13 +16,13 @@ Setup step 1. The goal is a short, true table of what this session can use. Dete
 | Email: Outlook | `outlook mail messages` | Outlook or Microsoft 365 mail tools | list one sent message |
 | Calendar: Google | `calendar list_events` | `list_events`, `list_calendars` | list calendars |
 | Calendar: Outlook | `outlook calendar events` | Outlook calendar tools | list one event |
-| LinkedIn: Claude in Chrome | `claude-in-chrome tabs_context navigate` | `mcp__claude-in-chrome__*` tools | `tabs_context_mcp` only; do not open LinkedIn here |
+| LinkedIn: Claude in Chrome | `claude-in-chrome tabs_context navigate` | `mcp__claude-in-chrome__*` tools | `tabs_context_mcp` only; do not open LinkedIn here. Any reply that is not an error (including "no tab group yet") counts as found. The LinkedIn sign-in is checked at run time. |
 | Meetings: Fathom | `fathom list_meetings` | `list_meetings`, `get_meeting_transcript` | list one meeting |
 | Meetings: Granola | `granola meetings notes` | Granola tools | list one item |
 | Meetings: Fireflies | `fireflies transcripts` | Fireflies tools | list one transcript |
 | Meetings: Otter | `otter transcripts` | Otter tools | list one item |
 | Notify: Slack | `slack send_message search_channels` | `slack_*` tools | search one channel by name |
-| Notify: push | `PushNotification` | the `PushNotification` tool | none (do not send a test unless the user asks) |
+| Notify: push | `select:PushNotification` | the `PushNotification` tool | none (do not send a test unless the user asks). The tool is often missing in subagent, headless and cloud runs. If it is not found, ask whether to use Slack or no notifications instead; if the user keeps push, say that BLOCKED alerts appear only in the run report when the tool is missing. |
 | Import: HubSpot | `hubspot contacts companies deals` | HubSpot tools | list one contact |
 | Import: Pipedrive | `pipedrive persons deals` | Pipedrive tools | list one person |
 | Import: Attio | `attio records objects` | Attio tools | list objects |
@@ -36,9 +36,9 @@ Setup step 1. The goal is a short, true table of what this session can use. Dete
 A tool with no connector can still work through the read-only API client when it has an entry there:
 
 ```
-python3 -I ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py tools
-python3 -I ${CLAUDE_PLUGIN_ROOT}/lib/config.py has-secret <secret name>
-python3 -I ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py <tool> check
+python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py tools
+python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/config.py has-secret <secret name>
+python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py <tool> check
 ```
 
 `check` exit 0 = ok, 2 = blocked (no key or the key was refused). If the key is not saved, give the user the `set-secret` command for that secret name (absolute plugin path filled in) and ask them to run it in their own terminal.

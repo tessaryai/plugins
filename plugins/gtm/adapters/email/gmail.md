@@ -25,10 +25,12 @@ Window: from the cursor date (`after`) to now. With no cursor, `sweep.first_run_
 1. Main query: `after:<date> -category:updates -category:promotions -category:social -category:forums`. The category filters remove most newsletters and notifications; in practice they cut the volume by about three quarters.
 2. System mail query: `after:<date> (from:mailer-daemon OR from:postmaster OR subject:"out of office" OR subject:"automatic reply" OR subject:"undeliverable")`.
 3. Sent query: `after:<date> in:sent`. This finds mail the user sent by hand.
-4. For each query, use `view` = `THREAD_VIEW_METADATA_ONLY` and `pageSize` 50. Follow `pageToken` until no token is returned. If you stop before the last page, the read is incomplete: report it, apply what you read, and do not move the cursor.
+4. For each query, use `view` = `THREAD_VIEW_METADATA_ONLY` and `pageSize` 20. A page of 50 metadata threads passed the tool's output limit in testing. Follow `pageToken` until no token is returned. If you stop before the last page, the read is incomplete: report it, apply what you read, and do not move the cursor.
+   - Dedupe threads by thread id across the three queries: a thread can appear in both the main and the `in:sent` query. Process each thread once.
+   - `search_threads` returns at most 5 messages per thread, and some can be older than the window. Use each message's own date: drop messages dated before the window, and never treat an old message as new activity.
 5. From the metadata, collect every address in `sender`, `toRecipients` and `ccRecipients`. Drop addresses in `owner.emails` and on `owner.own_domains`.
 6. Resolve the remaining addresses against the CRM in one pass (the sweep's matching step). Do not search Gmail one contact at a time: a person can reply from a second address.
-7. Open a thread in full (`get_thread`, `messageFormat` `PLAIN_TEXT`) only when it may matter: an address matched a contact, the sending domain matches exactly one contact, it is system mail that names a contact's address, or the sender looks like a prospect (a person at a company domain, not a newsletter or a tool). Read the whole thread in both directions.
+7. `THREAD_VIEW_METADATA_ONLY` has no subject and no snippet, so the prospect, newsletter and system-mail rules cannot be applied from the list. Open a thread in full (`get_thread`, `messageFormat` `PLAIN_TEXT`) before you apply them, and only when it may matter: an address matched a contact, the sending domain matches exactly one contact, it is system mail that names a contact's address, or the sender looks like a prospect (a person at a company domain, not a newsletter or a tool). Read the whole thread in both directions.
 8. Resolve each inbound message by sender address, then reply-to address, then a quoted earlier message in the thread that went to a known contact address, then the sending domain (domain rule in `${CLAUDE_PLUGIN_ROOT}/reference/crm-rules.md`, Matching). Only after all four fail is it unmatched.
 
 ### Reply check for a set of contacts (campaign-run)
@@ -64,6 +66,8 @@ Drop: newsletters, notifications, calendar invitation mails (the calendar adapte
 ```
 
 `after` becomes today's date (in `owner.timezone`) when all three queries were read to the last page. Gmail's `after:` is day-granular, so the next run reads today again; dedupe by date and event makes that safe.
+
+When an outreach adapter was incomplete in this run, `after` moves no later than the earliest unmirrored event date (`${CLAUDE_PLUGIN_ROOT}/skills/sweep/references/batch.md`, Cursors), so replies from contacts that have no page yet are read again next run.
 
 ## Blocked signs and fix
 

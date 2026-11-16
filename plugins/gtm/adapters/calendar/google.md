@@ -22,6 +22,8 @@ Call `list_events` on the primary calendar with a one-day window and `pageSize` 
 2. Calendar: primary only, unless config later names others.
 3. Order by start time. Follow `pageToken` until none is returned. Stopping early makes the read incomplete.
 4. Skip: events with no attendee outside the user (an attendee is external when the address is not in `owner.emails` and not on `owner.own_domains`), events the user declined, all-day events with no attendees, out-of-office, focus-time and working-location events.
+   - Events with more than `sweep.max_meeting_attendees` (default 15) external attendees: a webinar, an all-hands, a conference block. Count them only.
+   - Recurring internal-style series with no matched contact: a recurring event (it has a recurring event id) whose instances have no attendee who matches a contact, for example a standing team or community call. Count them only. A recurring series with a matched contact is read as usual.
 5. Call `get_event` only when the list result lacks attendee response status or the description is needed to tell a cancellation.
 
 ## Output
@@ -34,7 +36,7 @@ One event per external attendee per meeting (format in `${CLAUDE_PLUGIN_ROOT}/ad
 | Start in the past (inside the window), not cancelled, attendee did not decline | `meeting_held` |
 | Event cancelled, or the attendee declined | `meeting_cancelled` |
 
-`date` is the meeting date. Unmatched external attendees are still returned as events; the sweep lists them as unmatched. A booking with an unmatched attendee goes to Needs you, because the user may know the person.
+`date` is the meeting date. Unmatched external attendees are still returned as events; the sweep lists them as unmatched (a count plus at most 10). A booking with an unmatched attendee goes to Needs you only when the event has 1 to 3 external attendees, because the user may know the person; larger unmatched bookings are reported as a count. Put `detail.external_count` (the number of external attendees) on every event.
 
 ## Cursor
 

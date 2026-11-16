@@ -2,11 +2,24 @@
   "version": 1,
   "owner": {
     "name": "Your Name",
-    "emails": ["you@example.com"],
-    "own_domains": ["example.com"],
+    "emails": [
+      "you@example.com"
+    ],
+    "own_domains": [
+      "example.com"
+    ],
     "timezone": "America/New_York",
-    "working_days": ["Mon", "Tue", "Wed", "Thu", "Fri"],
-    "send_window": {"start": "09:00", "end": "17:00"}
+    "working_days": [
+      "Mon",
+      "Tue",
+      "Wed",
+      "Thu",
+      "Fri"
+    ],
+    "send_window": {
+      "start": "09:00",
+      "end": "17:00"
+    }
   },
   "notion": {
     "access": "mcp",
@@ -105,11 +118,32 @@
           "Inbound": "Inbound",
           "Cold Outreach": "Cold Outreach",
           "Import": "Import"
+        },
+        "designation": {
+          "Founder": "Founder",
+          "CEO": "CEO",
+          "CXO": "CXO",
+          "VP": "VP",
+          "Manager": "Manager",
+          "Individual Contributor": "Individual Contributor"
         }
       },
-      "campaigns": {
-        "status": {"Review": "Review", "Active": "Active", "Paused": "Paused", "Completed": "Completed"},
-        "type": {"LinkedIn": "LinkedIn", "Email": "Email", "Mixed": "Mixed", "Warm Intro": "Warm Intro"}
+      "companies": {
+        "icp": {
+          "Strong fit": "Strong fit",
+          "Fit": "Fit",
+          "Not a fit": "Not a fit"
+        },
+        "vertical": {
+          "SaaS": "SaaS",
+          "Fintech": "Fintech",
+          "Healthcare": "Healthcare",
+          "E-commerce": "E-commerce",
+          "Developer Tools": "Developer Tools",
+          "AI / ML": "AI / ML",
+          "Services": "Services",
+          "Other": "Other"
+        }
       },
       "pipeline": {
         "stage": {
@@ -121,6 +155,25 @@
           "Won": "Won",
           "Lost": "Lost",
           "On Hold": "On Hold"
+        },
+        "likelihood": {
+          "High": "High",
+          "Medium": "Medium",
+          "Low": "Low"
+        }
+      },
+      "campaigns": {
+        "status": {
+          "Review": "Review",
+          "Active": "Active",
+          "Paused": "Paused",
+          "Completed": "Completed"
+        },
+        "type": {
+          "LinkedIn": "LinkedIn",
+          "Email": "Email",
+          "Mixed": "Mixed",
+          "Warm Intro": "Warm Intro"
         }
       },
       "meetings": {
@@ -135,7 +188,14 @@
       }
     },
     "select_payload": {},
-    "funnel_page_id": "00000000000000000000000000000006"
+    "funnel_page_id": "00000000000000000000000000000006",
+    "views": {
+      "contacts": "",
+      "companies": "",
+      "pipeline": "",
+      "campaigns": "",
+      "meetings": ""
+    }
   },
   "adapters": {
     "email": "gmail",
@@ -144,7 +204,10 @@
     "meetings": [],
     "outreach": [],
     "enrichment": [],
-    "notify": {"kind": "push", "slack_channel": ""}
+    "notify": {
+      "kind": "push",
+      "slack_channel": ""
+    }
   },
   "sending": {
     "mode": "live",
@@ -156,21 +219,30 @@
   },
   "sweep": {
     "first_run_lookback_days": 7,
-    "calendar_lookahead_days": 7
+    "calendar_lookahead_days": 7,
+    "max_meeting_attendees": 15
   },
   "funnel": {
     "start_month": null,
-    "pilot_stages": ["Pilot"],
-    "customer_stages": ["Won"],
-    "warm_lead_sources": ["Warm Intro"],
-    "inbound_lead_sources": ["Inbound"],
+    "pilot_stages": [
+      "Pilot"
+    ],
+    "customer_stages": [
+      "Won"
+    ],
+    "warm_lead_sources": [
+      "Warm Intro"
+    ],
+    "inbound_lead_sources": [
+      "Inbound"
+    ],
     "drop_tolerance_pct": 0,
     "rise_tolerance_pct": 25,
     "max_blank_pct": 10,
     "inbound": []
   },
   "paths": {
-    "voice": "~/.config/gtm/voice.md",
-    "icp": "~/.config/gtm/icp.md"
+    "voice": "",
+    "icp": ""
   }
 }

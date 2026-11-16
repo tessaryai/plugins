@@ -15,14 +15,14 @@ Limit of the fallback: Instantly lists leads only with a POST request, which the
 ## Preflight check
 
 - Connector: list campaigns. A result or an empty list is ok.
-- API: `python3 -I ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py instantly check` (reads `/api/v2/campaigns`). Exit 0 ok, exit 2 blocked.
+- API: `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py instantly check` (reads `/api/v2/campaigns`). Exit 0 ok, exit 2 blocked.
 
 ## Read procedure
 
-`RO` means `python3 -I ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py instantly get`. Write output to the scratchpad. Parameter and field names below are from the Instantly v2 docs at the time of writing and were not checked with a live key; if a response differs, use the live names and record the change under Decisions.
+`RO` means `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py instantly get`. Write output to the scratchpad. Parameter and field names below are from the Instantly v2 docs at the time of writing and were not checked with a live key; if a response differs, use the live names and record the change under Decisions.
 
 1. Campaigns: `RO /api/v2/campaigns --param limit=100 --out <s>/in-campaigns.json`, following `next_starting_after` with `--param starting_after=<value>` until it is absent.
-2. Emails per campaign: `RO /api/v2/emails --param campaign_id=<id> --param limit=100 [--param starting_after=<value>] --out <s>/in-emails-<id>-<n>.json`. Results are newest first. Stop at the first email at or before the campaign's cursor; with no cursor, read back to the campaign's first email on the first run. Follow `next_starting_after` until it is absent.
+2. Emails per campaign: `RO /api/v2/emails --param campaign_id=<id> --param limit=100 [--param starting_after=<value>] --out <s>/in-emails-<id>-<n>.json`. Results are newest first. Stop at the first email at or before the campaign's cursor; with no cursor, read back `sweep.first_run_lookback_days` days only, unless the user asked for full history in this run (`${CLAUDE_PLUGIN_ROOT}/skills/sweep/references/outreach-mirror.md`, How far back). Follow `next_starting_after` until it is absent.
 3. For each email take: `id`, the timestamp (convert to `owner.timezone`), the lead email, sender and recipient addresses, subject, the direction (sent by the campaign or received from the lead), and for received mail the body text.
 
 | Email | Event `kind` | `text` |
@@ -31,6 +31,7 @@ Limit of the fallback: Instantly lists leads only with a POST request, which the
 | Received from the lead, normal reply | `reply` | the verbatim reply text without quoted history |
 | Received, auto-reply | `reply` with `detail.auto: true` | the text |
 | Delivery failure for the lead address | `bounce` | `Email bounced` |
+| Anything else (unknown type or direction) | no event and no CRM change; listed under Decisions | |
 
 A lead marked "not interested" or "unsubscribed" in Instantly is a `negative` event only when the connector exposes that label; the sweep still reads the reply text.
 
@@ -54,7 +55,7 @@ Write the full merged map. A failed campaign keeps its old value.
 
 ## Blocked signs and fix
 
-- Exit 2 or a connector auth error: "Save a working Instantly API key (v2, read scopes): run `python3 -I <plugin root>/lib/config.py set-secret instantly_api_key` in a terminal, or reconnect the Instantly connector."
+- Exit 2 or a connector auth error: "Save a working Instantly API key (v2, read scopes): run `python3 -I -B <plugin root>/lib/config.py set-secret instantly_api_key` in a terminal, or reconnect the Instantly connector."
 - Exit 1 (refused path): report under Needs you; never edit the allowlist.
 
 ## Write / send capability

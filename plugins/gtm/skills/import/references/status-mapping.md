@@ -5,7 +5,7 @@ Detail for `/gtm:import` step 4. The user confirms every mapping. These are prop
 ## How to build the table
 
 1. Count the distinct values of the mapped status column (`status_source` in the plan, or the raw column before the plan).
-2. For each value, propose a logical status. `csv_import.py` already guesses one (`status_suggested`); use the tables below to correct it, because the script maps a plain `Lead` to `New` (in most CRMs "lead" is an early stage, not a deal).
+2. For each value, propose a logical status. `csv_import.py` already guesses one (`status_suggested`) from the tables below; this file is the source of truth for the script. A value the tables mark `ask`, or do not list, gets a warning and a suggested `New`: ask the user. A plain `Lead` maps to `New` (in most CRMs "lead" is an early stage, not a deal).
 3. Show: source value, rows, proposed logical status. Ask for corrections. Save `{"<source value>": "<logical status>"}` to `<run>/status_table.json`.
 4. A blank value maps to `New`.
 
@@ -28,6 +28,8 @@ The logical statuses are `New`, `Contacted`, `Responded`, `Discovery`, `Lead`, `
 | Unqualified (lead status), Bad timing | Disqualified (confirm) |
 | other | ask |
 
+The script also reads HubSpot's internal values: `subscriber`, `lead`, `marketingqualifiedlead`, `salesqualifiedlead`, `opportunity`, `customer`, `evangelist`, `other` (lifecycle stage) and `NEW`, `OPEN`, `IN_PROGRESS`, `OPEN_DEAL`, `UNQUALIFIED`, `ATTEMPTED_TO_CONTACT`, `CONNECTED`, `BAD_TIMING` (lead status).
+
 When both lifecycle stage and lead status exist, map the one that tells more about outreach (usually lead status) and keep the other in Notes as an extra column.
 
 ### Pipedrive
@@ -42,9 +44,19 @@ Pipedrive persons have no standard status. Use, in order: a custom person field 
 | only lost deals | keep the derived status; put `Deal lost: <reason>` in Notes |
 | `marketing_status` = unsubscribed | Do Not Contact |
 
+Common Pipedrive values used as a status (labels, default deal stages, `marketing_status`):
+
+| Value | Proposed |
+|---|---|
+| Lead In, Cold lead, subscribed | New |
+| Contact Made | Contacted |
+| Demo Scheduled, Needs Defined | Discovery |
+| Proposal Made, Negotiations Started, Customer, won | Lead |
+| Hot lead, Warm lead, lost, no_consent | ask |
+
 ### Attio
 
-Map the values of the status or stage attribute the user names on the People object or the list they import from. Propose by meaning with the generic table below.
+Map the values of the status or stage attribute the user names on the People object or the list they import from. Propose by meaning with the generic table below. Common Attio list stages: `Lead` → New, `In Progress` → Contacted, `Won` → Lead, `Lost` → ask.
 
 ### Salesforce (CSV export)
 

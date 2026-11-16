@@ -15,14 +15,14 @@ Limit of the fallback: Apollo lists and searches contacts, sequence members and 
 ## Preflight check
 
 - Connector: list sequences (or the closest read tool). A result or an empty list is ok.
-- API only: `python3 -I ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py apollo check`. Exit 2 blocked. Exit 0 still means blocked for the mirror (no list access); report it with the connector fix.
+- API only: `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py apollo check`. Exit 2 blocked. Exit 0 still means blocked for the mirror (no list access); report it with the connector fix.
 
 ## Read procedure
 
 With a connector only (see Tool for why the API alone cannot list):
 
 1. List sequences. Keep id, name, active state and channels.
-2. For each sequence, list its contact activity or messages since the sequence's cursor, following every page or cursor. With no cursor, read back to the sequence's first activity on the first run.
+2. For each sequence, list its contact activity or messages since the sequence's cursor, following every page or cursor. With no cursor, read back `sweep.first_run_lookback_days` days only, unless the user asked for full history in this run (`${CLAUDE_PLUGIN_ROOT}/skills/sweep/references/outreach-mirror.md`, How far back).
 3. For each item take: a stable id, the timestamp (convert to `owner.timezone`), the contact email and LinkedIn URL, name, title, company name and domain, the step type (email, LinkedIn, call, task), and for replies the text.
 
 | Apollo activity | Event `kind` | `text` |
@@ -33,7 +33,7 @@ With a connector only (see Tool for why the API alone cannot list):
 | Bounce | `bounce` | `Email bounced` |
 | Unsubscribe or opt-out | `negative` with `detail.unsubscribed: true` | `Unsubscribed in Apollo` |
 | Opens, clicks, calls and tasks not completed | dropped | |
-| Unknown activity | no event; listed under Decisions | |
+| Unknown activity | no event and no CRM change; listed under Decisions | |
 
 ## Output
 

@@ -2,27 +2,29 @@
 """Load, validate and edit the gtm plugin configuration.
 
 Runtime files live outside the plugin folder, because a plugin update
-replaces that folder:
+replaces that folder. The default folder is ~/.config/gtm; set
+GTM_CONFIG_DIR to use another folder (tests, a second workspace). Run
+"config.py paths" to print the real locations:
 
-  ~/.config/gtm/config.json       settings (no secrets)
-  ~/.config/gtm/credentials.json  Notion token and API keys, mode 600
-  ~/.config/gtm/state.json        per-adapter cursors
-  ~/.config/gtm/logs.md           run log
+  config.json       settings (no secrets)
+  credentials.json  Notion token and API keys, mode 600
+  state.json        per-adapter cursors
+  logs.md           run log
+  imports/          import work folders
+  voice.md, icp.md  default voice and ICP files (paths.voice, paths.icp)
 
-Set GTM_CONFIG_DIR to use another folder (tests, a second workspace).
+Usage (run as python3 -I -B so no local file can shadow a module):
 
-Usage (run as python3 -I so no local file can shadow a module):
-
-  python3 -I config.py show                 # config with defaults, secrets masked
-  python3 -I config.py check                # validate; exit 0 ok, 1 errors
-  python3 -I config.py get notion.field_map.contacts.status
-  python3 -I config.py set sending.mode dry-run      # value parsed as JSON, else string
-  python3 -I config.py init                 # write config.json from the template if absent
-  python3 -I config.py paths                # print the runtime file locations
-  python3 -I config.py set-secret notion_token       # hidden prompt, needs a terminal
-  python3 -I config.py has-secret notion_token       # exit 0 set, 1 not set; prints nothing secret
-  python3 -I config.py state-get [adapter]  # print state.json or one adapter's cursor
-  python3 -I config.py state-set <adapter> '<json>'  # replace one adapter's cursor
+  python3 -I -B config.py show                 # config with defaults, secrets masked
+  python3 -I -B config.py check                # validate; exit 0 ok, 1 errors
+  python3 -I -B config.py get notion.field_map.contacts.status
+  python3 -I -B config.py set sending.mode dry-run      # value parsed as JSON, else string
+  python3 -I -B config.py init                 # write config.json from the template if absent
+  python3 -I -B config.py paths                # print the runtime file locations
+  python3 -I -B config.py set-secret notion_token       # hidden prompt, needs a terminal
+  python3 -I -B config.py has-secret notion_token       # exit 0 set, 1 not set; prints nothing secret
+  python3 -I -B config.py state-get [adapter]  # print state.json or one adapter's cursor
+  python3 -I -B config.py state-set <adapter> '<json>'  # replace one adapter's cursor
 
 Library use from another lib script:
 
@@ -114,6 +116,16 @@ def expand(path_value: str) -> Path:
     return Path(os.path.expanduser(path_value))
 
 
+def imports_dir() -> Path:
+    return config_dir() / "imports"
+
+
+def resolve_path(cfg: dict, key: str) -> Path:
+    """paths.voice / paths.icp; empty means <config dir>/<key>.md (follows GTM_CONFIG_DIR)."""
+    value = ((cfg or {}).get("paths") or {}).get(key) or ""
+    return expand(value) if value else config_dir() / f"{key}.md"
+
+
 # ---------------------------------------------------------------- defaults
 
 def load_schema() -> dict:
@@ -156,6 +168,7 @@ def defaults() -> dict:
             "option_map": option_map,
             "select_payload": {},
             "funnel_page_id": "",
+            "views": {db: "" for db in DATABASES},
         },
         "adapters": {
             "email": "gmail",
@@ -174,7 +187,7 @@ def defaults() -> dict:
             "reply_lookback_days": 30,
             "event_window_days": 14,
         },
-        "sweep": {"first_run_lookback_days": 7, "calendar_lookahead_days": 7},
+        "sweep": {"first_run_lookback_days": 7, "calendar_lookahead_days": 7, "max_meeting_attendees": 15},
         "funnel": {
             "start_month": None,
             "pilot_stages": ["Pilot"],
@@ -186,7 +199,7 @@ def defaults() -> dict:
             "max_blank_pct": 10,
             "inbound": [],
         },
-        "paths": {"voice": "~/.config/gtm/voice.md", "icp": "~/.config/gtm/icp.md"},
+        "paths": {"voice": "", "icp": ""},
     }
 
 
@@ -407,6 +420,18 @@ def _is_placeholder(value: str) -> bool:
     return not value or bool(_PLACEHOLDER_RE.match(value.replace("-", "")))
 
 
+_NOTION_ID_RE = re.compile(r"([0-9a-fA-F]{32})")
+
+
+def _notion_id_ok(value: str) -> bool:
+    """True when value holds a 32-hex Notion id (dashes optional, URL allowed) that is not a template placeholder."""
+    match = _NOTION_ID_RE.search(str(value).replace("-", ""))
+    return bool(match) and not _is_placeholder(match.group(1))
+
+
+_TEMPLATE_DOMAINS = ("example.com", "example.org", "example.net")
+
+
 def validate(cfg: dict) -> list:
     """Return a list of (level, message); level is 'error' or 'warning'."""
     issues = []
@@ -420,10 +445,21 @@ def validate(cfg: dict) -> list:
     owner = cfg.get("owner", {})
     if not owner.get("name"):
         warn("owner.name is empty")
+    elif owner.get("name") == "Your Name":
+        err("owner.name still holds the template value 'Your Name'")
     if not owner.get("emails"):
         err("owner.emails is empty; the sweep cannot tell your own mail from a contact's")
+    for addr in owner.get("emails") or []:
+        if str(addr).lower().split("@")[-1] in _TEMPLATE_DOMAINS:
+            err(f"owner.emails holds the template address {addr!r}")
     if not owner.get("own_domains"):
         warn("owner.own_domains is empty; calendar attendees on your domain will look external")
+    for dom in owner.get("own_domains") or []:
+        if str(dom).lower() in _TEMPLATE_DOMAINS:
+            err(f"owner.own_domains holds the template domain {dom!r}")
+    sender = str((cfg.get("sending") or {}).get("sender_email") or "")
+    if sender and sender.lower().split("@")[-1] in _TEMPLATE_DOMAINS:
+        err(f"sending.sender_email holds the template address {sender!r}")
     try:
         from zoneinfo import ZoneInfo
         ZoneInfo(owner.get("timezone") or "")
@@ -443,10 +479,18 @@ def validate(cfg: dict) -> list:
         err("notion.access must be 'mcp' or 'rest'")
     if notion.get("access") == "rest" and not get_secret("notion_token"):
         err("notion.access is 'rest' but no notion_token is saved; run set-secret notion_token or set access to 'mcp'")
+    if not _notion_id_ok(notion.get("parent_page_id", "")):
+        err("notion.parent_page_id is empty, a placeholder or not a Notion id (32 hex characters); run /gtm:setup")
     for db in DATABASES:
         value = (notion.get("data_sources") or {}).get(db, "")
         if _is_placeholder(str(value)):
             err(f"notion.data_sources.{db} is empty or a placeholder; run /gtm:setup")
+        elif not _notion_id_ok(value):
+            err(f"notion.data_sources.{db} {value!r} is not a Notion data source id (32 hex characters, dashes optional)")
+    if notion.get("access") == "mcp":
+        missing_views = [db for db in DATABASES if not (notion.get("views") or {}).get(db)]
+        if missing_views:
+            warn(f"notion.views has no view URL for {', '.join(missing_views)}; MCP index reads need a view URL (rows and SQL mode have a small workspace quota); run /gtm:setup databases to record them")
     try:
         field_defaults, option_defaults = schema_defaults()
     except (OSError, json.JSONDecodeError):
@@ -473,10 +517,13 @@ def validate(cfg: dict) -> list:
             if gaps:
                 warn(f"notion.option_map.{db}.{logical_field} has no option for {', '.join(gaps)}")
     for prop_ref, kind in (notion.get("select_payload") or {}).items():
-        if kind not in ("select", "status"):
+        if isinstance(kind, dict):
+            err(f"notion.select_payload.{prop_ref} is nested; use a flat key, for example: "
+                f"config.py set 'notion.select_payload' '{{\"{prop_ref}.<field>\": \"status\"}}'")
+        elif kind not in ("select", "status"):
             err(f"notion.select_payload.{prop_ref} must be 'select' or 'status'")
     if _is_placeholder(str(notion.get("funnel_page_id", ""))):
-        warn("notion.funnel_page_id is empty; /gtm:funnel creates the Funnel page under notion.parent_page_id on its first run")
+        warn("notion.funnel_page_id is empty; setup normally creates the Funnel page, and /gtm:funnel creates it under notion.parent_page_id if it is still missing")
 
     adapters = cfg.get("adapters", {})
     for kind in ("email", "calendar", "linkedin"):
@@ -542,11 +589,9 @@ def validate(cfg: dict) -> list:
                 warn(f"funnel.{key} names {name!r}, which has no notion.option_map.pipeline.stage entry")
 
     for key in ("voice", "icp"):
-        value = (cfg.get("paths") or {}).get(key)
-        if not value:
-            err(f"paths.{key} is empty")
-        elif not expand(value).exists():
-            warn(f"paths.{key} file {value} does not exist yet")
+        path = resolve_path(cfg, key)
+        if not path.exists():
+            warn(f"paths.{key} file {path} does not exist yet")
 
     for dotted in _secret_like_keys(cfg):
         err(f"{dotted} looks like a secret; secrets belong in credentials.json (set-secret), not config.json")
@@ -593,6 +638,9 @@ def _paths_dict() -> dict:
         "credentials": str(credentials_path()),
         "state": str(state_path()),
         "run_log": str(log_path()),
+        "imports": str(imports_dir()),
+        "voice": str(resolve_path(load() if config_path().exists() else {}, "voice")),
+        "icp": str(resolve_path(load() if config_path().exists() else {}, "icp")),
         "config_exists": config_path().exists(),
     }
 
@@ -673,7 +721,7 @@ def _cmd_state_set(args) -> int:
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(
-        description="gtm plugin configuration (~/.config/gtm). Never prints secret values.")
+        description="gtm plugin configuration (default folder ~/.config/gtm, or GTM_CONFIG_DIR). Never prints secret values.")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("show", help="print config with defaults; secrets masked").set_defaults(func=_cmd_show)
     sub.add_parser("check", help="validate config; exit 1 on errors").set_defaults(func=_cmd_check)

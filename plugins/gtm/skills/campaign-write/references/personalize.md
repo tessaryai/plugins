@@ -4,13 +4,13 @@ Per-contact copy is the part of a campaign most likely to go wrong: a wrong fact
 
 ## Which contacts
 
-From the contacts linked to the campaign (Contacts query with the `campaign` relation filter), skip and record the reason for:
+From the contacts linked to the campaign (the Contacts read in SKILL.md step 2.6, matched by page id), skip and record the reason for:
 
 - Suppressed contacts (`${CLAUDE_PLUGIN_ROOT}/reference/crm-rules.md`, DNC rule), and pages with `Automated outreach paused`.
 - Contacts whose page already has a `[GTM:<campaign_key>:` marker (the campaign already started for them) or a `[GTM:<campaign_key>:STOP]` marker.
 - Contacts whose page already has a `<campaign_key> Step <n> <channel>` heading for a step you would write, or a `Run fields:` line that cannot be reused (see Contact page block). Do not append a second one. List them under Needs you: "edit by hand or delete the old block first".
 
-Read each contact page body once (REST `blocks` with a token, else `notion-fetch`) and keep it for these checks and for the `Source fields:` and `Signal:` lines campaign-build wrote.
+Read each contact page body once (REST `blocks` with a token, else `notion-fetch` with the un-escaping in `page-writes.md`, Verify) and keep it for these checks and for the `Source fields:` and `Signal:` lines campaign-build wrote.
 
 ## Research
 
@@ -41,20 +41,24 @@ For a contact without enough signal:
 
 ## Contact page block
 
-Append one block per contact, at the end of the page, in this order (Notion-flavored Markdown through `insert_content`; see `page-writes.md`):
+Append one block per contact, at the end of the page, in this order (Notion-flavored Markdown through `insert_content`; see `page-writes.md`). Put a blank line between every line, heading and code block, and label each copy fence `plain text`:
 
 ````
 Run fields: first_name=Ada; company=Analytical Engines; subject_4=London and outbound
 
 ## q1-fintech-founders Step 3 LinkedIn
-```
+
+```plain text
 Thanks for connecting, Ada. Saw that Analytical Engines just opened a London office ...
 ```
+
 Source: opened a London office — https://news.example/analytical-london (read 2026-11-16)
 
 ## q1-fintech-founders Step 4 email
+
 Subject: London and outbound
-```
+
+```plain text
 Hi Ada,
 
 ...
@@ -62,7 +66,9 @@ Hi Ada,
 Best,
 Sam
 ```
+
 Source: opened a London office — https://news.example/analytical-london (read 2026-11-16)
+
 Source: hiring two account executives — https://analytical.example/careers (read 2026-11-16)
 ````
 
@@ -70,7 +76,7 @@ Source: hiring two account executives — https://analytical.example/careers (re
 - The copy is the first code block under the heading. Plain text, no placeholders.
 - For email, the `Subject:` line comes after the heading and before the code block.
 - One `Source:` line per claim in the copy: `Source: <claim> — <url> (read YYYY-MM-DD)`. Facts from the CRM use `Source: <claim> — CRM record`. Neutralize outside text in these lines (`[GTM:` becomes `(GTM:`; `${CLAUDE_PLUGIN_ROOT}/reference/crm-rules.md`, Outside text in log lines).
-- `Run fields:` is one line, `key=value` pairs joined by `; `. Include every placeholder used by campaign-page copy (and `subject_<n>` when a follow-up uses it). Write the line once per contact page. If the contact already has a `Run fields:` line from an earlier campaign that holds every key this campaign needs with correct values, reuse it and write no new line; otherwise list the contact under Needs you.
+- `Run fields:` is one line, `key=value` pairs joined by `; `. Include every placeholder used by the campaign-page copy of the steps this contact will receive (and `subject_<n>` when a follow-up uses it). A contact who gets only LinkedIn steps needs no email subject; a contact who gets only email steps needs no LinkedIn-only field. Write the line once per contact page. If the contact already has a `Run fields:` line from an earlier campaign that holds every key this campaign needs with correct values, reuse it and write no new line; otherwise list the contact under Needs you.
 - When a later step uses `{{subject_<n>}}`, the value equals the `Subject:` line written under that step heading, character for character.
 - Only write the blocks the campaign needs. If no step uses the contact page and no placeholder is used, write nothing.
 

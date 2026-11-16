@@ -4,9 +4,9 @@ campaign-run sends the copy exactly as written. Write it as the final message, n
 
 ## Voice
 
-1. Follow the voice file (`paths.voice`) in this order of weight: the sample messages (copy their rhythm, not their words), then Never use, then Shape, then Tone.
-2. If the session has a skill for writing in the user's voice, draft with it and check the result against the voice file's Never use list.
-3. Without a voice file, write plain and short: peer to peer, one specific observation, one question, one low-effort ask, the user's first name as the sign-off.
+1. Follow the voice file (the `voice` path printed by `config.py paths`) in this order of weight: the sample messages (copy their rhythm, not their words), then Never use, then Shape, then Tone.
+2. If the session has the user's own writing-voice skill (SKILL.md step 2.2), draft with it as well. Where it disagrees with the voice file, the voice file wins. Check every draft against the voice file's Never use list.
+3. Without a voice file, write plain and short: peer to peer, one specific observation, one question, one low-effort ask, and no sign-off. Say in the report that no voice file was used.
 4. Write as the user (`owner.name`), in the first person. Never claim a customer, a result, a number or a feature the user did not state in the voice file, the ICP or this conversation.
 
 ## Length and shape
@@ -23,7 +23,7 @@ Unless the voice file says otherwise:
 - One idea per message. One question or one ask, not both stacked.
 - Plain text. No bold, no bullet lists, no emoji, no HTML, no Markdown inside the code block.
 - Short paragraphs with a blank line between them. campaign-run keeps the line breaks exactly.
-- Sign-off as in the voice file. Email copy includes the sign-off, because campaign-run sends without an added signature.
+- Sign-off: use the voice file's `Sign-off:` line exactly; a ` / ` in it is a line break. A sign-off written as a block of lines (older voice files) is used as is. Email copy includes it, because campaign-run sends without an added signature. If the voice file has no sign-off (the section is empty, says `none`, or is still in angle brackets), use none, never invent one, and say so in the report.
 
 ## Links
 

@@ -34,7 +34,7 @@ Ask in one message, with your best guesses filled in (for example the connected 
 
 ## Config keys
 
-Set each with `python3 -I ${CLAUDE_PLUGIN_ROOT}/lib/config.py set <key> '<json>'`. Values are parsed as JSON, else kept as a string. Quote JSON in single quotes.
+Set each with `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/config.py set <key> '<json>'`. Values are parsed as JSON, else kept as a string. Quote JSON in single quotes.
 
 | Key | Example value |
 |---|---|
@@ -59,7 +59,7 @@ Set each with `python3 -I ${CLAUDE_PLUGIN_ROOT}/lib/config.py set <key> '<json>'
 | `sending.sender_email` | address |
 | `sending.linkedin_daily_invite_cap` | `10` |
 | `sending.email_daily_cap` | `40` |
-| `paths.voice` / `paths.icp` | keep the defaults `~/.config/gtm/voice.md`, `~/.config/gtm/icp.md` |
+| `paths.voice` / `paths.icp` | keep the default `""` (the voice and ICP files in the config folder; `config.py paths` prints them) |
 
 The rest (`sending.reply_lookback_days`, `sending.event_window_days`, `sweep.*`, `funnel.*`) keep their defaults unless the user asks. Their meaning is in `${CLAUDE_PLUGIN_ROOT}/reference/config.md`.
 

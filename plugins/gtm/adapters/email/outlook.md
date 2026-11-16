@@ -49,7 +49,9 @@ Same events and rules as Gmail (Output). `source` is `outlook`. `external_id` is
 {"after": "YYYY-MM-DD", "updated": "<ISO timestamp>"}
 ```
 
-Moves to today only when all three queries were read to the last page.
+Moves to today only when all three queries were read to the last page. When an outreach adapter was incomplete in this run, it moves no later than the earliest unmirrored event date (`${CLAUDE_PLUGIN_ROOT}/skills/sweep/references/batch.md`, Cursors).
+
+As with Gmail: keep list pages small enough for the tool's output limit, dedupe conversations that appear in both the inbox and Sent Items queries, and filter messages by their own date, because a conversation can carry messages older than the window.
 
 ## Blocked signs and fix
 

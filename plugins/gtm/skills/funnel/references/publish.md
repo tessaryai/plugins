@@ -10,7 +10,7 @@ Publishing always uses the Notion MCP tools (`notion-fetch`, `notion-create-page
    - The result is a database or a data source, not a page: stop and report under Needs you. Never replace a database.
 3. Not set, and `notion.parent_page_id` is set: create the page, unless the run is a dry run.
    - `notion-create-pages` with the parent page as parent (check the schema for the page-parent shape), title `Funnel`, content `As of: not run yet. Run /gtm:funnel to fill this page.` (from `${CLAUDE_PLUGIN_ROOT}/templates/schema.json`, `pages[0]`).
-   - Save the new id: `python3 -I ${CLAUDE_PLUGIN_ROOT}/lib/config.py set notion.funnel_page_id <id>`.
+   - Save the new id: `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/config.py set notion.funnel_page_id <id>`.
    - Record it under Decisions ("created the Funnel page under <parent title> (was: not set)").
 4. Not set, and no parent page: do not publish. Under Needs you: "Pick the page for the funnel: run /gtm:setup, or set notion.funnel_page_id to an empty page."
 

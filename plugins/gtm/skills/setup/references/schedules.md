@@ -16,9 +16,9 @@ Run sweep before campaign-run on the same day, so replies stop sequences before 
 
 1. Desktop scheduled-tasks tools present (`create_scheduled_task`, found in step 1): use them. They run locally while the Claude desktop app is open, so Claude in Chrome works. Tell the user: "A task due while the app is closed runs the next time you open it."
    - The cron expression is in the machine's local time. If the machine's time zone differs from `owner.timezone`, convert the times and say so.
-   - Call `list_scheduled_tasks` first. If a gtm task exists (ids `gtm-sweep`, `gtm-campaign-run`, `gtm-funnel`), update it with `update_scheduled_task` instead of creating a second one.
+   - Call `list_scheduled_tasks` first. Look for existing routines that do the same job: a task id `gtm-sweep`, `gtm-campaign-run` or `gtm-funnel`, and ALSO any task whose id, title or description mentions a CRM sweep, a campaign run or sender, or a funnel report (for example a routine the user built before this plugin). Show every match to the user and ask, per routine, whether to update it, replace it (disable the old one and create the gtm task), or keep both. Never create a second sweep or a second campaign sender next to an existing one without an explicit yes: two senders can send the same step twice.
 2. No scheduled-tasks tools: explain the two options and let the user choose:
-   - `/schedule` creates a cloud routine. Say both limits plainly. (1) Every gtm skill reads `~/.config/gtm/config.json`, `state.json` and `credentials.json` on this machine. A cloud run does not have them, so it fails at preflight unless the user sets up the same config there. (2) Cloud runs have no Chrome, so the LinkedIn adapter is blocked there every day. Recommend a local option for every routine, funnel included.
+   - `/schedule` creates a cloud routine. Say both limits plainly. (1) Every gtm skill reads the config, state and credentials files in the gtm config folder on this machine (`config.py paths`). A cloud run does not have them, so it fails at preflight unless the user sets up the same config there. (2) Cloud runs have no Chrome, so the LinkedIn adapter is blocked there every day. Recommend a local option for every routine, funnel included.
    - `/loop` repeats a command in an open Claude Code session on this machine, for example `/loop 24h /gtm:sweep`. It stops when the session ends.
    Give the exact commands; do not run them yourself unless the user asks.
 
@@ -33,13 +33,13 @@ Each run starts with no memory of this session, so each prompt must stand alone.
 sweep:
 
 ```
-Run /gtm:sweep. It is the gtm plugin's daily CRM sweep: it reads the adapters in ~/.config/gtm/config.json and updates the Notion CRM. It never sends a message. Follow the skill exactly, report BLOCKED items first, and send one notification if anything is blocked. Never sign in, re-authorize or solve a CAPTCHA.
+Run /gtm:sweep. It is the gtm plugin's daily CRM sweep: it reads the adapters in the gtm config and updates the Notion CRM. It never sends a message. Follow the skill exactly, report BLOCKED items first, and send one notification if anything is blocked. Never sign in, re-authorize or solve a CAPTCHA.
 ```
 
 campaign-run:
 
 ```
-Run /gtm:campaign-run<" dry-run" when chosen>. It is the gtm plugin's campaign sender. It sends only for Notion campaigns with Status Active, only the steps and text on the campaign and contact pages, with every gate in the skill (DNC, reply stop, working days and send window, daily caps, verify before marker). Follow the skill exactly, report BLOCKED items first, and send one notification if anything is blocked. Never sign in, re-authorize or solve a CAPTCHA.
+Run /gtm:campaign-run<" dry-run" when `sending.mode` is dry-run or the user declined live sends>. It is the gtm plugin's campaign sender. It sends only for Notion campaigns with Status Active, only the steps and text on the campaign and contact pages, with every gate in the skill (DNC, reply stop, working days and send window, daily caps, verify before marker). Follow the skill exactly, report BLOCKED items first, and send one notification if anything is blocked. Never sign in, re-authorize or solve a CAPTCHA.
 ```
 
 funnel:

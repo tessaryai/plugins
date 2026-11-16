@@ -3,7 +3,7 @@
 
 The model never counts. This script does all counting, from an export of
 Contacts and Pipeline (deals) rows, and writes the tables that /gtm:funnel
-publishes. It never writes to Notion. Python 3 stdlib only. Run as python3 -I.
+publishes. It never writes to Notion. Python 3 stdlib only. Run as python3 -I -B.
 
 Commands:
 
@@ -12,6 +12,19 @@ Commands:
       Pipeline row and writes DIR/contacts.json and DIR/deals.json in the
       export format below. Without a token, /gtm:funnel builds the same two
       files from Notion MCP query results instead.
+
+  funnel.py normalize --in RAW [--in RAW2 ...] --out ROWS.json [--db contacts|pipeline]
+      Takes Notion MCP view-mode query results as the tool returned them (a
+      JSON array of rows, an object with a "results", "rows", "pages" or
+      "data" array, or the tool's text with such a JSON array or object
+      inside) and writes one JSON array of rows. Every row gets each property
+      that run reads for that database (from notion.field_map); a missing key
+      is added with null. A date property is added as "date:<property>:start"
+      (the MCP form) unless the row has it under the plain property name.
+      Other properties use the plain property name. Nothing else changes.
+      Without --db, the database is inferred from which mapped property
+      names occur in the rows; pass --db when the rows hold too few
+      properties to tell.
 
   funnel.py run --contacts F [--contacts F2 ...] --deals F [--deals F2 ...]
                 [--out DIR] [--inbound F]
@@ -23,8 +36,8 @@ Commands:
         funnel_delta.txt    every count that changed since the baseline
         funnel_blanks.txt   counted contacts with no First Contacted date, or "none"
         funnel_summary.json totals and notes for the run report
-      The baseline (last accepted counts) lives in ~/.config/gtm/state.json
-      under adapters.funnel. It is saved only when every check passes, or
+      The baseline (last accepted counts) lives in the state file printed by
+      config.py paths (it follows GTM_CONFIG_DIR), under adapters.funnel. It is saved only when every check passes, or
       with --accept-baseline (use it only when the user asks). With
       --accept-baseline, baseline drop and rise checks are recorded as
       accepted; the other checks still apply. --no-save-baseline never saves
@@ -239,6 +252,113 @@ def load_rows(path) -> list:
     return [normalize_row(r) for r in data]
 
 
+# ---------------------------------------------------------------- normalize (MCP output)
+
+ROW_KEYS = ("results", "rows", "pages", "data")
+NEEDED_FIELDS = {"contacts": ("name", "status", "lead_source", "first_contacted", "deal"),
+                 "pipeline": ("name", "stage", "contacts")}
+DATE_FIELDS = {"first_contacted"}
+
+
+def _rows_from(data):
+    """Row list from parsed JSON, or None when the value holds no rows."""
+    if isinstance(data, dict):
+        for key in ROW_KEYS:
+            if isinstance(data.get(key), list):
+                return _rows_from(data[key])
+        return None
+    if not isinstance(data, list):
+        return None
+    # MCP content blocks: [{"type": "text", "text": "..."}]
+    if data and all(isinstance(x, dict) and x.get("type") == "text" and isinstance(x.get("text"), str)
+                    for x in data):
+        rows = []
+        for block in data:
+            found = _rows_from_text(block["text"])
+            if found:
+                rows.extend(found)
+        return rows
+    if all(isinstance(x, dict) for x in data):
+        return data
+    return None
+
+
+def _rows_from_text(text: str):
+    """Rows from raw tool text: whole-text JSON first, then the first JSON array or object inside."""
+    text = text.strip()
+    try:
+        found = _rows_from(json.loads(text))
+        if found is not None:
+            return found
+    except json.JSONDecodeError:
+        pass
+    decoder = json.JSONDecoder()
+    for i, ch in enumerate(text):
+        if ch not in "[{":
+            continue
+        try:
+            value, _end = decoder.raw_decode(text, i)
+        except json.JSONDecodeError:
+            continue
+        found = _rows_from(value)
+        if found is not None:
+            return found
+    return None
+
+
+def _needed(cfg: dict, db: str) -> list:
+    fm = (cfg["notion"].get("field_map") or {}).get(db) or {}
+    needed = []
+    for logical in NEEDED_FIELDS[db]:
+        name = fm.get(logical)
+        if not name:
+            raise InputError(f"config has no notion.field_map.{db}.{logical}")
+        needed.append((logical, name))
+    return needed
+
+
+def _infer_db(cfg: dict, rows: list) -> str:
+    """contacts or pipeline, from the mapped property names that occur in the rows."""
+    names = {db: {n for _, n in _needed(cfg, db)} for db in NEEDED_FIELDS}
+    keys = set()
+    for row in rows:
+        for k in row:
+            m = re.match(r"^date:(.+):start$", k)
+            keys.add(m.group(1) if m else k)
+    score = {db: len((names[db] - names[other]) & keys)
+             for db, other in (("contacts", "pipeline"), ("pipeline", "contacts"))}
+    if score["contacts"] == score["pipeline"]:
+        raise InputError("cannot tell whether the rows are contacts or pipeline rows; pass --db")
+    return max(score, key=score.get)
+
+
+def normalize_mcp(cfg: dict, db, paths):
+    """(db, rows) from raw MCP output files, with a key (null when absent) for every field run reads."""
+    rows = []
+    for path in paths:
+        try:
+            text = Path(path).read_text(encoding="utf-8")
+        except OSError:
+            raise InputError(f"cannot read {path}") from None
+        found = _rows_from_text(text)
+        if found is None:
+            raise InputError(f"{path} holds no JSON array of rows")
+        rows.extend(found)
+    if db is None:
+        db = _infer_db(cfg, rows) if rows else None
+    if db is None:
+        return "unknown", rows
+    needed = _needed(cfg, db)
+    for row in rows:
+        for logical, name in needed:
+            if logical in DATE_FIELDS:
+                if f"date:{name}:start" not in row and name not in row:
+                    row[f"date:{name}:start"] = None
+            elif name not in row:
+                row[name] = None
+    return db, rows
+
+
 # ---------------------------------------------------------------- helpers
 
 def months_range(start: str, end: str) -> list:
@@ -367,6 +487,11 @@ def compute(cfg: dict, contacts: list, deals: list, today: datetime.date, inboun
             blanks.append(f"{get_text(c, c_name) or '(no name)'} | {logical} | {source or '(no lead source)'} | {c['_id']}")
             continue
         counted.append((c, logical, source, first))
+    lead_n = sum(1 for c in contacts if status_actual.get(get_text(c, c_status)) == "Lead")
+    if not deals and lead_n:
+        notes.append(f"no deal is at a Pilot / Trial or Customer stage: the deals export is empty, but "
+                     f"contacts at Lead: {lead_n}; check the Pipeline export (notion.data_sources.pipeline and "
+                     "notion.views.pipeline) if deals exist")
     if unknown_status:
         notes.append("Status values not in notion.status_map, left out: "
                      + ", ".join(f"{k} ({v})" for k, v in sorted(unknown_status.items())))
@@ -482,10 +607,20 @@ def render(result: dict) -> str:
     return "\n\n".join(parts) + "\n"
 
 
+TABLE_STAGES = {"cold": COLD_STAGES, "warm": WARM_STAGES}
+
+
 def totals(result: dict) -> dict:
-    out = {k: dict(_total(v)) for k, v in result["tables"].items()}
+    """Totals per table; every stage of a table is present, 0 when nothing was counted."""
+    out = {}
+    for k, v in result["tables"].items():
+        row = {s: 0 for s in TABLE_STAGES.get(k, ())}
+        row.update(_total(v))
+        out[k] = row
     if result.get("inbound"):
-        out["inbound"] = dict(_total(result["inbound"]["rows"]))
+        row = {m: 0 for m in result["inbound"]["metrics"]}
+        row.update(_total(result["inbound"]["rows"]))
+        out["inbound"] = row
     return out
 
 
@@ -587,6 +722,17 @@ def cmd_run(args) -> int:
     print("CHECKS: " + ("; ".join(checks) or "ok"))
     print(f"baseline saved: {'yes' if saved else 'no'}")
     print(f"files: {out}")
+    return 0
+
+
+def cmd_normalize(args) -> int:
+    cfg = gtm_config.load()
+    db = "pipeline" if args.db == "deals" else args.db
+    db, rows = normalize_mcp(cfg, db, args.inputs)
+    out = Path(args.out).expanduser()
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(rows) + "\n", encoding="utf-8")
+    print(f"{db}: {len(rows)} rows -> {out}")
     return 0
 
 
@@ -706,6 +852,10 @@ def cmd_self_test(_args) -> int:
         (tmp / "cfg").mkdir()
         (tmp / "cfg" / "config.json").write_text(json.dumps(_self_test_config()), encoding="utf-8")
         contacts, deals = _self_test_data()
+
+        def cid(n):
+            return f"{n:08x}" + "0" * 24
+        cid13 = cid(13)
         cpath, dpath, out = tmp / "contacts.json", tmp / "deals.json", tmp / "out"
         cpath.write_text(json.dumps(contacts), encoding="utf-8")
         dpath.write_text(json.dumps({"results": deals}), encoding="utf-8")
@@ -796,6 +946,69 @@ def cmd_self_test(_args) -> int:
         code, checks = run()
         if "have a blank 'First touch'" not in checks:
             failures.append(f"blanks check not caught: {checks!r}")
+
+        # 7. No deals, a contact at Lead, no warm contacts: Lead note, zero totals (not {}).
+        cold_only = [c for c in contacts[:4]] + [
+            {"_id": cid13, "Person": "M", "Stage of contact": "Handed over", "Source": "Outbound",
+             "First touch": "2030-03-05", "Deals": []}]
+        cpath.write_text(json.dumps(cold_only), encoding="utf-8")
+        dpath.write_text("[]", encoding="utf-8")
+        code, checks = run(["--no-save-baseline"])
+        s = json.loads((out / "funnel_summary.json").read_text())
+        if not any("deals export is empty" in n and "contacts at Lead: 1" in n for n in s["notes"]):
+            failures.append(f"no-deal Lead note missing: {s['notes']!r}")
+        expect("warm totals zeros", s["totals"]["warm"],
+               {"contacted": 0, "discovery": 0, "pilot": 0, "customer": 0})
+        expect("cold pilot zero", s["totals"]["cold"].get("pilot"), 0)
+
+        # 8. normalize: a JSON array, a {"results": [...]} object and tool text with an array inside.
+        raw1, raw2, raw3, norm = tmp / "raw1.json", tmp / "raw2.json", tmp / "raw3.txt", tmp / "norm.json"
+        mcp_a = {"url": f"https://www.notion.so/{cid(20)}", "Person": "N", "Stage of contact": "Reached"}
+        mcp_b = {"url": f"https://www.notion.so/{cid(21)}", "Person": "O", "Stage of contact": "Replied",
+                 "Source": "Outbound", "date:First touch:start": "2030-03-06",
+                 "Deals": "[]"}
+        mcp_c = {"url": f"https://www.notion.so/{cid(22)}", "Person": "P", "First touch": "2030-03-07"}
+        raw1.write_text(json.dumps([mcp_a]), encoding="utf-8")
+        raw2.write_text(json.dumps({"results": [mcp_b], "has_more": False}), encoding="utf-8")
+        raw3.write_text("Query result (1 row):\n" + json.dumps([mcp_c]) + "\nhas_more: false\n", encoding="utf-8")
+        import contextlib
+        import io
+        with contextlib.redirect_stdout(io.StringIO()):
+            code = main(["normalize", "--in", str(raw1), "--in", str(raw2),
+                         "--in", str(raw3), "--out", str(norm)])
+        expect("normalize exit", code, 0)
+        rows = json.loads(norm.read_text())
+        expect("normalize rows", len(rows), 3)
+        if len(rows) == 3:
+            expect("added null source", rows[0].get("Source", "missing"), None)
+            expect("added null date (MCP form)", rows[0].get("date:First touch:start", "missing"), None)
+            expect("added null relation", rows[0].get("Deals", "missing"), None)
+            expect("kept date", rows[1].get("date:First touch:start"), "2030-03-06")
+            expect("plain date kept, no MCP key added", "date:First touch:start" in rows[2], False)
+            expect("added null status", rows[2].get("Stage of contact", "missing"), None)
+        dnorm = tmp / "dnorm.json"
+        raw1.write_text(json.dumps([{"url": f"https://www.notion.so/{'d' + '4' * 31}", "Deal": "Deal 4"}]),
+                        encoding="utf-8")
+        with contextlib.redirect_stdout(io.StringIO()):
+            code = main(["normalize", "--db", "pipeline", "--in", str(raw1), "--out", str(dnorm)])
+        drow = json.loads(dnorm.read_text())[0]
+        inferred = tmp / "inferred.json"
+        raw2.write_text(json.dumps({"results": [{"url": f"https://www.notion.so/{'d' + '5' * 31}",
+                                                 "Phase": "Trial"}]}), encoding="utf-8")
+        with contextlib.redirect_stdout(io.StringIO()):
+            code = main(["normalize", "--in", str(raw2), "--out", str(inferred)])
+        irow = json.loads(inferred.read_text())[0]
+        expect("inferred pipeline", (code, irow.get("People", "missing"), "Source" in irow), (0, None, False))
+        expect("pipeline keys", (drow.get("Phase", "missing"), drow.get("People", "missing")), (None, None))
+        cpath.write_text(json.dumps(rows), encoding="utf-8")
+        dpath.write_text(dnorm.read_text(), encoding="utf-8")
+        code, checks = run(["--no-save-baseline"])
+        if "is not in the contacts export" in checks or "is not in the deals export" in checks:
+            failures.append(f"normalized rows still miss a property: {checks!r}")
+        raw3.write_text("no rows here", encoding="utf-8")
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            code = main(["normalize", "--db", "contacts", "--in", str(raw3), "--out", str(norm)])
+        expect("normalize rejects text without rows", code, 1)
     finally:
         if old_env is None:
             os.environ.pop("GTM_CONFIG_DIR", None)
@@ -821,14 +1034,21 @@ def main(argv=None) -> int:
                "and in skills/funnel/references/.")
     sub = parser.add_subparsers(dest="command", required=True)
     p = sub.add_parser("export", help="REST export of Contacts and Pipeline (needs the notion_token secret)")
-    p.add_argument("--out", help="folder for contacts.json and deals.json (default ~/.config/gtm/funnel)")
+    p.add_argument("--out", help="folder for contacts.json and deals.json (default: funnel/ in the config folder)")
     p.set_defaults(func=cmd_export)
+    p = sub.add_parser("normalize", help="turn saved Notion MCP view-mode output into rows that run reads")
+    p.add_argument("--db", choices=("contacts", "pipeline", "deals"),
+                   help="which database the raw output is from (deals = pipeline); default: inferred from the rows")
+    p.add_argument("--in", dest="inputs", required=True, action="append",
+                   help="raw tool output file as saved; repeat for several query pages")
+    p.add_argument("--out", required=True, help="output JSON file (one array of rows)")
+    p.set_defaults(func=cmd_normalize)
     p = sub.add_parser("run", help="count the tables and write the funnel_* files")
     p.add_argument("--contacts", required=True, action="append",
                    help="contacts export JSON; repeat for several query pages (rows are deduplicated by page id)")
     p.add_argument("--deals", required=True, action="append",
                    help="pipeline (deals) export JSON; repeat for several query pages")
-    p.add_argument("--out", help="output folder (default ~/.config/gtm/funnel)")
+    p.add_argument("--out", help="output folder (default: funnel/ in the config folder)")
     p.add_argument("--inbound", help="optional inbound metrics JSON from an inbound adapter")
     p.add_argument("--today", help="YYYY-MM-DD; default today in owner.timezone")
     p.add_argument("--accept-baseline", action="store_true",

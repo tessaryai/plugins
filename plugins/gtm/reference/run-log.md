@@ -1,6 +1,6 @@
 # Run log
 
-Every gtm skill run appends exactly one entry to `~/.config/gtm/logs.md`, newest last, and ends with a final report in the chat that uses the same order. Create the file with the line `# gtm run log` when it does not exist. Never rewrite or delete earlier entries.
+Every gtm skill run appends exactly one entry to the run log, newest last, and ends with a final report in the chat that uses the same order. The run log is the `run_log` path printed by `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/config.py paths`; it follows `GTM_CONFIG_DIR`, so never hardcode it. Create the file with the line `# gtm run log` when it does not exist. Never rewrite or delete earlier entries.
 
 ## Order inside an entry
 
@@ -10,6 +10,10 @@ Every gtm skill run appends exactly one entry to `~/.config/gtm/logs.md`, newest
 4. Counts and details for the skill (below).
 
 Keep each line short. Use contact names and page links, not page ids alone. Never put a token, key, header or raw exception text in the log.
+
+Large sets (unmatched items, skipped contacts, contacts with no First Contacted, dropped rows): write the count, then at most 10 names or addresses, then the rest as a count, for example `Unmatched: 143 (gmail 120, google-calendar 23) — Ada Lovelace, ...; and 133 more`. Group the count by source or reason when that helps. Never paste hundreds of names into one line.
+
+When a skill used Notion MCP rows or SQL mode, add `- Notion: view-mode reads <n>, rows/SQL lookups <n>` and say if the workspace query allowance ran out (`${CLAUDE_PLUGIN_ROOT}/reference/notion-access.md`, Query rows).
 
 ## Common header
 
@@ -24,7 +28,7 @@ Keep each line short. Use contact names and page links, not page ids alone. Neve
 ### setup
 
 ```
-## YYYY-MM-DD HH:MM — setup
+## YYYY-MM-DD HH:MM <timezone> — setup
 - BLOCKED: <adapter — what happened — fix>
 - Needs you: <...>
 - Decisions: <...>
@@ -37,31 +41,32 @@ Keep each line short. Use contact names and page links, not page ids alone. Neve
 ### import
 
 ```
-## YYYY-MM-DD HH:MM — import
+## YYYY-MM-DD HH:MM <timezone> — import
 - BLOCKED / Needs you / Decisions
 - Source: <csv file name | hubspot | pipedrive | attio> via <MCP connector | readonly_api | CSV>
-- Plan: rows <n>, create <n>, update <n>, skip <n>, conflict <n>; companies new <n>
-- Applied: created <n>, updated <n>, failed <n>; verified <n of n>
+- Plan: rows <n>, create <n>, update <n>, unchanged <n>, skip <n>, conflict <n>; companies new <n>
+- Applied: created <n>, updated <n>, unchanged <n>, failed <n>; verified <n of n>
 - Conflicts left for you: <row — reason>
 ```
 
 ### sweep
 
 ```
-## YYYY-MM-DD HH:MM — sweep
+## YYYY-MM-DD HH:MM <timezone> — sweep
 - BLOCKED / Needs you / Decisions
 - <adapter>: <n items read>, <n matched>, <changes> | incomplete: <why> | blocked: <reason>   (one line per adapter)
 - CRM changes: <contact — old Status → new Status — reason>; mismatches: <contact — what>
 - Pages created: <n contacts, n companies, n campaigns> (outreach mirrors), <n meetings> (meeting recorders)
 - First Contacted set: <n>
-- Unmatched: <name or address — source — date>
-- Cursors moved: <adapters>; kept: <adapters>
+- Unmatched: <count by source>; <at most 10 of: name or address — source — date>; and <n> more
+- Notion: view-mode reads <n>, rows/SQL lookups <n>   (MCP path only)
+- Cursors moved: <adapters>; kept: <adapters>; held back: <adapter — to date — why>
 ```
 
 ### campaign-build
 
 ```
-## YYYY-MM-DD HH:MM — campaign-build
+## YYYY-MM-DD HH:MM <timezone> — campaign-build
 - BLOCKED / Needs you / Decisions
 - Campaign: <name> (<campaign_key>), Status Review
 - Audience: <n found>, <n added>, <n already in CRM>, <n excluded by ICP or DNC>
@@ -73,18 +78,20 @@ Keep each line short. Use contact names and page links, not page ids alone. Neve
 ### campaign-write
 
 ```
-## YYYY-MM-DD HH:MM — campaign-write
+## YYYY-MM-DD HH:MM <timezone> — campaign-write
 - BLOCKED / Needs you / Decisions
 - Campaign: <name> (<campaign_key>), Status Review
 - Steps written: <n> (<step — channel — trigger>)
 - Personalization: <n contact pages with Run fields>, <n with per-contact copy>, <n skipped — reason>
 - Coverage: <step — n contacts campaign-run will skip — reason>
+- Voice: <voice file | none> ; voice skill: <name | none> ; sign-off: <as in voice file | none>
+- Research credits: <tool n of limit> | none
 ```
 
 ### campaign-run
 
 ```
-## YYYY-MM-DD HH:MM — campaign-run (<live | dry-run>)
+## YYYY-MM-DD HH:MM <timezone> — campaign-run (<live | dry-run>)
 - BLOCKED / Needs you / Decisions
 - Campaigns run: <name — contacts — sends by step>
 - Plan: <per campaign: step, trigger, channel, condition, copy source, approval>
@@ -99,7 +106,7 @@ Keep each line short. Use contact names and page links, not page ids alone. Neve
 ### funnel
 
 ```
-## YYYY-MM-DD HH:MM — funnel
+## YYYY-MM-DD HH:MM <timezone> — funnel
 - BLOCKED / Needs you / Decisions
 - As of: YYYY-MM-DD; published: <yes | no — reason>
 - Totals: <table — stage counts>

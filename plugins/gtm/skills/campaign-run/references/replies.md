@@ -22,12 +22,12 @@ Use the read procedure of the email adapter, `${CLAUDE_PLUGIN_ROOT}/adapters/ema
 
 Use the inbox read procedure of `${CLAUDE_PLUGIN_ROOT}/adapters/linkedin/chrome.md`, in a tab this run opened.
 
-1. Open the LinkedIn messaging page. Read the conversation list from the top. Stop when the last message of a conversation is older than the window.
-2. Open each conversation whose last message is from the other person.
-3. Match to a contact by the profile link in the thread header, canonicalized as `crm-rules.md` says.
+1. Open the LinkedIn messaging page. It may auto-open the top thread and mark it read; that is accepted, also in a dry run (it is not a send or a write by this skill). Read the conversation list from the top with `read_page` or a short read-only page script over the list items' name and time (`chrome.md`, Read procedure B); `get_page_text` often returns nothing there. Stop when the last message of a conversation is older than the window. Only the Focused tab is read unless the user enabled Other.
+2. Open a conversation only when its list name fuzzy-matches a contact in the run, and it has an unread mark or a message inside the window. An unread mark alone is not enough. Fuzzy match: the list name holds the contact's first and last name tokens, in either order, ignoring middle tokens and initials (`chrome.md`, Read procedure C). This is a pre-filter only, never a match key. The list shows only the last sender, so a reply can hide behind the user's own later message. Open no other thread: opening marks it read.
+3. Match to a contact by the profile URL. The thread header link is a member-id URL (`/in/ACoAA...`), not the vanity slug: resolve it as `chrome.md`, Read procedure B step 5, says (open the header link once and read the canonical URL; in a dry run, use only the connections list by exact name with exactly one match). Canonicalize as `crm-rules.md` says.
 4. A thread you can match by name only is not a match. Do not write to any contact for it. If exactly one contact in the run has that name, hold that contact for today (no send on any channel) and list it under Needs you with the verbatim text, so the user can confirm.
 
-Reading the inbox is allowed in a dry run. Opening a profile is not.
+Reading the inbox is allowed in a dry run, including the auto-opened top thread. Opening a profile is not.
 
 ## Blocked
 

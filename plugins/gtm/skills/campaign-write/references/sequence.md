@@ -4,14 +4,19 @@ The sequence lives on the campaign page in the format of `${CLAUDE_PLUGIN_ROOT}/
 
 ## Header lines
 
-Header lines are paragraphs before the first step heading, one `Label: value` per line:
+Header lines are paragraphs before the first step heading, one `Label: value` per paragraph, with a blank line between lines (`page-writes.md`):
 
 ```
 Campaign key: <slug>
+
 Audience: <one sentence>
+
 Sender email: <address>
+
 LinkedIn daily invite cap: <n>
+
 Email daily cap: <n>
+
 Approval: all contacts
 ```
 
@@ -61,24 +66,36 @@ Variants:
 
 ## How the steps look on the page
 
-Write each step as in `${CLAUDE_PLUGIN_ROOT}/reference/campaign-page.md`. Example for steps 3 and 5:
+Write each step as in `${CLAUDE_PLUGIN_ROOT}/reference/campaign-page.md`: a blank line between the heading and every label line, and the copy fence labelled `plain text`. Example for steps 3 and 5:
 
 ````
 ## Step 3 — Message after accept
+
 Trigger: on accept, within 7 days
+
 Channel: LinkedIn
+
 Action: message
+
 Condition: connected, no reply
+
 Copy source: contact page
 
 ## Step 5 — Email follow-up
+
 Trigger: 4 days after step 4
+
 Channel: email
+
 Condition: no reply
+
 Subject: Re: {{subject_4}}
+
 Thread: reply to step 4
+
 Copy source: this page
-```
+
+```plain text
 Hi {{first_name}}, ...
 ```
 ````

@@ -1,6 +1,6 @@
 # Funnel definitions
 
-What `lib/funnel.py` counts. All names below are logical; the script resolves them through `notion.status_map`, `notion.option_map` and `funnel.*` in `~/.config/gtm/config.json`. The script is the source of truth; this file explains it.
+What `lib/funnel.py` counts. All names below are logical; the script resolves them through `notion.status_map`, `notion.option_map` and `funnel.*` in the gtm config. The script is the source of truth; this file explains it.
 
 ## Who is counted
 
@@ -50,7 +50,7 @@ The current month is never part of the drop and rise checks, because it is still
 
 ## Baseline
 
-- The baseline is the last accepted run's counts. It lives in `~/.config/gtm/state.json` under `adapters.funnel`. Only `lib/funnel.py` writes it.
+- The baseline is the last accepted run's counts. It lives in the state file (the `state` path printed by `config.py paths`) under `adapters.funnel`. Only `lib/funnel.py` writes it.
 - The script saves it only when every check passes (and `--no-save-baseline` is not given).
 - `--accept-baseline` records the drop and rise checks as accepted, saves this run as the new baseline, and leaves the other checks in force. Use it only when the user asks.
 - The first run has no baseline: `funnel_delta.txt` says so, and no drop or rise check runs.

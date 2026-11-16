@@ -1,6 +1,6 @@
 # Ideal customer profile
 
-/gtm:setup copies this file to ~/.config/gtm/icp.md and fills it with you. /gtm:campaign-build uses it to search enrichment sources and to score companies (Strong fit, Fit, Not a fit). /gtm:campaign-write uses the pains and signals for its angle. Replace every line in angle brackets.
+/gtm:setup copies this file to the ICP file (the `icp` path printed by `config.py paths`) and fills it with you. /gtm:campaign-build uses it to search enrichment sources and to score companies (Strong fit, Fit, Not a fit). /gtm:campaign-write uses the pains and signals for its angle. Replace every line in angle brackets.
 
 ## Firmographics
 

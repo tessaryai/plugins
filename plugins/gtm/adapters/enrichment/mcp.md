@@ -8,7 +8,7 @@ Uses any enrichment MCP connector the session has (a lead database, a people or 
 
 MCP connector only.
 
-1. Search with ToolSearch for enrichment tools, with several queries: `find people`, `company search`, `email finder`, `email verification`, `enrich`, `prospect`. Exclude the Notion, email, calendar, Slack, Exa and Apollo tools (Exa and Apollo have their own adapters).
+1. Search with ToolSearch for enrichment tools, with several queries: `find people`, `company search`, `email finder`, `email verification`, `enrich`, `prospect`. Exclude the Notion, email, calendar and Slack tools, and every server from the Exa or Apollo vendors whatever its prefix (for example both an "Exa" and an "Exa Agent" server). Exa and Apollo have their own adapters. Judge the vendor by the server name and its tool descriptions, not by one prefix.
 2. Group the results by server prefix. If more than one server qualifies, list them and ask the user which to use. If exactly one qualifies, name it and use it.
 3. Read each tool's schema and description. Sort the tools into:
    - free reads: account, subscription, credits, counts;

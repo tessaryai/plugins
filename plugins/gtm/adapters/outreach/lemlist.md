@@ -15,15 +15,15 @@ Never call the lemlist API another way. See `${CLAUDE_PLUGIN_ROOT}/reference/saf
 ## Preflight check
 
 - Connector: list campaigns. A result or an empty list is ok.
-- API: `python3 -I ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py lemlist check` (reads `/api/team`). Exit 0 ok, exit 2 blocked.
+- API: `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py lemlist check` (reads `/api/team`). Exit 0 ok, exit 2 blocked.
 
 ## Read procedure
 
-`RO` means `python3 -I ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py lemlist get`. Write output to the scratchpad.
+`RO` means `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py lemlist get`. Write output to the scratchpad.
 
 1. Campaigns: `RO /api/campaigns --out <s>/lm-campaigns.json`. Keep `_id`, `name`, status and channels.
 2. Activities per campaign: `RO /api/activities --param campaignId=<id> --param limit=100 --param offset=<n> --out <s>/lm-act-<id>-<n>.json`. Increase `offset` by 100 until a page returns fewer than 100 rows or rows older than the cursor. The parameter names and the activity type names below are from the lemlist API docs at the time of writing; if a response shows other names, use the live names and record the change under Decisions.
-3. Stop per campaign at the first activity at or before the campaign's cursor (`createdAt`, or `_id` when equal). With no cursor, read back `sweep.first_run_lookback_days` days, then extend to the campaign's first activity on the first run so no outreach is lost.
+3. Stop per campaign at the first activity at or before the campaign's cursor (`createdAt`, or `_id` when equal). With no cursor, read back `sweep.first_run_lookback_days` days only, unless the user asked for full history in this run (`${CLAUDE_PLUGIN_ROOT}/skills/sweep/references/outreach-mirror.md`, How far back).
 4. Unsubscribes: `RO /api/unsubscribes --out <s>/lm-unsub.json` (page with `offset` if the response pages).
 5. For each activity take: `_id`, `type`, `createdAt` (convert to `owner.timezone`), the lead's email, LinkedIn URL, first and last name, company name, and the campaign id and name. For reply activities take the reply text when the activity carries it.
 
@@ -41,7 +41,7 @@ Map `type` to an event kind:
 | `emailsNotInterested` | `negative` | the reply text as for reply |
 | `emailsInterested` | no event; mirror data `labels` | |
 | opens, clicks, visits, anything else known to be passive | dropped | |
-| unknown types | no event; listed under Decisions | |
+| unknown types | no event and no CRM change; listed under Decisions | |
 
 ## Output
 
@@ -61,7 +61,7 @@ Write the full merged map. A campaign that failed keeps its old value.
 
 ## Blocked signs and fix
 
-- Exit 2 or a connector auth error: "Save a working lemlist API key: run `python3 -I <plugin root>/lib/config.py set-secret lemlist_api_key` in a terminal, or reconnect the lemlist connector."
+- Exit 2 or a connector auth error: "Save a working lemlist API key: run `python3 -I -B <plugin root>/lib/config.py set-secret lemlist_api_key` in a terminal, or reconnect the lemlist connector."
 - Exit 1 (refused path): report under Needs you; never edit the allowlist.
 
 ## Write / send capability

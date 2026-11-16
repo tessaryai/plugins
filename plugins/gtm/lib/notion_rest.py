@@ -6,11 +6,11 @@ Notion MCP connector is the default path; see reference/notion-access.md for
 which operation uses which path.
 
 Token: environment variable GTM_NOTION_TOKEN, else key notion_token in
-~/.config/gtm/credentials.json. This module never prints the token, the
+credentials.json in the gtm config folder (config.py paths). This module never prints the token, the
 request headers, or the text of an HTTP or connection exception. Errors carry
 only the HTTP status and a short excerpt of the response body.
 
-Usage (always python3 -I; JSON goes in through a file or '-' for stdin and
+Usage (always python3 -I -B; JSON goes in through a file or '-' for stdin and
 comes out on stdout or --out FILE):
 
   notion_rest.py query <data_source_id> [--filter F] [--sorts F] [--limit N] [--simple] [--out F]

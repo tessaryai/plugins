@@ -18,10 +18,10 @@ side. Adapters and the import skill call vendor APIs only through it.
 - Never edit ALLOWLIST during a run. A path that is not listed is refused; a
   skill that needs it reports the gap to the user instead.
 
-Keys come from ~/.config/gtm/credentials.json (or env GTM_<NAME>); save them
+Keys come from credentials.json in the gtm config folder (or env GTM_<NAME>); save them
 with `config.py set-secret <name>`.
 
-Usage (always python3 -I):
+Usage (always python3 -I -B):
 
   readonly_api.py tools                                   # list tools, bases, paths, key names
   readonly_api.py <tool> get <path> [--param k=v ...] [--out FILE]
