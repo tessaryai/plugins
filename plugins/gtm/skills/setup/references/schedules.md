@@ -22,13 +22,22 @@ Run sweep before campaign-run on the same day, so replies stop sequences before 
    - `/loop` repeats a command in an open Claude Code session on this machine, for example `/loop 24h /gtm:sweep`. It stops when the session ends.
    Give the exact commands; do not run them yourself unless the user asks.
 
+## Cowork
+
+1. Look for a scheduled-tasks tool in this session (ToolSearch `scheduled-tasks create_scheduled_task list_scheduled_tasks`). Never schedule anything in Cowork without one, and never invent another way to schedule.
+2. If one is present, use it as in Where they run, item 1, with the same task prompts. Add to each prompt: "Work in <project folder>; run every shell command with `cd <project folder> &&` in front." so the run finds `.gtm/`.
+3. If none is present, tell the user in plain words: routines will not run on their own here. Two choices:
+   - Run the skills on demand in Cowork, for example "run the gtm sweep" each morning, then "run the gtm campaigns".
+   - Schedule them from Claude Code on the same computer (desktop scheduled tasks), pointed at the same project folder: each task prompt says "Work in <project folder>", or the task sets `GTM_CONFIG_DIR=<project folder>/.gtm`. Both apps then share one config, state and run log. While `runtime` is `cowork`, those Claude Code runs also use connectors only.
+4. Record `none (on demand)` or `Claude Code` for each routine in the run log.
+
 ## Live sends need a yes
 
 Before you schedule campaign-run with `sending.mode` = `live`, ask: "Schedule campaign-run to send live on working days at <time>? It sends only for campaigns you set to Active." Schedule it only on an explicit yes. On no, schedule it with the `dry-run` argument, or not at all, as the user prefers.
 
 ## Task prompts
 
-Each run starts with no memory of this session, so each prompt must stand alone. Use these, with the values filled in:
+Each run starts with no memory of this session, so each prompt must stand alone. Use these, with the values filled in. When `config.py paths` shows `source` = `project`, add one sentence to each prompt: "Work in <project folder>; run every shell command with `cd <project folder> &&` in front." Otherwise the run may not find `.gtm/`.
 
 sweep:
 

@@ -2,9 +2,15 @@
 """Load, validate and edit the gtm plugin configuration.
 
 Runtime files live outside the plugin folder, because a plugin update
-replaces that folder. The default folder is ~/.config/gtm; set
-GTM_CONFIG_DIR to use another folder (tests, a second workspace). Run
-"config.py paths" to print the real locations:
+replaces that folder. The active config folder is the first of:
+
+  1. GTM_CONFIG_DIR, when set (tests, a second workspace)
+  2. a .gtm folder that holds config.json, in the current folder or any parent
+     (a project folder, for example the folder connected to a Cowork task)
+  3. ~/.config/gtm
+
+Run "config.py paths" to print the active folder, why it was chosen, and the
+real locations:
 
   config.json       settings (no secrets)
   credentials.json  Notion token and API keys, mode 600
@@ -20,7 +26,8 @@ Usage (run as python3 -I -B so no local file can shadow a module):
   python3 -I -B config.py get notion.field_map.contacts.status
   python3 -I -B config.py set sending.mode dry-run      # value parsed as JSON, else string
   python3 -I -B config.py init                 # write config.json from the template if absent
-  python3 -I -B config.py paths                # print the runtime file locations
+  python3 -I -B config.py init --project       # create ./.gtm/ here and write config.json in it
+  python3 -I -B config.py paths                # print the active folder, its source and the file locations
   python3 -I -B config.py set-secret notion_token       # hidden prompt, needs a terminal
   python3 -I -B config.py has-secret notion_token       # exit 0 set, 1 not set; prints nothing secret
   python3 -I -B config.py state-get [adapter]  # print state.json or one adapter's cursor
@@ -38,7 +45,9 @@ Library use from another lib script:
 
 Secrets: a value comes from the environment variable GTM_<NAME> (for example
 GTM_NOTION_TOKEN) first, then from credentials.json. No command prints a
-secret value.
+secret value. With runtime "cowork" there are no secrets: tools work
+through connectors only, set-secret refuses, and the REST and API clients
+refuse to run.
 """
 from __future__ import annotations
 
@@ -66,6 +75,17 @@ CONTACT_STATUSES = (
 LADDER = ("New", "Contacted", "Responded", "Discovery", "Lead")
 TERMINAL = ("Archived", "Do Not Contact", "Disqualified")
 WEEKDAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+RUNTIMES = ("claude-code", "cowork")
+PROJECT_DIR_NAME = ".gtm"
+PROJECT_GITIGNORE = "# gtm: never commit API keys\ncredentials.json\ncredentials.json.tmp\n"
+
+# Adapters that fall back to an API key (lib/readonly_api.py) when the session
+# has no connector. In Cowork the fallback is not used: a connector is needed.
+API_KEY_FALLBACK = {
+    "fathom": "fathom_api_key", "fireflies": "fireflies_api_key",
+    "gojiberry": "gojiberry_api_key", "lemlist": "lemlist_api_key",
+    "instantly": "instantly_api_key", "hunter": "hunter_api_key",
+}
 
 KNOWN_ADAPTERS = {
     "email": ("gmail", "outlook"),
@@ -91,9 +111,38 @@ _PLACEHOLDER_RE = re.compile(r"^[0-]*[0-9]?$")
 
 # ---------------------------------------------------------------- locations
 
-def config_dir() -> Path:
+def home_config_dir() -> Path:
+    return Path.home() / ".config" / "gtm"
+
+
+def find_project_dir(start=None):
+    """Nearest <folder>/.gtm holding config.json, from start (default: cwd) up to the root, or None."""
+    try:
+        here = Path(start).resolve() if start else Path.cwd().resolve()
+    except OSError:
+        return None
+    for folder in (here, *here.parents):
+        candidate = folder / PROJECT_DIR_NAME
+        if (candidate / "config.json").is_file():
+            return candidate
+    return None
+
+
+def resolve_config_dir() -> tuple:
+    """(folder, source, reason); source is 'env', 'project' or 'home'."""
     override = os.environ.get("GTM_CONFIG_DIR")
-    return Path(override).expanduser() if override else Path.home() / ".config" / "gtm"
+    if override:
+        return Path(override).expanduser(), "env", "GTM_CONFIG_DIR is set"
+    project = find_project_dir()
+    if project is not None:
+        return project, "project", f"found {PROJECT_DIR_NAME}/config.json in {project.parent}"
+    return home_config_dir(), "home", (
+        f"GTM_CONFIG_DIR is not set and no {PROJECT_DIR_NAME}/config.json was found "
+        "in the current folder or a parent")
+
+
+def config_dir() -> Path:
+    return resolve_config_dir()[0]
 
 
 def config_path() -> Path:
@@ -121,7 +170,7 @@ def imports_dir() -> Path:
 
 
 def resolve_path(cfg: dict, key: str) -> Path:
-    """paths.voice / paths.icp; empty means <config dir>/<key>.md (follows GTM_CONFIG_DIR)."""
+    """paths.voice / paths.icp; empty means <config dir>/<key>.md (the active config folder)."""
     value = ((cfg or {}).get("paths") or {}).get(key) or ""
     return expand(value) if value else config_dir() / f"{key}.md"
 
@@ -187,7 +236,8 @@ def defaults() -> dict:
             "reply_lookback_days": 30,
             "event_window_days": 14,
         },
-        "sweep": {"first_run_lookback_days": 7, "calendar_lookahead_days": 7, "max_meeting_attendees": 15},
+        "sweep": {"first_run_lookback_days": 7, "calendar_lookahead_days": 7, "max_meeting_attendees": 15,
+                  "exclude_labels": []},
         "funnel": {
             "start_month": None,
             "pilot_stages": ["Pilot"],
@@ -200,6 +250,7 @@ def defaults() -> dict:
             "inbound": [],
         },
         "paths": {"voice": "", "icp": ""},
+        "runtime": "claude-code",
     }
 
 
@@ -236,6 +287,24 @@ def read_user_config() -> dict:
 def load() -> dict:
     """Config with defaults filled in. Raises ConfigError on unreadable JSON."""
     return _deep_merge(defaults(), read_user_config())
+
+
+def runtime(cfg=None) -> str:
+    """'claude-code' (default) or 'cowork'."""
+    if cfg is None:
+        try:
+            cfg = load()
+        except ConfigError:
+            return "claude-code"
+    return (cfg or {}).get("runtime") or "claude-code"
+
+
+def direct_api_refusal():
+    """Message when the config forbids direct REST and API calls (runtime cowork), else None."""
+    if runtime() == "cowork":
+        return ("runtime is cowork: direct API calls are off; use the tool's connector, "
+                "or run this routine from Claude Code")
+    return None
 
 
 def get_dotted(cfg: dict, dotted: str):
@@ -343,6 +412,9 @@ def _write_private_json(path: Path, data: dict) -> None:
 def set_secret(name: str) -> None:
     if name not in SECRET_NAMES:
         raise ConfigError(f"unknown secret name {name!r}; allowed: {', '.join(SECRET_NAMES)}")
+    if runtime() == "cowork":
+        raise ConfigError("runtime is cowork: gtm uses connectors only and saves no keys; "
+                          "connect a connector for the tool, or run this routine from Claude Code")
     if not sys.stdin.isatty():
         raise ConfigError(
             "set-secret needs a terminal so the value is typed at a hidden prompt. "
@@ -385,15 +457,30 @@ def set_value(dotted: str, raw: str) -> None:
     _write_json(config_path(), data)
 
 
-def init_config() -> bool:
-    """Copy the template to config.json when none exists. True if written."""
-    path = config_path()
+def init_config(path=None) -> bool:
+    """Copy the template to config.json (default: the active folder) when none exists. True if written."""
+    path = path or config_path()
     if path.exists():
         return False
     with open(EXAMPLE_PATH, encoding="utf-8") as handle:
         data = json.load(handle)
     _write_json(path, data)
     return True
+
+
+def init_project(folder=None) -> tuple:
+    """Create <folder or cwd>/.gtm with config.json and .gitignore. Returns (dir, wrote_config)."""
+    target = Path(folder).resolve() if folder else Path.cwd().resolve()
+    project = target / PROJECT_DIR_NAME
+    parent_project = find_project_dir(target.parent) if target.parent != target else None
+    if parent_project is not None and not (project / "config.json").exists():
+        print(f"note: {parent_project} also holds a gtm config; the new {project} takes priority "
+              f"when gtm runs in {target} or below")
+    project.mkdir(parents=True, exist_ok=True)
+    gitignore = project / ".gitignore"
+    if not gitignore.exists():
+        gitignore.write_text(PROJECT_GITIGNORE, encoding="utf-8")
+    return project, init_config(project / "config.json")
 
 
 # ---------------------------------------------------------------- state
@@ -474,10 +561,29 @@ def validate(cfg: dict) -> list:
     if not (_TIME_RE.match(str(start)) and _TIME_RE.match(str(end)) and start < end):
         err("owner.send_window needs start and end as HH:MM with start before end")
 
+    run_mode = cfg.get("runtime") or "claude-code"
     notion = cfg.get("notion", {})
+    if run_mode not in RUNTIMES:
+        err(f"runtime must be one of {', '.join(RUNTIMES)}")
     if notion.get("access") not in ("mcp", "rest"):
         err("notion.access must be 'mcp' or 'rest'")
-    if notion.get("access") == "rest" and not get_secret("notion_token"):
+    if run_mode == "cowork":
+        if notion.get("access") == "rest":
+            err("runtime is cowork but notion.access is 'rest'; Cowork cannot reach the Notion API, "
+                "so set notion.access to 'mcp'")
+        if resolve_config_dir()[1] == "home":
+            warn(f"runtime is cowork but the config is in {config_dir()}, which may not persist "
+                 "between Cowork sessions; keep it in the connected project folder (config.py init --project)")
+        adapters_cfg = cfg.get("adapters") or {}
+        configured = []
+        for kind in ("meetings", "outreach", "enrichment"):
+            value = adapters_cfg.get(kind) or []
+            configured += value if isinstance(value, list) else []
+        api_only = sorted(t for t in set(configured) if t in API_KEY_FALLBACK)
+        if api_only:
+            warn(f"runtime is cowork: {', '.join(api_only)} must use a connector here (check cannot see connectors); "
+                 "a tool listed here with no connected connector is blocked, because the API key fallback is not used")
+    elif notion.get("access") == "rest" and not get_secret("notion_token"):
         err("notion.access is 'rest' but no notion_token is saved; run set-secret notion_token or set access to 'mcp'")
     if not _notion_id_ok(notion.get("parent_page_id", "")):
         err("notion.parent_page_id is empty, a placeholder or not a Notion id (32 hex characters); run /gtm:setup")
@@ -565,6 +671,9 @@ def validate(cfg: dict) -> list:
         value = sweep.get(key)
         if not isinstance(value, int) or isinstance(value, bool) or value < 0:
             err(f"sweep.{key} must be a whole number of 0 or more")
+    labels = sweep.get("exclude_labels", [])
+    if not isinstance(labels, list) or not all(isinstance(v, str) and v.strip() for v in labels):
+        err("sweep.exclude_labels must be a list of email label names, for example [\"Warmup\"]")
 
     start_month = (cfg.get("funnel") or {}).get("start_month")
     if start_month is not None and not re.match(r"^\d{4}-(0[1-9]|1[0-2])$", str(start_month)):
@@ -633,7 +742,16 @@ def _cmd_show(_args) -> int:
 
 
 def _paths_dict() -> dict:
+    folder, source, reason = resolve_config_dir()
+    try:
+        mode = runtime(load()) if config_path().exists() else "claude-code"
+    except ConfigError:
+        mode = "unknown (config.json is not valid JSON)"
     return {
+        "dir": str(folder),
+        "source": source,
+        "reason": reason,
+        "runtime": mode,
         "config": str(config_path()),
         "credentials": str(credentials_path()),
         "state": str(state_path()),
@@ -676,9 +794,19 @@ def _cmd_set(args) -> int:
     return 0
 
 
-def _cmd_init(_args) -> int:
-    written = init_config()
-    print(f"wrote {config_path()}" if written else f"{config_path()} already exists; not changed")
+def _cmd_init(args) -> int:
+    if not getattr(args, "project", False):
+        written = init_config()
+        print(f"wrote {config_path()}" if written else f"{config_path()} already exists; not changed")
+        return 0
+    project, written = init_project()
+    target = project / "config.json"
+    print(f"wrote {target}" if written else f"{target} already exists; not changed")
+    print(f"{project / '.gitignore'} keeps credentials.json out of git")
+    active, source, reason = resolve_config_dir()
+    if active.resolve() != project.resolve():
+        print(f"note: the active config folder is still {active} ({source}: {reason}); "
+              f"unset GTM_CONFIG_DIR or run gtm from {project.parent} to use the new folder")
     return 0
 
 
@@ -694,6 +822,9 @@ def _cmd_set_secret(args) -> int:
 
 
 def _cmd_has_secret(args) -> int:
+    if runtime() == "cowork":
+        print("not set (runtime is cowork: connectors only, no keys are used)")
+        return 1
     present = bool(get_secret(args.name))
     print("set" if present else "not set")
     return 0 if present else 1
@@ -721,7 +852,8 @@ def _cmd_state_set(args) -> int:
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(
-        description="gtm plugin configuration (default folder ~/.config/gtm, or GTM_CONFIG_DIR). Never prints secret values.")
+        description="gtm plugin configuration. Config folder: GTM_CONFIG_DIR, else the nearest .gtm/ holding config.json "
+                    "(current folder or a parent), else ~/.config/gtm. Never prints secret values.")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("show", help="print config with defaults; secrets masked").set_defaults(func=_cmd_show)
     sub.add_parser("check", help="validate config; exit 1 on errors").set_defaults(func=_cmd_check)
@@ -732,8 +864,11 @@ def main(argv=None) -> int:
     p.add_argument("key")
     p.add_argument("value")
     p.set_defaults(func=_cmd_set)
-    sub.add_parser("init", help="write config.json from the template if absent").set_defaults(func=_cmd_init)
-    sub.add_parser("paths", help="print runtime file locations").set_defaults(func=_cmd_paths)
+    p = sub.add_parser("init", help="write config.json from the template if absent")
+    p.add_argument("--project", action="store_true",
+                   help="create ./.gtm/ in the current folder (with a .gitignore for credentials.json) and write config.json there")
+    p.set_defaults(func=_cmd_init)
+    sub.add_parser("paths", help="print the active config folder, its source (env, project, home) and the file locations").set_defaults(func=_cmd_paths)
     p = sub.add_parser("set-secret", help="save a secret from a hidden prompt (needs a terminal)")
     p.add_argument("name", choices=SECRET_NAMES)
     p.set_defaults(func=_cmd_set_secret)

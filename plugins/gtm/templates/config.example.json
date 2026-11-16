@@ -220,7 +220,8 @@
   "sweep": {
     "first_run_lookback_days": 7,
     "calendar_lookahead_days": 7,
-    "max_meeting_attendees": 15
+    "max_meeting_attendees": 15,
+    "exclude_labels": []
   },
   "funnel": {
     "start_month": null,
@@ -244,5 +245,6 @@
   "paths": {
     "voice": "",
     "icp": ""
-  }
+  },
+  "runtime": "claude-code"
 }

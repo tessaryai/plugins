@@ -1,7 +1,7 @@
 {
   "name": "gtm",
-  "description": "Host your CRM in Notion and run your go-to-market flow from Claude Code: set up or map the databases, import from another CRM, sweep your inbox, calendar, LinkedIn and outreach tools into the CRM every day, build and write campaigns in your voice, send them with safety gates, and report the funnel.",
-  "version": "0.1.0",
+  "description": "Host your CRM in Notion and run your go-to-market flow from Claude Code or Claude Cowork: set up or map the databases, import from another CRM, sweep your inbox, calendar, LinkedIn and outreach tools into the CRM every day, build and write campaigns in your voice, send them with safety gates, and report the funnel.",
+  "version": "0.2.0",
   "author": {
     "name": "Tessary AI"
   },

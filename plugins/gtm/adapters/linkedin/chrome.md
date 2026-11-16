@@ -60,10 +60,13 @@ Read the list with a reliable reader: `read_page` on the conversation list, or a
    - it shows an unread mark, or
    - its newest message is newer than the cursor, whoever sent it (the user's last message can hide an inbound reply sent just before it).
    Skip only conversations whose newest message is at or before the cursor and that have no unread mark.
+   First run (no `linkedin-messages` cursor): open fewer threads, because every open marks a thread read and nothing old can change the CRM much.
+   - When the CRM contact index is empty, open no thread and visit no profile. Count the conversations in the window, list each one with an unread mark and an inbound preview that reads like a prospect, customer or investor under Needs you (name, date, preview), record a Decision ("first run with an empty CRM: <n> conversations counted, none opened"), and treat the read as finished for the cursor.
+   - Otherwise open only conversations whose list name fuzzy-matches a CRM contact (fuzzy match as in C), at most 20. Count the rest, and list unread inbound ones that read like a prospect under Needs you from the list preview. When more than 20 conversations match, the read is incomplete: `newest` does not move, and the next run opens the rest.
 4. In an open thread, read the whole thread in both directions. Keep only messages newer than the cursor as new events.
 5. Resolve the profile URL. The thread header link is a member-id URL (`/in/ACoAA...`), not the vanity slug that the CRM stores. Resolve it this way, in order:
-   - Open the header link once in the run's tab and read the canonical URL the page lands on (`https://www.linkedin.com/in/<slug>/`). Opening a profile is a visit the person can see; do it only for threads with a new message, and never in a campaign-run dry run.
-   - Else look the exact name up in the connections rows read in this run (Read procedure A, or the connections page searched by name) and use the URL only when exactly one row has that name.
+   - First look the exact name up in the connections rows read in this run (Read procedure A, or the connections page searched by name) and use the URL when exactly one row has that name. This needs no profile visit.
+   - Else open the header link once in the run's tab and read the canonical URL the page lands on (`https://www.linkedin.com/in/<slug>/`). Opening a profile is a visit the person can see; do it only for threads with a new inbound message, and never in a campaign-run dry run.
    - Else the thread is unmatched (Output).
 6. Skip sponsored messages and InMail adverts; count them only.
 7. Read the inbox itself. Never infer replies from log lines already in the CRM.

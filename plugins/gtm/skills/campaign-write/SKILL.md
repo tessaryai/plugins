@@ -53,6 +53,8 @@ Detail for this skill:
 
 ### 1. Preflight
 
+Before the first step: if `python3` is not found (`command not found`), follow `${CLAUDE_PLUGIN_ROOT}/reference/config.md`, No Python. Run `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/config.py paths` and check `source` and `dir`: when they are not the project folder the user works in, rerun with `cd <project folder> &&` in front (`config.md`, Which folder is active). With `runtime` = `cowork`, use connectors only (`config.md`, Runtime: cowork, and `${CLAUDE_PLUGIN_ROOT}/reference/blocked.md`, Cowork).
+
 1. Load config (`python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/config.py show`) and check it (`... check`). Note `owner.name`, `sending.sender_email`, `sending.linkedin_daily_invite_cap`, `sending.email_daily_cap`, `sending.event_window_days`, `paths.voice`, `paths.icp`, the maps, `adapters.enrichment`, `adapters.linkedin`.
 2. Choose the Notion path and load the Notion tools (`${CLAUDE_PLUGIN_ROOT}/reference/notion-access.md`). A Notion token makes verification exact (`references/page-writes.md`); without one, say that copy is checked through the connector's text view.
 3. Research tools for personalization: run the Preflight check of `exa` or `mcp` when they are in `adapters.enrichment`. The Exa preflight is a ToolSearch only and spends no credit, so an auth or quota error can first show at the first real call; treat it then as blocked. If none is set, use the session's web search and fetch tools when present. Ask for `max-credits` before the first paid research call (Hard rule 15). With LinkedIn reads wanted, run the Preflight check in `${CLAUDE_PLUGIN_ROOT}/adapters/linkedin/chrome.md`. Blocked research tools reduce signal; they do not stop the run.

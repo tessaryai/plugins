@@ -35,7 +35,7 @@ Variables: `{"fromDate": "<cursor ISO>", "toDate": "<now ISO>", "limit": 50, "sk
 ## Preflight check
 
 - Connector: list one transcript. A result or an empty list is ok.
-- API: `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py fireflies check`. Exit 0 ok, exit 2 blocked.
+- API: `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py fireflies check`. Exit 0 ok, exit 2 blocked. Not with `runtime` = `cowork` or without Python (`${CLAUDE_PLUGIN_ROOT}/reference/blocked.md`, Cowork).
 
 ## Read procedure
 
@@ -61,8 +61,8 @@ Moves only when every page was read.
 
 ## Blocked signs and fix
 
-- Connector missing and no key: "Add the Fireflies connector in Claude settings, or save a key: run `python3 -I -B <plugin root>/lib/config.py set-secret fireflies_api_key` in a terminal."
-- Auth error or exit 2: "Reconnect the Fireflies connector, or save a new Fireflies API key with set-secret."
+- Connector missing and no key: "Add the Fireflies connector in Claude settings, or save a key: run `python3 -I -B <plugin root>/lib/config.py set-secret fireflies_api_key` in a terminal." (Claude Code only. In Cowork: "Connect a connector for fireflies, or run this routine from Claude Code.")
+- Auth error or exit 2: "Reconnect the Fireflies connector, or save a new Fireflies API key with set-secret." (In Cowork: "Reconnect the Fireflies connector.")
 
 ## Write / send capability
 

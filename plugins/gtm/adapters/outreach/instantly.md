@@ -15,7 +15,7 @@ Limit of the fallback: Instantly lists leads only with a POST request, which the
 ## Preflight check
 
 - Connector: list campaigns. A result or an empty list is ok.
-- API: `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py instantly check` (reads `/api/v2/campaigns`). Exit 0 ok, exit 2 blocked.
+- API: `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py instantly check` (reads `/api/v2/campaigns`). Exit 0 ok, exit 2 blocked. Not with `runtime` = `cowork` or without Python (`${CLAUDE_PLUGIN_ROOT}/reference/blocked.md`, Cowork).
 
 ## Read procedure
 
@@ -55,7 +55,7 @@ Write the full merged map. A failed campaign keeps its old value.
 
 ## Blocked signs and fix
 
-- Exit 2 or a connector auth error: "Save a working Instantly API key (v2, read scopes): run `python3 -I -B <plugin root>/lib/config.py set-secret instantly_api_key` in a terminal, or reconnect the Instantly connector."
+- Exit 2 or a connector auth error: "Save a working Instantly API key (v2, read scopes): run `python3 -I -B <plugin root>/lib/config.py set-secret instantly_api_key` in a terminal, or reconnect the Instantly connector." (Claude Code only. In Cowork: "Connect a connector for instantly, or run this routine from Claude Code.")
 - Exit 1 (refused path): report under Needs you; never edit the allowlist.
 
 ## Write / send capability

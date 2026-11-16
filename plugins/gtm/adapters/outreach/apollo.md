@@ -15,7 +15,7 @@ Limit of the fallback: Apollo lists and searches contacts, sequence members and 
 ## Preflight check
 
 - Connector: list sequences (or the closest read tool). A result or an empty list is ok.
-- API only: `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py apollo check`. Exit 2 blocked. Exit 0 still means blocked for the mirror (no list access); report it with the connector fix.
+- API only: `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py apollo check`. Exit 2 blocked. Exit 0 still means blocked for the mirror (no list access); report it with the connector fix. Not with `runtime` = `cowork` or without Python (`${CLAUDE_PLUGIN_ROOT}/reference/blocked.md`, Cowork).
 
 ## Read procedure
 

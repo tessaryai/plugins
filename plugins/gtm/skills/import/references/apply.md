@@ -1,6 +1,6 @@
 # Import: flatten, plan, apply, verify
 
-Detail for `/gtm:import` steps 3, 5, 7 and 8. `<run>` is `<imports>/<run_id>/`. Get `<imports>` from the `imports` entry of `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/config.py paths`. If that command prints no `imports` entry yet, use the folder `imports` next to the `config` file it prints (this follows `$GTM_CONFIG_DIR` when it is set). Never hardcode the folder. Resolve every property and option name through the config map (`${CLAUDE_PLUGIN_ROOT}/reference/crm-rules.md`, Names go through the config map). Payload shapes are in `${CLAUDE_PLUGIN_ROOT}/reference/notion-access.md`.
+Detail for `/gtm:import` steps 3, 5, 7 and 8. `<run>` is `<imports>/<run_id>/`. Get `<imports>` from the `imports` entry of `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/config.py paths`. If that command prints no `imports` entry yet, use the folder `imports` next to the `config` file it prints (the active config folder). Never hardcode the folder. Resolve every property and option name through the config map (`${CLAUDE_PLUGIN_ROOT}/reference/crm-rules.md`, Names go through the config map). Payload shapes are in `${CLAUDE_PLUGIN_ROOT}/reference/notion-access.md`.
 
 ## Flatten
 

@@ -22,7 +22,7 @@ To update later:
 - [tessary](#tessary) — self-host the open-source Tessary reliability platform and wire your repo's tracing to it.
 - [evals](#evals) — connect your repo to evals.tessary.ai and work with your evals from the coding agent.
 - [crew](#crew) — a multi-agent dev harness that triages, implements, reviews, and maintains your repo.
-- [gtm](#gtm) — host your CRM in Notion and run your go-to-market flow (sweep, campaigns, funnel) from Claude Code.
+- [gtm](#gtm) — host your CRM in Notion and run your go-to-market flow (sweep, campaigns, funnel) from Claude Code and Cowork.
 
 ### tessary
 
@@ -83,6 +83,8 @@ other tools plug in as adapters, and nothing is sent until you set a campaign to
 ```
 
 Then run `/gtm:setup` in a Claude Code session, or just ask Claude to "set up my notion crm."
+In Claude Cowork, add the `tessaryai/plugins` marketplace on the Plugins page of the Claude desktop
+app, install gtm there, and run `/gtm:setup` in a task with a project folder connected.
 
 See the [plugin README](./plugins/gtm/README.md) for the full flow, adapters and safety rules.
 

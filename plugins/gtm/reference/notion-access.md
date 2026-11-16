@@ -4,10 +4,16 @@ Every gtm skill works with only the Notion MCP connector. When the user saved a 
 
 ## Choose the path
 
+0. `runtime` = `cowork`, or no Python: use MCP for everything and skip the steps below. Never run `notion_rest.py` (Cowork and no Python, below).
 1. Read `notion.access` from config (`python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/config.py get notion.access`).
 2. Check for a token: `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/config.py has-secret notion_token` (exit 0 = saved). It prints only `set` or `not set`.
 3. `mcp`, or no token: use MCP for everything. `rest` with a token: use REST for the operations marked "REST when token" below, and MCP for the rest.
 4. If REST fails with an auth error (exit code 2 and status 401 or 403), fall back to MCP for this run and report it under Needs you ("the Notion token is invalid or the integration lost access; share the CRM pages with the integration or run set-secret again").
+
+## Cowork and no Python
+
+- `runtime` = `cowork`: the Cowork virtual machine cannot reach api.notion.com, so REST never works there. `notion.access` must be `mcp` (`config.py check` reports an error for `rest`), and `notion_rest.py` refuses to run. Every operation below takes its MCP path. For a large CRM, read in view mode and report incomplete reads; suggest running bulk work (a big import, a first sweep) from Claude Code with a Notion token, pointed at the same project folder (`GTM_CONFIG_DIR=<project folder>/.gtm`).
+- No `python3` (`config.py check` fails with `command not found`): MCP only, as above. Read and write config.json and state.json with the Read and Write tools, and follow the limits for import and funnel in `${CLAUDE_PLUGIN_ROOT}/reference/config.md`, No Python: import takes a CSV of 200 rows or fewer, mapped by you, previewed, and written in batches of 20; funnel reports `BLOCKED: needs Python`.
 
 ## Load the MCP tools
 
@@ -52,7 +58,7 @@ Rules for every skill:
 2. If `notion.views.<db>` is empty, `notion-fetch` the database once, take a `view://` view from the result, use that `view://` URL as `view_url` for this run (the `https://www.notion.so/<database id without dashes>?v=<view id without dashes>` form also works), and suggest under Needs you that the user run `/gtm:setup` to record it.
 3. Rows and SQL mode only for small targeted lookups (one key, a short OR list, a created time). Count each call and put the count in the run log line for Notion. Never read a whole database in rows or SQL mode.
 4. On the allowance error, switch to view mode (or REST) at once and finish the run. Never retry rows or SQL mode in the same run. Targeted lookups that remain become in-memory lookups on the view-mode rows. A value only SQL gives (created time) is skipped for this run and recorded as a Decision.
-5. The REST path (`notion_rest.py query`) has no such quota. Recommend a Notion integration token under Needs you for any CRM with an Active campaign or more than about 200 contacts.
+5. The REST path (`notion_rest.py query`) has no such quota. Recommend a Notion integration token under Needs you for any CRM with an Active campaign or more than about 200 contacts. In Cowork, where a token can never be used, suggest instead that the user run the bulk read from Claude Code with a Notion token, pointed at the project folder (`GTM_CONFIG_DIR=<project folder>/.gtm`).
 
 ### Relation filters
 
@@ -63,7 +69,7 @@ Rules for every skill:
 
 ## Where MCP alone is limited
 
-- Large CRMs. Use view mode (Query rows). If a read still cannot reach every row, report the check as incomplete, apply what you read, and suggest under Needs you that the user add a Notion token in `/gtm:setup` for bulk reads.
+- Large CRMs. Use view mode (Query rows). If a read still cannot reach every row, report the check as incomplete, apply what you read, and suggest under Needs you that the user add a Notion token in `/gtm:setup` for bulk reads. In Cowork, where a token can never be used, suggest instead that the user run the bulk read from Claude Code with a Notion token, pointed at the project folder (`GTM_CONFIG_DIR=<project folder>/.gtm`).
 - Created time. Rows mode, view mode and `notion-fetch` do not return a page's created time. Only SQL (`createdTime` column, counted against the quota) and REST (`created_time`) give it. Without them, a rule that needs created time is skipped and recorded as a Decision.
 - Relations. Some responses return at most 25 related items. Never read a campaign's contact list from the campaign side. Read Contacts and filter on the relation instead (Relation filters above, and `${CLAUDE_PLUGIN_ROOT}/reference/crm-rules.md`, Relations).
 

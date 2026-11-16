@@ -16,7 +16,7 @@ Allowed paths (from `readonly_api.py tools`): `/v1/user/me`, `/v1/campaign`, `/v
 
 ## Preflight check
 
-`python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py gojiberry check` (reads `/v1/user/me`). Exit 0 ok. Exit 2 blocked.
+`python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py gojiberry check` (reads `/v1/user/me`). Exit 0 ok. Exit 2 blocked. Not with `runtime` = `cowork` or without Python (`${CLAUDE_PLUGIN_ROOT}/reference/blocked.md`, Cowork).
 
 ## Read procedure
 
@@ -86,7 +86,7 @@ For each campaign read in full, its cursor becomes the highest log id read (unch
 
 ## Blocked signs and fix
 
-- Exit 2 on check (no key, 401, 403): "Save a working Gojiberry API key: run `python3 -I -B <plugin root>/lib/config.py set-secret gojiberry_api_key` in a terminal, and check the Gojiberry account."
+- Exit 2 on check (no key, 401, 403): "Save a working Gojiberry API key: run `python3 -I -B <plugin root>/lib/config.py set-secret gojiberry_api_key` in a terminal, and check the Gojiberry account." (Claude Code only. In Cowork: "Connect a connector for gojiberry, or run this routine from Claude Code.")
 - Exit 1 (refused path) is a bug in the procedure, not a block: report it under Needs you and never edit the allowlist.
 
 ## Write / send capability

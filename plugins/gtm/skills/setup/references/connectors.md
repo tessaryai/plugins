@@ -33,6 +33,8 @@ Setup step 1. The goal is a short, true table of what this session can use. Dete
 
 ## Without a connector
 
+Claude Code only. In Cowork (or when `python3` is missing) skip this section: a tool without a connector is `not found`, with the fix "connect a connector for <tool>, or run this routine from Claude Code" (`${CLAUDE_PLUGIN_ROOT}/reference/blocked.md`, Cowork).
+
 A tool with no connector can still work through the read-only API client when it has an entry there:
 
 ```

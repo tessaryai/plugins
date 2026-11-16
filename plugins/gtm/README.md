@@ -1,6 +1,6 @@
 # gtm
 
-A Claude Code plugin that hosts your CRM in Notion and runs your go-to-market flow with skills.
+A plugin for Claude Code and Claude Cowork that hosts your CRM in Notion and runs your go-to-market flow with skills.
 It is for founders and small sales teams who want a CRM they own, kept current by an agent.
 
 The plugin sets up (or maps) five Notion databases, imports your existing CRM, sweeps your
@@ -12,15 +12,18 @@ Everything works with only the Notion connector. Other tools plug in through ada
 
 ## Requirements
 
-- Claude Code. Use the Claude desktop app for the scheduled routines: its local scheduled tasks
-  run on your computer, so Claude in Chrome works in them.
+- Claude Code, or Claude Cowork in the Claude desktop app (see Use gtm in Cowork). Use the
+  desktop app for the scheduled routines: its local scheduled tasks run on your computer, so
+  Claude in Chrome works in them.
 - The Notion connector, added in Claude settings. This is the only required connector.
 - Optional, one per adapter you want: Gmail or Outlook, Google Calendar or Outlook calendar,
   Slack, a meeting recorder (Fathom, Granola, Fireflies, Otter), an outreach tool (Gojiberry,
   lemlist, Instantly, Apollo), enrichment (Exa, Apollo, Hunter, or any enrichment connector).
   Some tools also work with an API key instead of a connector (see Adapters).
 - Claude in Chrome, signed in to LinkedIn, for anything that reads or sends on LinkedIn.
-- Python 3 (standard library only) for the helper scripts in `lib/`.
+- Python 3 (standard library only) for the helper scripts in `lib/`. Without it, most skills still
+  run with smaller limits; the funnel report needs it (see
+  [`reference/config.md`](./reference/config.md), No Python).
 - Recommended: a Notion integration token for a CRM with more than about 200 contacts or any
   active campaign. The Notion connector's row queries share a small workspace quota; REST has
   none, and it makes bulk reads, big imports and exact copy reads reliable.
@@ -34,12 +37,35 @@ In any Claude Code session:
 /plugin install gtm@tessary
 ```
 
+In Claude Cowork, see [Use gtm in Cowork](#use-gtm-in-cowork).
+
+## Use gtm in Cowork
+
+1. Install. In the Claude desktop app, open the Plugins page, choose Add marketplace, enter
+   `tessaryai/plugins`, and install gtm. A plugin installed with the Claude Code CLI does not
+   carry over to Cowork.
+2. Connect a project folder to the task, then run `/gtm:setup`. Keep the settings in that folder
+   when setup asks: it creates `.gtm/` there, with a `.gitignore` that keeps keys out of git.
+   Files outside the connected folder may not last between Cowork sessions.
+3. Connectors only. Cowork cannot reach the Notion API or other tools' APIs directly, and has no
+   terminal for typing a key. Setup sets `runtime` to `cowork`, and gtm then uses connectors
+   only.
+
+What works: Notion through its connector, Gmail or Outlook, Google or Outlook calendar, Slack, any
+meeting recorder, outreach or enrichment tool that has a connector, and LinkedIn through Claude
+in Chrome. What does not: a Notion integration token, API keys (a tool without a connector is
+blocked), and, if Python is missing, the funnel report and imports of more than 200 rows.
+
+Scheduling: if Cowork offers no scheduled tasks, run the skills when you want them (for example
+"run the gtm sweep"), or schedule them from Claude Code on the same computer, pointed at the
+same project folder. Both then share one config, state and run log.
+
 ## Get started in three steps
 
 1. Run `/gtm:setup`. It checks your connectors, asks a few questions, creates the five
-   databases under a Notion page you pick (or maps the ones you have), writes
-   `~/.config/gtm/config.json`, builds your voice and ICP files, shows the LinkedIn warning,
-   and offers to schedule the routines.
+   databases under a Notion page you pick (or maps the ones you have), writes the config file
+   (in `~/.config/gtm/`, or in a `.gtm/` folder in your project), builds your voice and ICP
+   files, shows the LinkedIn warning, and offers to schedule the routines.
 2. Run `/gtm:import` if you have contacts somewhere else (a CSV or Google Sheets export,
    HubSpot, Pipedrive or Attio). It shows a preview and writes nothing until you say yes.
 3. Run a dry run: `/gtm:sweep dry-run` and `/gtm:campaign-run dry-run`. They read everything,
@@ -52,11 +78,11 @@ Then build your first campaign with `/gtm:campaign-build`.
 
 | Skill | What it does | Schedule | Reads | Writes | Sends? |
 |---|---|---|---|---|---|
-| `/gtm:setup` | Onboarding: connectors, databases, config, voice, ICP, LinkedIn cap, schedules, dry runs. Re-run it to change settings; it shows a diff first. | manual | session connectors, Notion | Notion databases and Funnel page, `~/.config/gtm/*` | no |
+| `/gtm:setup` | Onboarding: connectors, databases, config, voice, ICP, LinkedIn cap, schedules, dry runs. Re-run it to change settings; it shows a diff first. | manual | session connectors, Notion | Notion databases and Funnel page, the config folder | no |
 | `/gtm:import` | Imports contacts, companies, deals and notes from another CRM, with dedupe, a preview and resumable batches. | manual | CSV, HubSpot, Pipedrive, Attio (read-only) | Contacts, Companies, Pipeline | no |
 | `/gtm:sweep` | Keeps the CRM current: replies, bounces, sent mail, bookings, meetings, LinkedIn accepts and messages, outreach-tool touches. | daily | email, calendar, LinkedIn, meeting recorders, outreach tools (all read-only) | contact Status, log lines, First Contacted, Meetings pages, outreach mirror pages | no |
-| `/gtm:campaign-build` | Builds a campaign audience from your ICP: sources, scores, finds and verifies emails, dedupes, asks, then writes. | manual | `~/.config/gtm/icp.md`, enrichment adapters, LinkedIn profiles (optional, read-only) | Campaign page (Status Review), Companies, Contacts | no |
-| `/gtm:campaign-write` | Writes the sequence and copy in your voice onto the campaign page, and personalized copy plus a `Run fields:` line onto each contact page. | manual | `~/.config/gtm/voice.md`, ICP, research tools, LinkedIn profiles (optional) | campaign and contact page bodies | no |
+| `/gtm:campaign-build` | Builds a campaign audience from your ICP: sources, scores, finds and verifies emails, dedupes, asks, then writes. | manual | `icp.md`, enrichment adapters, LinkedIn profiles (optional, read-only) | Campaign page (Status Review), Companies, Contacts | no |
+| `/gtm:campaign-write` | Writes the sequence and copy in your voice onto the campaign page, and personalized copy plus a `Run fields:` line onto each contact page. | manual | `voice.md`, ICP, research tools, LinkedIn profiles (optional) | campaign and contact page bodies | no |
 | `/gtm:campaign-run` | Sends the steps that are due today for every Active campaign, after a reply check and all gates. | working days, in your send window | campaign and contact pages, email, LinkedIn inbox | markers, Status, First Contacted | yes: email and LinkedIn, only text on the pages |
 | `/gtm:funnel` | Recounts the monthly funnel (cold and warm outbound) and replaces the Funnel page, only when its checks pass. | weekly | Contacts, Pipeline | the Funnel page only | no |
 
@@ -184,18 +210,20 @@ go out.
 
 ## Configuration, state and logs
 
-Runtime files live in `~/.config/gtm/` (or `$GTM_CONFIG_DIR`), outside the plugin folder, because
-a plugin update replaces that folder.
+Runtime files live in one config folder, outside the plugin folder, because a plugin update
+replaces that folder. The active folder is the first of: `$GTM_CONFIG_DIR`; a `.gtm/` folder
+holding `config.json` in the current folder or a parent (create it with `config.py init --project`);
+`~/.config/gtm/`. `config.py paths` prints which one is active and why.
 
 | File | Holds |
 |---|---|
-| `~/.config/gtm/config.json` | Settings. No secrets. |
-| `~/.config/gtm/credentials.json` | Notion token and API keys, mode 600. Only `lib/*.py` reads it. |
-| `~/.config/gtm/state.json` | Per-adapter cursors, import progress, the funnel baseline. |
-| `~/.config/gtm/logs.md` | Run log, one entry per run. |
-| `~/.config/gtm/voice.md` | Your writing voice. |
-| `~/.config/gtm/icp.md` | Your ideal customer profile. |
-| `~/.config/gtm/imports/<run_id>/` | Work files of one import, so `/gtm:import resume` works later. |
+| `config.json` | Settings. No secrets. |
+| `credentials.json` | Notion token and API keys, mode 600. Only `lib/*.py` reads it. Never used in Cowork. |
+| `state.json` | Per-adapter cursors, import progress, the funnel baseline. |
+| `logs.md` | Run log, one entry per run. |
+| `voice.md` | Your writing voice. |
+| `icp.md` | Your ideal customer profile. |
+| `imports/<run_id>/` | Work files of one import, so `/gtm:import resume` works later. |
 
 The config CLI (run from a terminal, with the plugin's install path as `<plugin root>`):
 
@@ -205,7 +233,7 @@ python3 -I -B <plugin root>/lib/config.py check         # validate
 python3 -I -B <plugin root>/lib/config.py get sending.mode
 python3 -I -B <plugin root>/lib/config.py set sending.email_daily_cap 30
 python3 -I -B <plugin root>/lib/config.py set-secret notion_token
-python3 -I -B <plugin root>/lib/config.py paths         # where the files are
+python3 -I -B <plugin root>/lib/config.py paths         # which folder is active, and where the files are
 ```
 
 Save keys only with `set-secret`, in your own terminal. It reads the key at a hidden prompt.
@@ -223,7 +251,8 @@ Main settings:
 | `owner.timezone` | `UTC` | Time zone for "today", working days and the send window. |
 | `owner.working_days` | Mon to Fri | Days campaign-run may send. |
 | `owner.send_window` | 09:00 to 17:00 | Local hours in which sends may happen. |
-| `notion.access` | `mcp` | `rest` when a Notion token is saved; bulk work then uses `lib/notion_rest.py`. |
+| `notion.access` | `mcp` | `rest` when a Notion token is saved; bulk work then uses `lib/notion_rest.py`. Always `mcp` in Cowork. |
+| `runtime` | `claude-code` | `cowork` uses connectors only (see Use gtm in Cowork). |
 
 ## Scheduling
 
@@ -240,7 +269,7 @@ The sweep runs before campaign-run, so replies stop sequences before the next se
   open, so Chrome works. A task due while the app is closed runs when you next open it.
 - `/loop`, for example `/loop 24h /gtm:sweep`, repeats a command in an open session on your
   computer. It stops when the session ends.
-- `/schedule` (cloud) is not recommended. A cloud run does not have your `~/.config/gtm` files,
+- `/schedule` (cloud) is not recommended. A cloud run does not have your gtm config folder,
   so it fails at preflight unless you set up the same config there. It also has no Chrome, so
   LinkedIn is blocked every time.
 
@@ -308,6 +337,8 @@ one notification per run. The run log is at the `run_log` path that `config.py p
 | Notion blocked | Add or reconnect the Notion connector in Claude settings. Nothing can be written until it works. |
 | `<connector> blocked: auth error` | Reconnect that connector in Claude settings, then run the skill again. |
 | `<tool> blocked: key missing or refused` | Save a working key in your terminal: `python3 -I -B <plugin root>/lib/config.py set-secret <name>`. |
+| `<tool> blocked` in Cowork | Connect a connector for that tool, or run the routine from Claude Code. Cowork uses no API keys. |
+| Settings not found, or a new setup starts | `config.py paths` shows the active folder. Run from the project folder that holds `.gtm/`, or set `GTM_CONFIG_DIR`. |
 | LinkedIn blocked: login page, CAPTCHA, extension not connected | Open Chrome, sign in to LinkedIn, and check that the Claude extension is connected. |
 | LinkedIn blocked: invitation limit or warning | Stop LinkedIn sends for some days. Lower `sending.linkedin_daily_invite_cap`. |
 | From address differs from the sender email | Send from the address in `sending.sender_email`, or change that key (or the campaign's `Sender email:` line). |
@@ -326,11 +357,20 @@ one notification per run. The run log is at the `run_log` path that `config.py p
 1. Delete the scheduled tasks `gtm-sweep`, `gtm-campaign-run` and `gtm-funnel` (ask Claude, or
    use the scheduled tasks list in the desktop app), and stop any `/loop`.
 2. Uninstall the plugin from the `/plugin` menu.
-3. To reset settings, delete `~/.config/gtm/` (or `$GTM_CONFIG_DIR`). This removes your config,
+3. To reset settings, delete the config folder that `config.py paths` prints (`~/.config/gtm/`,
+   a project's `.gtm/`, or `$GTM_CONFIG_DIR`). This removes your config,
    keys, cursors, run log, voice and ICP files. Run `/gtm:setup` to start again.
 4. Your Notion databases, pages and log lines stay. Delete them in Notion if you want them gone.
    To stop gtm reaching your workspace, remove the Notion connector, and remove the integration
    from the CRM pages if you created one.
+
+## Privacy
+
+gtm runs in your Claude session. It sends nothing to Tessary and has no telemetry. It reads and
+writes your Notion workspace and the tools you turn on. It sends email and LinkedIn messages
+only from `/gtm:campaign-run`, for campaigns at Status `Active`. It stores settings, state, the
+run log and API keys locally in the active config folder, with keys in `credentials.json`
+(mode 600). Full policy: https://tessary.ai/privacy-policy
 
 ## License
 

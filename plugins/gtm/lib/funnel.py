@@ -37,7 +37,7 @@ Commands:
         funnel_blanks.txt   counted contacts with no First Contacted date, or "none"
         funnel_summary.json totals and notes for the run report
       The baseline (last accepted counts) lives in the state file printed by
-      config.py paths (it follows GTM_CONFIG_DIR), under adapters.funnel. It is saved only when every check passes, or
+      config.py paths (the active config folder), under adapters.funnel. It is saved only when every check passes, or
       with --accept-baseline (use it only when the user asks). With
       --accept-baseline, baseline drop and rise checks are recorded as
       accepted; the other checks still apply. --no-save-baseline never saves
@@ -345,9 +345,9 @@ def normalize_mcp(cfg: dict, db, paths):
             raise InputError(f"{path} holds no JSON array of rows")
         rows.extend(found)
     if db is None:
-        db = _infer_db(cfg, rows) if rows else None
-    if db is None:
-        return "unknown", rows
+        if not rows:
+            return "empty", rows
+        db = _infer_db(cfg, rows)
     needed = _needed(cfg, db)
     for row in rows:
         for logical, name in needed:
@@ -732,7 +732,10 @@ def cmd_normalize(args) -> int:
     out = Path(args.out).expanduser()
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(rows) + "\n", encoding="utf-8")
-    print(f"{db}: {len(rows)} rows -> {out}")
+    if not rows:
+        print(f"{args.db or 'input'}: 0 rows (empty) -> {out}")
+    else:
+        print(f"{db}: {len(rows)} rows -> {out}")
     return 0
 
 

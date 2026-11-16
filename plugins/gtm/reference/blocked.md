@@ -11,11 +11,19 @@ Run this at the start of every skill, for each adapter the run needs:
 1. Read the adapter list from config (`adapters.*`).
 2. For each adapter, open its file `${CLAUDE_PLUGIN_ROOT}/adapters/<kind>/<tool>.md` and run its Preflight check. Typical checks:
    - MCP connector: load its tools with ToolSearch; call one cheap read (for example list one item). Missing tools or an auth error = blocked.
-   - readonly_api: `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py <tool> check`. Exit 2 = blocked.
+   - readonly_api: `python3 -I -B ${CLAUDE_PLUGIN_ROOT}/lib/readonly_api.py <tool> check`. Exit 2 = blocked. Not with `runtime` = `cowork` or without Python (Cowork, below).
    - Chrome (LinkedIn): load the Claude in Chrome tools, open a new tab on the LinkedIn feed, and check from a screenshot that it is not a login page or CAPTCHA. Tools missing or not connected = blocked.
-   - Notion: load the Notion tools and fetch the Contacts data source. With `notion.access` = `rest`, also run `notion_rest.py schema <contacts id>`.
+   - Notion: load the Notion tools and fetch the Contacts data source. With `notion.access` = `rest` (never in Cowork), also run `notion_rest.py schema <contacts id>`.
 3. Mark each adapter `ok` or `blocked` with what you saw (the error status or the screen state, never a token or raw exception text).
 4. If Notion itself is blocked, stop the run after the notification: nothing can be written. Report it.
+
+## Cowork
+
+With `runtime` = `cowork` (or when `python3` is missing), a tool works only through its connector:
+
+- Never run `lib/readonly_api.py` or `lib/notion_rest.py`, and never call a vendor API with curl. The Cowork virtual machine cannot reach them. One exception: the reachability probe in `/gtm:setup` step 0 (`curl` to `https://api.notion.com/` with no token, header or body, once), which runs before the runtime is known and sends no data.
+- A tool with no connector in the session is blocked, even when its adapter file names an API key. Fix text: "Connect a connector for <tool>, or run this routine from Claude Code."
+- Never offer `set-secret`. Use the fix text above instead of the key fix below.
 
 ## During the run
 
@@ -31,7 +39,7 @@ Put a `BLOCKED` section first in the run log entry and first in the final report
 
 - "Reconnect the Gmail connector in Claude settings."
 - "Open Chrome, sign in to LinkedIn, and check the Claude extension is connected."
-- "Save a working key: run `python3 -I -B <plugin root>/lib/config.py set-secret fathom_api_key` in a terminal."
+- "Save a working key: run `python3 -I -B <plugin root>/lib/config.py set-secret fathom_api_key` in a terminal." (Claude Code only. In Cowork: "Connect a connector for fathom, or run this routine from Claude Code.")
 - "Share the CRM pages with your Notion integration, or set notion.access to mcp."
 
 ## One notification per run

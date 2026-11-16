@@ -239,6 +239,9 @@ def path_is_allowed(tool: str, path: str) -> bool:
 
 def _auth_header(tool: str):
     spec = ALLOWLIST[tool]
+    refusal = gtm_config.direct_api_refusal()
+    if refusal:
+        raise ReadError("cowork", refusal)
     key = gtm_config.get_secret(spec["secret"])
     if not key:
         raise ReadError("no-key", f"no {spec['secret']} saved; run config.py set-secret {spec['secret']}")
